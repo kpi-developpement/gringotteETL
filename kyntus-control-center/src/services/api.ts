@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8117/api/dashboard';
+// 🛡️ L'FIX HNA: Dernaha en dur bach l'navigateur y-3ref fin y-mchi
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://10.10.10.25:8117/api/dashboard';
 
 export interface SyncStats {
   total_interventions_local: number;
