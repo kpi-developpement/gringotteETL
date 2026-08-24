@@ -3,8 +3,10 @@ FROM node:18-alpine AS base
 # Étape 1 : Dépendances
 FROM base AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+# L'etoile (*) katkhli package-lock.json optionnel ila kan fih mouchkil
+COPY package.json package-lock.json* ./
+# HNA BEDDELNA npm ci b npm install
+RUN npm install
 
 # Étape 2 : Build
 FROM base AS builder
