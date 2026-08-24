@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { fetchStats, triggerManualSync, SyncStats } from '../services/api';
 import StatCard from '../components/StatCard';
 import styles from './page.module.css';
@@ -17,7 +18,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadStats();
-    const interval = setInterval(loadStats, 3000); // Rafraîchissement chaque 3s
+    const interval = setInterval(loadStats, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -68,18 +69,33 @@ export default function DashboardPage() {
         </div>
 
         <div className={styles.actionPanel}>
-          <h2 className={styles.panelTitle}>Contrôle Manuel</h2>
+          <h2 className={styles.panelTitle}>Contrôle & Visualisation</h2>
           <p className={styles.panelDesc}>
-            L'orchestrateur tourne automatiquement en arrière-plan. Vous pouvez forcer un cycle d'import/export immédiat ici.
+            L'orchestrateur tourne automatiquement. Vous pouvez forcer un cycle ou consulter les données locales.
           </p>
           
-          <button 
-            className={styles.button} 
-            onClick={handleTrigger} 
-            disabled={loading || !stats}
-          >
-            {loading ? 'Exécution en cours...' : 'Forcer la synchronisation'}
-          </button>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '20px' }}>
+            <button 
+              className={styles.button} 
+              onClick={handleTrigger} 
+              disabled={loading || !stats}
+            >
+              {loading ? 'Exécution en cours...' : 'Forcer la synchronisation'}
+            </button>
+
+            <Link href="/interventions" style={{
+              backgroundColor: 'var(--kyntus-light)',
+              color: 'var(--kyntus-dark)',
+              border: '1px solid var(--border-color)',
+              padding: '12px 32px',
+              fontSize: '1rem',
+              fontWeight: 600,
+              borderRadius: '6px',
+              textDecoration: 'none'
+            }}>
+              Voir les données
+            </Link>
+          </div>
           
           {message && (
             <div className={styles.messageBox}>

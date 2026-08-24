@@ -6,6 +6,7 @@ import com.kyntus.gringotts_sync.dto.ImportRequest;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -31,15 +32,17 @@ public class PhpApiClient {
         log.info("Appel POST /api/sync/ack pour {} IDs", ids.size());
         restClient.post()
                 .uri("/api/sync/ack")
+                .contentType(MediaType.APPLICATION_JSON) // 🛡️ L'FIX HNA
                 .body(new AckRequest(ids))
                 .retrieve()
-                .body(Map.class); // On ignore la réponse, on veut juste que ça passe (200 OK)
+                .body(Map.class);
     }
 
     public ImportResponse triggerImport(int offset) {
         log.info("Appel POST /api/sync/import avec offset={}", offset);
         return restClient.post()
                 .uri("/api/sync/import")
+                .contentType(MediaType.APPLICATION_JSON) // 🛡️ L'FIX HNA
                 .body(new ImportRequest(offset))
                 .retrieve()
                 .body(ImportResponse.class);

@@ -1,5 +1,6 @@
 package com.kyntus.gringotts_sync.controller;
 
+import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
@@ -9,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -37,11 +39,15 @@ public class DashboardController {
 
     @PostMapping("/trigger")
     public ResponseEntity<Map<String, String>> triggerSync() {
-        // On lance le cycle manuellement dans un thread séparé pour ne pas bloquer la requête HTTP
         new Thread(syncOrchestrator::runSyncCycle).start();
-
         Map<String, String> response = new HashMap<>();
         response.put("message", "Cycle de synchronisation lancé avec succès.");
         return ResponseEntity.ok(response);
+    }
+
+    // 🛡️ NOUVEAU ENDPOINT POUR LE FRONTEND
+    @GetMapping("/interventions")
+    public ResponseEntity<List<Intervention>> getLatestInterventions() {
+        return ResponseEntity.ok(interventionRepository.findTop50ByOrderByCreatedAtDesc());
     }
 }
