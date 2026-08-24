@@ -3,9 +3,7 @@ FROM node:18-alpine AS base
 # Étape 1 : Dépendances
 FROM base AS deps
 WORKDIR /app
-# L'etoile (*) katkhli package-lock.json optionnel ila kan fih mouchkil
 COPY package.json package-lock.json* ./
-# HNA BEDDELNA npm ci b npm install
 RUN npm install
 
 # Étape 2 : Build
@@ -13,6 +11,8 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# HADA HOUWA STAR LI ZEDNA BACH Y-MSE7 L'FICHIER L'MKHEREBE9
+RUN rm -f next.config.ts 
 RUN npm run build
 
 # Étape 3 : Production
