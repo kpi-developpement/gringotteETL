@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestClient;
 
 @Configuration
-@EnableScheduling // Active le système de Cron jobs
+@EnableScheduling
 public class AppConfig {
 
     @Value("${kyntus.php-api.base-url}")
@@ -16,9 +16,9 @@ public class AppConfig {
     @Value("${kyntus.php-api.sync-key}")
     private String syncKey;
 
+    // 🛡️ L'FIX HNA: Beddelna smya mn phpApiClient l restClient bach ma y-w9e3ch conflit
     @Bean
-    public RestClient phpApiClient() {
-        // On configure le client HTTP m3a l'URL w l'API Key par défaut
+    public RestClient restClient() {
         return RestClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("X-SYNC-KEY", syncKey)
