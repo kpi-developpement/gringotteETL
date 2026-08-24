@@ -1,0 +1,115 @@
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pageTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--kyntus-dark);
+}
+
+.pageSubtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.statusContainer {
+  display: flex;
+  align-items: center;
+}
+
+.statusOnline {
+  background-color: #d1fae5;
+  color: #065f46;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.statusOffline {
+  background-color: #fee2e2;
+  color: #991b1b;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.actionPanel {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 32px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.panelTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--kyntus-dark);
+  margin-bottom: 8px;
+}
+
+.panelDesc {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 24px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.button {
+  background-color: var(--kyntus-blue);
+  color: white;
+  border: none;
+  padding: 12px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.button:hover:not(:disabled) {
+  background-color: var(--kyntus-dark);
+}
+
+.button:disabled {
+  background-color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.messageBox {
+  margin-top: 20px;
+  padding: 12px;
+  background-color: #eff6ff;
+  color: var(--kyntus-blue);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
