@@ -11,7 +11,7 @@ export const fetchStats = async (): Promise<SyncStats | null> => {
     const response = await fetch(`${API_URL}/stats`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store', // Pour éviter le cache de Next.js
+      cache: 'no-store',
     });
     
     if (!response.ok) throw new Error('Erreur réseau');
