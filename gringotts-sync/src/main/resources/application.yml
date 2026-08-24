@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: gringotts-sync
+  jackson:
+      property-naming-strategy: SNAKE_CASE
+
+  # Configuration de ta base de données locale (Data Warehouse)
+  datasource:
+    url: jdbc:postgresql://localhost:5432/kyntus_dw
+    username: postgres
+    password: password
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update # Spring va créer les tables automatiquement
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+# Configuration de notre synchronisation
+kyntus:
+  php-api:
+    base-url: "https://bytel.kyntus.fr" # L'URL de ton serveur IONOS
+    sync-key: "KYNTUS_SUPER_SECRET_SYNC_KEY_2026_!@#" # La même clé que dans config.php
+  sync:
+    cron: "0 */2 * * * *" # Exécution toutes les 2 minutes
+    batch-size: 200 # Combien on ramène de IONOS à chaque fois

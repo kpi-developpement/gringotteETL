@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  sync-db:
+    image: postgres:15-alpine
+    container_name: gringotts-sync-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: kyntus_dw
+    ports:
+      - "5432:5432"
+    volumes:
+      - sync_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  gringotts-sync:
+    build: ./gringotts-sync
+    container_name: gringotts-sync-backend
+    depends_on:
+      - sync-db
+    environment:
+      - SERVER_PORT=8117
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://sync-db:5432/kyntus_dw
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+      - KYNTUS_PHP_API_BASE_URL=https://bytel.kyntus.fr
+      - KYNTUS_PHP_API_SYNC_KEY=KYNTUS_SUPER_SECRET_SYNC_KEY_2026_!@#
+    ports:
+      - "8117:8117"
+    restart: unless-stopped
+
+  kyntus-control-center:
+    build: ./kyntus-control-center
+    container_name: kyntus-control-center-frontend
+    depends_on:
+      - gringotts-sync
+    environment:
+      - PORT=3112
+      - NEXT_PUBLIC_API_URL=http://10.10.10.25:8117/api/dashboard
+    ports:
+      - "3112:3112"
+    restart: unless-stopped
+
+volumes:
+  sync_pgdata:
