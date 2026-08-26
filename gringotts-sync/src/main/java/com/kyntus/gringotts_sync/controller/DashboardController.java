@@ -25,27 +25,37 @@ public class DashboardController {
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
         long totalInterventions = interventionRepository.count();
-        int currentOffset = syncStateRepository.findById("bt_api_offset")
-                .map(SyncState::getStateValue)
-                .orElse(0);
+        int currentOffset = syncStateRepository.findById("bt_api_offset").map(SyncState::getStateValue).orElse(0);
+        int totalApi = syncStateRepository.findById("bt_total_api").map(SyncState::getStateValue).orElse(0);
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("total_interventions_local", totalInterventions);
         stats.put("current_bt_offset", currentOffset);
-        stats.put("status", "RUNNING");
+        stats.put("total_api", totalApi);
+        stats.put("is_running", syncOrchestrator.isRunning());
 
         return ResponseEntity.ok(stats);
     }
 
-    @PostMapping("/trigger")
-    public ResponseEntity<Map<String, String>> triggerSync() {
-        new Thread(syncOrchestrator::runSyncCycle).start();
-        Map<String, String> response = new HashMap<>();
-        response.put("message", "Cycle de synchronisation lancé avec succès.");
-        return ResponseEntity.ok(response);
+    @PostMapping("/start")
+    public ResponseEntity<Map<String, String>> startSync() {
+        syncOrchestrator.startSync();
+        return ResponseEntity.ok(Map.of("message", "Démarré."));
     }
 
-    // 🛡️ NOUVEAU ENDPOINT POUR LE FRONTEND
+    @PostMapping("/stop")
+    public ResponseEntity<Map<String, String>> stopSync() {
+        syncOrchestrator.stopSync();
+        return ResponseEntity.ok(Map.of("message", "Arrêté."));
+    }
+
+    // 🛡️ NOUVEAU : Endpoint Reset
+    @PostMapping("/reset")
+    public ResponseEntity<Map<String, String>> resetSync() {
+        new Thread(syncOrchestrator::resetAndStartFromZero).start();
+        return ResponseEntity.ok(Map.of("message", "Reset en cours..."));
+    }
+
     @GetMapping("/interventions")
     public ResponseEntity<List<Intervention>> getLatestInterventions() {
         return ResponseEntity.ok(interventionRepository.findTop50ByOrderByCreatedAtDesc());
