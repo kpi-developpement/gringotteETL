@@ -38,16 +38,14 @@ public class SyncOrchestrator {
     }
 
     public void stopSync() {
-        log.info("🛑 ARRÊT DEMANDÉ");
+        log.info("🛑 ARRÊT DEMANDÉ PAR L'UTILISATEUR");
         isRunning = false;
     }
 
-    // 🛡️ NOUVEAU : Fonction de Reset Total
     public void resetAndStartFromZero() {
         log.info("⚠️ RESET TOTAL DEMANDÉ...");
         stopSync();
-
-        // 1. Vider IONOS
+        
         try {
             phpApiClient.resetIonos();
             log.info("✅ IONOS vidé avec succès.");
@@ -55,22 +53,19 @@ public class SyncOrchestrator {
             log.error("Erreur lors du vidage de IONOS : {}", e.getMessage());
         }
 
-        // 2. Vider la base locale (Postgres)
         interventionRepository.deleteAll();
         log.info("✅ Base de données locale vidée.");
 
-        // 3. Remettre les compteurs à 0
         saveState(OFFSET_KEY, 0);
         saveState(TOTAL_KEY, 0);
 
-        // 4. Lancer l'aspirateur
         startSync();
     }
 
     private void processLoop() {
         while (isRunning) {
             try {
-                // 1. ASPIRATEUR : On vide IONOS
+                // 1. ASPIRATEUR
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     ExportResponse exportResp = phpApiClient.export(500);
@@ -78,11 +73,20 @@ public class SyncOrchestrator {
                     if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                         List<Intervention> interventions = exportResp.getData();
                         interventionRepository.saveAll(interventions);
-
-                        List<Long> idsToAck = interventions.stream().map(Intervention::getId).toList();
-                        phpApiClient.acknowledge(idsToAck);
-
-                        log.info("✅ {} interventions aspirées et supprimées de IONOS.", interventions.size());
+                        
+                        // 🛡️ L'FIX HNA : N-t2ekdou bli les IDs kaynin w machi null 9bel ma n-siftouhom
+                        List<Long> idsToAck = interventions.stream()
+                                .map(Intervention::getId)
+                                .filter(id -> id != null)
+                                .toList();
+                                
+                        if (!idsToAck.isEmpty()) {
+                            phpApiClient.acknowledge(idsToAck);
+                            log.info("✅ {} interventions aspirées et supprimées de IONOS.", idsToAck.size());
+                        } else {
+                            log.warn("⚠️ Data reçue mais aucun ID valide trouvé. Arrêt de l'aspiration.");
+                            bufferHasData = false;
+                        }
                     } else {
                         bufferHasData = false;
                     }
@@ -90,15 +94,15 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
-                // 2. IMPORT : On demande à IONOS de ramener depuis Bouygues
+                // 2. IMPORT
                 int currentOffset = getSavedState(OFFSET_KEY);
                 ImportResponse importResp = phpApiClient.triggerImport(currentOffset);
-
+                
                 if (importResp != null && importResp.isOk()) {
                     saveState(OFFSET_KEY, importResp.getNextOffset());
-                    saveState(TOTAL_KEY, importResp.getTotalApi()); // HNA KAN-3ERFOU L'100%
-
-                    log.info("📥 Import BT : Offset {} -> {}. Total dispo : {}",
+                    saveState(TOTAL_KEY, importResp.getTotalApi());
+                    
+                    log.info("📥 Import BT : Offset {} -> {}. Total dispo : {}", 
                             currentOffset, importResp.getNextOffset(), importResp.getTotalApi());
 
                     if (importResp.isDone() || importResp.getNextOffset() >= importResp.getTotalApi()) {
@@ -106,14 +110,16 @@ public class SyncOrchestrator {
                         isRunning = false;
                     }
                 } else {
-                    Thread.sleep(3000);
+                    log.warn("⚠️ Erreur lors de l'import BT, pause de 5s...");
+                    Thread.sleep(5000);
                 }
 
             } catch (Exception e) {
                 log.error("❌ Erreur dans la boucle : {}", e.getMessage());
-                try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+                try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
             }
         }
+        log.info("⏹️ BOUCLE ARRÊTÉE.");
     }
 
     private int getSavedState(String key) {
