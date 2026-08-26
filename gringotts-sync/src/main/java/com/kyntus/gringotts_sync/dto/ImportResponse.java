@@ -17,5 +17,9 @@ public class ImportResponse {
     @JsonProperty("next_offset")
     private int nextOffset;
 
+    // 🛡️ L'FIX HNA : Zedna l'champ total_api bach Java y-fhem l'JSON
+    @JsonProperty("total_api")
+    private int totalApi;
+
     private boolean done;
 }
