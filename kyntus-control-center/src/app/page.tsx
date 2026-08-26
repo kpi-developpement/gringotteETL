@@ -18,26 +18,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadStats();
+    // L'interface kat-dir mise à jour kol 3 secondes bach t-chouf l'vitesse
     const interval = setInterval(loadStats, 3000);
     return () => clearInterval(interval);
   }, []);
 
   const handleTrigger = async () => {
     setLoading(true);
-    setMessage('Envoi de la requête à l\'orchestrateur...');
-    
-    const success = await triggerManualSync();
-    
-    if (success) {
-      setMessage('Cycle de synchronisation lancé ! Observez les compteurs.');
-    } else {
-      setMessage('Échec de la communication avec le serveur.');
-    }
-    
+    setMessage('Boost envoyé ! L\'orchestrateur va accélérer le cycle en cours.');
+    await triggerManualSync();
     setTimeout(() => {
       setLoading(false);
       setMessage('');
-    }, 4000);
+    }, 3000);
   };
 
   return (
@@ -45,11 +38,11 @@ export default function DashboardPage() {
       <header className={styles.header}>
         <div>
           <h1 className={styles.pageTitle}>Gringotts Sync</h1>
-          <p className={styles.pageSubtitle}>Control Center - Buffer to Data Warehouse</p>
+          <p className={styles.pageSubtitle}>Mode Auto-Pilote Activé 🚀</p>
         </div>
         <div className={styles.statusContainer}>
           <span className={stats ? styles.statusOnline : styles.statusOffline}>
-            {stats ? 'SERVEUR EN LIGNE' : 'SERVEUR HORS LIGNE'}
+            {stats ? 'AUTO-SYNC : ON (15s)' : 'SERVEUR HORS LIGNE'}
           </span>
         </div>
       </header>
@@ -57,21 +50,21 @@ export default function DashboardPage() {
       <main className={styles.main}>
         <div className={styles.grid}>
           <StatCard 
-            title="Interventions (Data Warehouse)" 
+            title="Interventions Sécurisées" 
             value={stats ? stats.total_interventions_local.toLocaleString() : '---'} 
-            subtitle="Total sauvegardé en local"
+            subtitle="Base de données locale"
           />
           <StatCard 
-            title="Offset API Bouygues" 
+            title="Offset Bouygues" 
             value={stats ? stats.current_bt_offset.toLocaleString() : '---'} 
-            subtitle="Dernier point de reprise"
+            subtitle="Progression de l'import"
           />
         </div>
 
         <div className={styles.actionPanel}>
-          <h2 className={styles.panelTitle}>Contrôle & Visualisation</h2>
+          <h2 className={styles.panelTitle}>Synchronisation Automatique</h2>
           <p className={styles.panelDesc}>
-            L'orchestrateur tourne automatiquement. Vous pouvez forcer un cycle ou consulter les données locales.
+            Le système est en mode automatique. Il vide le serveur IONOS et récupère les nouvelles données de Bouygues toutes les 15 secondes sans aucune action de votre part.
           </p>
           
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '20px' }}>
@@ -79,8 +72,9 @@ export default function DashboardPage() {
               className={styles.button} 
               onClick={handleTrigger} 
               disabled={loading || !stats}
+              style={{ backgroundColor: 'var(--kyntus-dark)' }}
             >
-              {loading ? 'Exécution en cours...' : 'Forcer la synchronisation'}
+              {loading ? 'Boost en cours...' : 'Forcer un Boost Immédiat'}
             </button>
 
             <Link href="/interventions" style={{

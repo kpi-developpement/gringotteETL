@@ -25,78 +25,66 @@ public class SyncOrchestrator {
     private final InterventionRepository interventionRepository;
     private final SyncStateRepository syncStateRepository;
 
-    @Value("${kyntus.sync.batch-size:200}")
+    @Value("${kyntus.sync.batch-size:500}")
     private int batchSize;
 
     private static final String OFFSET_KEY = "bt_api_offset";
 
-    /**
-     * Cette méthode s'exécute automatiquement selon le Cron défini dans application.yml.
-     */
     @Scheduled(cron = "${kyntus.sync.cron}")
     @Transactional
     public void runSyncCycle() {
-        log.info("=== DÉBUT DU CYCLE DE SYNCHRONISATION ===");
-
         try {
-            // ÉTAPE 1 : Vider le buffer (IONOS -> Spring Boot)
-            ExportResponse exportResp = phpApiClient.export(batchSize);
+            boolean bufferHasData = true;
+            int safetyLoopCount = 0;
 
-            if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
-                List<Intervention> interventions = exportResp.getData();
-                log.info("Réception de {} interventions depuis le buffer IONOS.", interventions.size());
+            // 1. ASPIRATEUR : N-vidiw IONOS kaml 9bel ma n-jbdou jdid
+            while (bufferHasData && safetyLoopCount < 10) {
+                ExportResponse exportResp = phpApiClient.export(batchSize);
 
-                // ÉTAPE 2 : Sauvegarder dans la DB locale (Data Warehouse)
-                interventionRepository.saveAll(interventions);
-                log.info("Sauvegarde locale réussie.");
+                if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
+                    List<Intervention> interventions = exportResp.getData();
+                    log.info("Aspirateur : Réception de {} interventions depuis IONOS.", interventions.size());
 
-                // ÉTAPE 3 : Acquitter (Supprimer de IONOS)
-                List<Long> idsToAck = interventions.stream().map(Intervention::getId).toList();
-                phpApiClient.acknowledge(idsToAck);
-                log.info("Acquittement envoyé à IONOS pour libérer l'espace.");
+                    // Sauvegarde locale (Ila w93at erreur hna, l'code kay-7bess w ma kay-ms7ch mn IONOS = Zero Data Loss)
+                    interventionRepository.saveAll(interventions);
 
-            } else {
-                log.info("Le buffer IONOS est vide. Déclenchement de l'import depuis Bouygues...");
+                    // Msi7 mn IONOS
+                    List<Long> idsToAck = interventions.stream().map(Intervention::getId).toList();
+                    phpApiClient.acknowledge(idsToAck);
 
-                // ÉTAPE 4 : Remplir le buffer (Bouygues -> IONOS)
-                int currentOffset = getSavedOffset();
-
-                ImportResponse importResp = phpApiClient.triggerImport(currentOffset);
-
-                if (importResp != null && importResp.isOk()) {
-                    log.info("Import BT réussi. Batch count: {}, Inserted: {}, Updated: {}",
-                            importResp.getBatchCount(), importResp.getInserted(), importResp.getUpdated());
-
-                    // On met à jour l'offset pour le prochain coup
-                    saveOffset(importResp.getNextOffset());
-
-                    if (importResp.isDone()) {
-                        log.info("L'API Bouygues a signalé la fin des données (done=true).");
-                        // Optionnel : tu pourrais remettre l'offset à 0 ici si tu veux recommencer depuis le début
-                        // saveOffset(0);
-                    }
+                    safetyLoopCount++; // Bach ma n-ti7ouch f boucle infinie ila w9e3 mouchkil
                 } else {
-                    log.error("Erreur lors du déclenchement de l'import: {}", importResp != null ? importResp.getError() : "null");
+                    bufferHasData = false; // IONOS khwa 100%
+                }
+            }
+
+            // 2. IMPORT : Mnin IONOS khwa, n-goulou lih y-jbed mn Bouygues
+            int currentOffset = getSavedOffset();
+            log.info("IONOS est vide. Déclenchement Import BT à partir de l'offset {}", currentOffset);
+
+            ImportResponse importResp = phpApiClient.triggerImport(currentOffset);
+
+            if (importResp != null && importResp.isOk()) {
+                if (importResp.getBatchCount() > 0) {
+                    log.info("Import BT réussi. {} nouvelles lignes dans IONOS.", importResp.getBatchCount());
+                    saveOffset(importResp.getNextOffset());
+                } else {
+                    log.info("Aucune nouvelle donnée chez Bouygues pour le moment.");
                 }
             }
 
         } catch (Exception e) {
-            log.error("Erreur critique pendant le cycle de synchronisation : {}", e.getMessage(), e);
+            log.error("Erreur pendant le cycle Auto-Sync : {}", e.getMessage());
         }
-
-        log.info("=== FIN DU CYCLE DE SYNCHRONISATION ===\n");
     }
-
-    // --- Méthodes utilitaires pour gérer l'Offset ---
 
     private int getSavedOffset() {
         return syncStateRepository.findById(OFFSET_KEY)
                 .map(SyncState::getStateValue)
-                .orElse(0); // Si pas trouvé, on commence à 0
+                .orElse(0);
     }
 
     private void saveOffset(int nextOffset) {
         syncStateRepository.save(new SyncState(OFFSET_KEY, nextOffset));
-        log.info("Nouvel offset sauvegardé : {}", nextOffset);
     }
 }
