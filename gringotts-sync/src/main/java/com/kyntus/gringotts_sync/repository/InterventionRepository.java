@@ -20,9 +20,19 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions a USING interventions b WHERE a.id > b.id AND a.id_intervention = b.id_intervention", nativeQuery = true)
     int deleteDuplicates();
 
-    // 🚀 L'FIX HNA : Requête ultra-rapide w s7i7a 100% bach t-9te3 l'base de données
+    // 🚀 1. Njbdou l'ID dyal l'intervention li bghina n-7ebsou 3endha
+    @Query(value = "SELECT id FROM interventions ORDER BY id ASC OFFSET :offset LIMIT 1", nativeQuery = true)
+    Long findCutoffId(@Param("offset") int offset);
+
+    // 🚀 2. N-ms7ou les logs li zaydin (Bach ma y-dirouch mouchkil dyal Foreign Key)
     @Modifying
     @Transactional
-    @Query(value = "DELETE FROM interventions WHERE id > (SELECT MAX(id) FROM (SELECT id FROM interventions ORDER BY id ASC LIMIT :keepCount) AS temp)", nativeQuery = true)
-    int deleteExcessRecords(@Param("keepCount") int keepCount);
+    @Query(value = "DELETE FROM actions_log WHERE intervention_id > :cutoffId", nativeQuery = true)
+    int deleteExcessLogs(@Param("cutoffId") Long cutoffId);
+
+    // 🚀 3. N-ms7ou les interventions li zaydin
+    @Modifying
+    @Transactional
+    @Query(value = "DELETE FROM interventions WHERE id > :cutoffId", nativeQuery = true)
+    int deleteExcessInterventions(@Param("cutoffId") Long cutoffId);
 }
