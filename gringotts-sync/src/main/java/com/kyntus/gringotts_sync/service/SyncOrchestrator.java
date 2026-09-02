@@ -25,6 +25,7 @@ public class SyncOrchestrator {
     private volatile boolean isRunning = false;
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
+    private static final int BATCH_SIZE = 500;
 
     public boolean isRunning() {
         return isRunning;
@@ -45,7 +46,7 @@ public class SyncOrchestrator {
     public void resetAndStartFromZero() {
         log.info("⚠️ RESET TOTAL DEMANDÉ...");
         stopSync();
-        
+
         try {
             phpApiClient.resetIonos();
             log.info("✅ IONOS vidé avec succès.");
@@ -68,23 +69,21 @@ public class SyncOrchestrator {
                 // 1. ASPIRATEUR
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
-                    ExportResponse exportResp = phpApiClient.export(500);
+                    ExportResponse exportResp = phpApiClient.export(BATCH_SIZE);
 
                     if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                         List<Intervention> interventions = exportResp.getData();
                         interventionRepository.saveAll(interventions);
-                        
-                        // 🛡️ L'FIX HNA : N-t2ekdou bli les IDs kaynin w machi null 9bel ma n-siftouhom
+
                         List<Long> idsToAck = interventions.stream()
                                 .map(Intervention::getId)
                                 .filter(id -> id != null)
                                 .toList();
-                                
+
                         if (!idsToAck.isEmpty()) {
                             phpApiClient.acknowledge(idsToAck);
-                            log.info("✅ {} interventions aspirées et supprimées de IONOS.", idsToAck.size());
+                            log.info("⚡ {} interventions aspirées et sécurisées.", idsToAck.size());
                         } else {
-                            log.warn("⚠️ Data reçue mais aucun ID valide trouvé. Arrêt de l'aspiration.");
                             bufferHasData = false;
                         }
                     } else {
@@ -96,13 +95,27 @@ public class SyncOrchestrator {
 
                 // 2. IMPORT
                 int currentOffset = getSavedState(OFFSET_KEY);
-                ImportResponse importResp = phpApiClient.triggerImport(currentOffset);
-                
+                int totalApi = getSavedState(TOTAL_KEY);
+
+                if (totalApi > 0 && currentOffset >= totalApi) {
+                    log.info("🏁 LIMITE ATTEINTE ({} >= {}). ARRÊT AUTOMATIQUE.", currentOffset, totalApi);
+                    isRunning = false;
+                    break;
+                }
+
+                ImportResponse importResp = phpApiClient.triggerImport(currentOffset, BATCH_SIZE);
+
                 if (importResp != null && importResp.isOk()) {
+                    if (importResp.getBatchCount() == 0) {
+                        log.info("🏁 API BOUYGUES A RETOURNÉ 0 RÉSULTATS. ARRÊT AUTOMATIQUE.");
+                        isRunning = false;
+                        break;
+                    }
+
                     saveState(OFFSET_KEY, importResp.getNextOffset());
                     saveState(TOTAL_KEY, importResp.getTotalApi());
-                    
-                    log.info("📥 Import BT : Offset {} -> {}. Total dispo : {}", 
+
+                    log.info("📥 Import BT : Offset {} -> {}. Total : {}",
                             currentOffset, importResp.getNextOffset(), importResp.getTotalApi());
 
                     if (importResp.isDone() || importResp.getNextOffset() >= importResp.getTotalApi()) {
@@ -110,13 +123,13 @@ public class SyncOrchestrator {
                         isRunning = false;
                     }
                 } else {
-                    log.warn("⚠️ Erreur lors de l'import BT, pause de 5s...");
-                    Thread.sleep(5000);
+                    log.warn("⚠️ Erreur API Bouygues, pause de 2s...");
+                    Thread.sleep(2000);
                 }
 
             } catch (Exception e) {
                 log.error("❌ Erreur dans la boucle : {}", e.getMessage());
-                try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
+                try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             }
         }
         log.info("⏹️ BOUCLE ARRÊTÉE.");

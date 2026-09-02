@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, stopSync, resetSync, SyncStats } from '../services/api';
+import { fetchStats, startSync, stopSync, resetSync, setManualOffset, SyncStats } from '../services/api';
 import StatCard from '../components/StatCard';
 import styles from './page.module.css';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
+  const [newOffset, setNewOffset] = useState<string>('');
 
   const loadStats = async () => {
     const data = await fetchStats();
@@ -27,6 +28,16 @@ export default function DashboardPage() {
     if (window.confirm("ATTENTION : Cela va effacer TOUTES les données sur IONOS et en Local, puis recommencer l'import depuis zéro. Êtes-vous sûr ?")) {
       await resetSync();
       loadStats();
+    }
+  };
+
+  const handleSetOffset = async () => {
+    const val = parseInt(newOffset);
+    if (!isNaN(val) && val >= 0) {
+      await setManualOffset(val);
+      setNewOffset('');
+      loadStats();
+      alert(`Offset mis à jour à ${val}. Cliquez sur Démarrer pour reprendre à partir d'ici.`);
     }
   };
 
@@ -81,14 +92,32 @@ export default function DashboardPage() {
             ) : (
               <button className={styles.buttonStop} onClick={handleStop}>⏹ STOPPER</button>
             )}
+            <Link href="/interventions" className={styles.buttonLink}>Voir les données</Link>
+          </div>
 
+          <div style={{ marginTop: '30px', padding: '20px', backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+            <h3 style={{ fontSize: '1rem', marginBottom: '10px', color: 'var(--kyntus-dark)' }}>Modifier l'Offset Manuellement</h3>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <input 
+                type="number" 
+                value={newOffset} 
+                onChange={(e) => setNewOffset(e.target.value)} 
+                placeholder="Ex: 711003"
+                style={{ padding: '10px', borderRadius: '6px', border: '1px solid #ccc', width: '200px' }}
+              />
+              <button 
+                onClick={handleSetOffset}
+                style={{ backgroundColor: 'var(--kyntus-blue)', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Valider l'Offset
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
             <button className={styles.buttonReset} onClick={handleReset}>
               ⚠️ RESET & RESTART FROM ZERO
             </button>
-
-            <Link href="/interventions" className={styles.buttonLink}>
-              Voir les données
-            </Link>
           </div>
         </div>
       </main>

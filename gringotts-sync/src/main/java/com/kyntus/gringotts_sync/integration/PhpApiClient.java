@@ -2,7 +2,6 @@ package com.kyntus.gringotts_sync.integration;
 
 import com.kyntus.gringotts_sync.dto.AckRequest;
 import com.kyntus.gringotts_sync.dto.ExportResponse;
-import com.kyntus.gringotts_sync.dto.ImportRequest;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,16 +35,15 @@ public class PhpApiClient {
                 .body(Map.class);
     }
 
-    public ImportResponse triggerImport(int offset) {
+    public ImportResponse triggerImport(int offset, int limit) {
         return restClient.post()
                 .uri("/api/sync/import")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(new ImportRequest(offset))
+                .body(Map.of("offset", offset, "limit", limit))
                 .retrieve()
                 .body(ImportResponse.class);
     }
 
-    // 🛡️ NOUVEAU : Appel pour vider IONOS
     public void resetIonos() {
         log.info("Appel POST /api/sync/reset pour vider IONOS");
         restClient.post()

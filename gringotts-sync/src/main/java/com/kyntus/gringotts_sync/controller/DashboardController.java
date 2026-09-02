@@ -49,11 +49,16 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
     }
 
-    // 🛡️ NOUVEAU : Endpoint Reset
     @PostMapping("/reset")
     public ResponseEntity<Map<String, String>> resetSync() {
         new Thread(syncOrchestrator::resetAndStartFromZero).start();
         return ResponseEntity.ok(Map.of("message", "Reset en cours..."));
+    }
+
+    @PostMapping("/offset/{value}")
+    public ResponseEntity<Map<String, String>> setOffset(@PathVariable int value) {
+        syncStateRepository.save(new SyncState("bt_api_offset", value));
+        return ResponseEntity.ok(Map.of("message", "Offset mis à jour à " + value));
     }
 
     @GetMapping("/interventions")
