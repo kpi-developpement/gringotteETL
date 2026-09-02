@@ -11,8 +11,8 @@ export default function InterventionsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   
-  // States pour le Modal et le Trim
-  const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
+  // State pour le Modal
+  const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
   const [trimCount, setTrimCount] = useState<string>('711003');
 
   const loadData = async () => {
@@ -51,16 +51,16 @@ export default function InterventionsPage() {
     }
   };
 
+  // 🚀 L'FIX HNA : Rje3na l'JSON l'kham m-formati
   const openDetails = (jsonString: string) => {
     try {
       const parsed = JSON.parse(jsonString);
-      setSelectedDetails(parsed);
+      setSelectedDetails(JSON.stringify(parsed, null, 2));
     } catch (e) {
-      setSelectedDetails({ error: "Aucun détail disponible ou format invalide." });
+      setSelectedDetails(jsonString || "Aucun détail disponible.");
     }
   };
 
-  // Helper pour extraire des infos du JSON pour le tableau
   const extractInfo = (jsonString: string, key: string) => {
     try {
       const parsed = JSON.parse(jsonString);
@@ -77,7 +77,6 @@ export default function InterventionsPage() {
         </div>
       </div>
 
-      {/* 🚀 NOUVEAU : Outils de nettoyage */}
       <div className={styles.toolsPanel}>
         <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
           🧹 Nettoyer les doublons exacts
@@ -132,7 +131,6 @@ export default function InterventionsPage() {
                     <td style={{ fontWeight: 'bold', color: 'var(--kyntus-dark)' }}>{inv.id_intervention}</td>
                     <td><span className={styles.badge}>{inv.etat}</span></td>
                     <td>{inv.type_intervention || '-'}</td>
-                    {/* 🚀 NOUVEAU : On extrait les détails directement dans le tableau */}
                     <td>{extractInfo(inv.detail_intervention, 'typePrestation')}</td>
                     <td>{extractInfo(inv.detail_intervention, 'presenceNacelle')}</td>
                     <td>{inv.date_modification_etat}</td>
@@ -155,31 +153,15 @@ export default function InterventionsPage() {
         )}
       </div>
 
-      {/* 🚀 NOUVEAU : Modal Designé Proprement */}
+      {/* 🚀 L'FIX HNA : Rje3na l'Modal l'khel li fih l'JSON kaml */}
       {selectedDetails && (
         <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
           <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h2>Détails de l'Intervention</h2>
+              <h2>Détails Complets (JSON)</h2>
               <button onClick={() => setSelectedDetails(null)} className={styles.closeBtn}>×</button>
             </div>
-            <div className={styles.modalBody}>
-              {selectedDetails.error ? (
-                <p style={{ color: 'red' }}>{selectedDetails.error}</p>
-              ) : (
-                <div className={styles.detailsGrid}>
-                  {Object.entries(selectedDetails).map(([key, value]) => {
-                    if (typeof value === 'object') return null; // On ignore les sous-objets complexes pour l'instant
-                    return (
-                      <div key={key} className={styles.detailItem}>
-                        <span className={styles.detailKey}>{key}</span>
-                        <span className={styles.detailValue}>{String(value)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <pre className={styles.jsonView}>{selectedDetails}</pre>
           </div>
         </div>
       )}

@@ -69,12 +69,10 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " doublons supprimés avec succès."));
     }
 
-    // 🚀 NOUVEAU : Endpoint pour couper la base de données
     @PostMapping("/trim/{keepCount}")
     public ResponseEntity<Map<String, Object>> trimDatabase(@PathVariable int keepCount) {
-        int offset = keepCount - 1;
-        if (offset < 0) offset = 0;
-        int deletedCount = interventionRepository.deleteExcessRecords(offset);
+        // 🚀 L'FIX HNA : Kan-siftou l'nombre exact l'requête
+        int deletedCount = interventionRepository.deleteExcessRecords(keepCount);
         return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " enregistrements excédentaires supprimés."));
     }
 

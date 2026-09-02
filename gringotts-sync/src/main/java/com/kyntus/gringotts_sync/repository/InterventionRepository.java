@@ -20,9 +20,9 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions a USING interventions b WHERE a.id > b.id AND a.id_intervention = b.id_intervention", nativeQuery = true)
     int deleteDuplicates();
 
-    // 🚀 NOUVEAU : Coupe la base de données pour ne garder que les X premiers enregistrements
+    // 🚀 L'FIX HNA : Requête ultra-rapide w s7i7a 100% bach t-9te3 l'base de données
     @Modifying
     @Transactional
-    @Query(value = "DELETE FROM interventions WHERE id > (SELECT id FROM interventions ORDER BY id ASC OFFSET :offset LIMIT 1)", nativeQuery = true)
-    int deleteExcessRecords(@Param("offset") int offset);
+    @Query(value = "DELETE FROM interventions WHERE id > (SELECT MAX(id) FROM (SELECT id FROM interventions ORDER BY id ASC LIMIT :keepCount) AS temp)", nativeQuery = true)
+    int deleteExcessRecords(@Param("keepCount") int keepCount);
 }

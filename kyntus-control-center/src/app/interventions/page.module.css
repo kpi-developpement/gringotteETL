@@ -32,16 +32,10 @@
 .pageBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .pageBtn:hover:not(:disabled) { background-color: #f3f4f6; }
 
-/* Modal Styles M-styli */
+/* 🚀 L'FIX HNA : L'Modal k7el w n9i l'JSON */
 .modalOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
-.modalContent { background: white; width: 100%; max-width: 800px; max-height: 90vh; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
-.modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-color); background-color: #f9fafb; border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.modalContent { background: white; width: 100%; max-width: 800px; max-height: 90vh; border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+.modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border-color); }
 .modalHeader h2 { font-size: 1.25rem; color: var(--kyntus-dark); margin: 0; }
-.closeBtn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted); line-height: 1; }
-.closeBtn:hover { color: var(--danger); }
-.modalBody { padding: 24px; overflow-y: auto; }
-
-.detailsGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
-.detailItem { background-color: #f9fafb; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 4px; }
-.detailKey { font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; letter-spacing: 0.05em; }
-.detailValue { font-size: 0.95rem; color: var(--kyntus-dark); font-weight: 500; word-break: break-word; }
+.closeBtn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted); }
+.jsonView { padding: 24px; overflow-y: auto; background-color: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 0.875rem; margin: 0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
