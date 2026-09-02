@@ -14,14 +14,14 @@ export interface Intervention {
   etat: string;
   type_intervention: string;
   date_modification_etat: string;
-  detail_intervention: string; // 🚀 L'JSON dyal les détails
+  detail_intervention: string; 
 }
 
 export interface PageResponse {
   content: Intervention[];
   totalPages: number;
   totalElements: number;
-  number: number; // Current page
+  number: number;
 }
 
 export const fetchStats = async (): Promise<SyncStats | null> => {
@@ -51,7 +51,6 @@ export const setManualOffset = async (value: number): Promise<boolean> => {
   } catch (e) { return false; }
 };
 
-// 🚀 NOUVEAU : Nettoyer les doublons
 export const cleanDuplicates = async (): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/clean-duplicates`, { method: 'POST' });
@@ -60,7 +59,15 @@ export const cleanDuplicates = async (): Promise<string> => {
   } catch (e) { return "Erreur lors du nettoyage."; }
 };
 
-// 🚀 NOUVEAU : Fetch avec Pagination et Recherche
+// 🚀 NOUVEAU : Fonction pour couper la DB
+export const trimDatabase = async (keepCount: number): Promise<string> => {
+  try {
+    const res = await fetch(`${API_URL}/trim/${keepCount}`, { method: 'POST' });
+    const data = await res.json();
+    return data.message || "Opération terminée.";
+  } catch (e) { return "Erreur lors de la suppression."; }
+};
+
 export const fetchInterventions = async (search: string, page: number, size: number = 50): Promise<PageResponse | null> => {
   try {
     const res = await fetch(`${API_URL}/interventions?search=${search}&page=${page}&size=${size}`, { cache: 'no-store' });

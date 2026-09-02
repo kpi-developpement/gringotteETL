@@ -63,17 +63,21 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Offset mis à jour à " + value));
     }
 
-    // 🚀 NOUVEAU : Endpoint pour nettoyer les doublons
     @PostMapping("/clean-duplicates")
     public ResponseEntity<Map<String, Object>> cleanDuplicates() {
         int deletedCount = interventionRepository.deleteDuplicates();
-        return ResponseEntity.ok(Map.of(
-                "ok", true,
-                "message", deletedCount + " doublons supprimés avec succès."
-        ));
+        return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " doublons supprimés avec succès."));
     }
 
-    // 🚀 NOUVEAU : Endpoint avec Pagination et Recherche
+    // 🚀 NOUVEAU : Endpoint pour couper la base de données
+    @PostMapping("/trim/{keepCount}")
+    public ResponseEntity<Map<String, Object>> trimDatabase(@PathVariable int keepCount) {
+        int offset = keepCount - 1;
+        if (offset < 0) offset = 0;
+        int deletedCount = interventionRepository.deleteExcessRecords(offset);
+        return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " enregistrements excédentaires supprimés."));
+    }
+
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(defaultValue = "") String search,

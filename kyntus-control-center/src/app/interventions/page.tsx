@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchInterventions, cleanDuplicates, Intervention, PageResponse } from '../../services/api';
+import { fetchInterventions, cleanDuplicates, trimDatabase, Intervention, PageResponse } from '../../services/api';
 import styles from './page.module.css';
 
 export default function InterventionsPage() {
@@ -11,8 +11,9 @@ export default function InterventionsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   
-  // State pour le Modal
-  const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
+  // States pour le Modal et le Trim
+  const [selectedDetails, setSelectedDetails] = useState<any | null>(null);
+  const [trimCount, setTrimCount] = useState<string>('711003');
 
   const loadData = async () => {
     setLoading(true);
@@ -23,29 +24,48 @@ export default function InterventionsPage() {
 
   useEffect(() => {
     loadData();
-  }, [page]); // Recharge quand la page change
+  }, [page]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setPage(0); // Reset à la page 0 quand on cherche
+    setPage(0);
     loadData();
   };
 
   const handleCleanDuplicates = async () => {
-    if (confirm("Voulez-vous vraiment scanner et supprimer tous les doublons dans la base locale ?")) {
+    if (confirm("Voulez-vous vraiment scanner et supprimer tous les doublons exacts ?")) {
       const msg = await cleanDuplicates();
       alert(msg);
       loadData();
     }
   };
 
+  const handleTrimDatabase = async () => {
+    const count = parseInt(trimCount);
+    if (!isNaN(count) && count > 0) {
+      if (confirm(`ATTENTION : Vous allez supprimer TOUTES les interventions après la ${count}ème. Continuer ?`)) {
+        const msg = await trimDatabase(count);
+        alert(msg);
+        loadData();
+      }
+    }
+  };
+
   const openDetails = (jsonString: string) => {
     try {
       const parsed = JSON.parse(jsonString);
-      setSelectedDetails(JSON.stringify(parsed, null, 2));
+      setSelectedDetails(parsed);
     } catch (e) {
-      setSelectedDetails(jsonString || "Aucun détail disponible.");
+      setSelectedDetails({ error: "Aucun détail disponible ou format invalide." });
     }
+  };
+
+  // Helper pour extraire des infos du JSON pour le tableau
+  const extractInfo = (jsonString: string, key: string) => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      return parsed[key] || '-';
+    } catch (e) { return '-'; }
   };
 
   return (
@@ -53,16 +73,27 @@ export default function InterventionsPage() {
       <div className={styles.header}>
         <h1 className={styles.title}>Explorateur de Données</h1>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
-            🧹 Nettoyer les doublons
-          </button>
-          <Link href="/" className={styles.backBtn}>
-            ← Retour au Dashboard
-          </Link>
+          <Link href="/" className={styles.backBtn}>← Retour au Dashboard</Link>
         </div>
       </div>
 
-      {/* Barre de recherche */}
+      {/* 🚀 NOUVEAU : Outils de nettoyage */}
+      <div className={styles.toolsPanel}>
+        <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
+          🧹 Nettoyer les doublons exacts
+        </button>
+        <div className={styles.trimBox}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Garder uniquement les premiers :</span>
+          <input 
+            type="number" 
+            value={trimCount} 
+            onChange={(e) => setTrimCount(e.target.value)} 
+            className={styles.trimInput}
+          />
+          <button onClick={handleTrimDatabase} className={styles.trimBtn}>✂️ Couper la base</button>
+        </div>
+      </div>
+
       <form onSubmit={handleSearch} className={styles.searchBar}>
         <input 
           type="text" 
@@ -85,10 +116,11 @@ export default function InterventionsPage() {
               <thead>
                 <tr>
                   <th>ID Local</th>
-                  <th>ID EPS (Bouygues)</th>
-                  <th>Environnement</th>
+                  <th>ID EPS</th>
                   <th>État</th>
                   <th>Type</th>
+                  <th>Prestation</th>
+                  <th>Nacelle</th>
                   <th>Date Modif</th>
                   <th>Actions</th>
                 </tr>
@@ -96,11 +128,13 @@ export default function InterventionsPage() {
               <tbody>
                 {data.content.map((inv) => (
                   <tr key={inv.id}>
-                    <td>#{inv.id}</td>
-                    <td style={{ fontWeight: 'bold' }}>{inv.id_intervention}</td>
-                    <td><span className={styles.badge}>{inv.environment}</span></td>
-                    <td>{inv.etat}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>#{inv.id}</td>
+                    <td style={{ fontWeight: 'bold', color: 'var(--kyntus-dark)' }}>{inv.id_intervention}</td>
+                    <td><span className={styles.badge}>{inv.etat}</span></td>
                     <td>{inv.type_intervention || '-'}</td>
+                    {/* 🚀 NOUVEAU : On extrait les détails directement dans le tableau */}
+                    <td>{extractInfo(inv.detail_intervention, 'typePrestation')}</td>
+                    <td>{extractInfo(inv.detail_intervention, 'presenceNacelle')}</td>
                     <td>{inv.date_modification_etat}</td>
                     <td>
                       <button onClick={() => openDetails(inv.detail_intervention)} className={styles.detailsBtn}>
@@ -112,37 +146,40 @@ export default function InterventionsPage() {
               </tbody>
             </table>
 
-            {/* Pagination */}
             <div className={styles.pagination}>
-              <button 
-                disabled={data.number === 0} 
-                onClick={() => setPage(p => p - 1)}
-                className={styles.pageBtn}
-              >
-                Précédent
-              </button>
+              <button disabled={data.number === 0} onClick={() => setPage(p => p - 1)} className={styles.pageBtn}>Précédent</button>
               <span>Page {data.number + 1} sur {data.totalPages} ({data.totalElements} résultats)</span>
-              <button 
-                disabled={data.number >= data.totalPages - 1} 
-                onClick={() => setPage(p => p + 1)}
-                className={styles.pageBtn}
-              >
-                Suivant
-              </button>
+              <button disabled={data.number >= data.totalPages - 1} onClick={() => setPage(p => p + 1)} className={styles.pageBtn}>Suivant</button>
             </div>
           </>
         )}
       </div>
 
-      {/* Modal pour afficher les détails JSON */}
+      {/* 🚀 NOUVEAU : Modal Designé Proprement */}
       {selectedDetails && (
         <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
           <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h2>Détails Complets (JSON)</h2>
+              <h2>Détails de l'Intervention</h2>
               <button onClick={() => setSelectedDetails(null)} className={styles.closeBtn}>×</button>
             </div>
-            <pre className={styles.jsonView}>{selectedDetails}</pre>
+            <div className={styles.modalBody}>
+              {selectedDetails.error ? (
+                <p style={{ color: 'red' }}>{selectedDetails.error}</p>
+              ) : (
+                <div className={styles.detailsGrid}>
+                  {Object.entries(selectedDetails).map(([key, value]) => {
+                    if (typeof value === 'object') return null; // On ignore les sous-objets complexes pour l'instant
+                    return (
+                      <div key={key} className={styles.detailItem}>
+                        <span className={styles.detailKey}>{key}</span>
+                        <span className={styles.detailValue}>{String(value)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
