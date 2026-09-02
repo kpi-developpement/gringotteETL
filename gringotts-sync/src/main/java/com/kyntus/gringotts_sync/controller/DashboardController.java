@@ -6,11 +6,13 @@ import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -61,8 +63,25 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Offset mis à jour à " + value));
     }
 
+    // 🚀 NOUVEAU : Endpoint pour nettoyer les doublons
+    @PostMapping("/clean-duplicates")
+    public ResponseEntity<Map<String, Object>> cleanDuplicates() {
+        int deletedCount = interventionRepository.deleteDuplicates();
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "message", deletedCount + " doublons supprimés avec succès."
+        ));
+    }
+
+    // 🚀 NOUVEAU : Endpoint avec Pagination et Recherche
     @GetMapping("/interventions")
-    public ResponseEntity<List<Intervention>> getLatestInterventions() {
-        return ResponseEntity.ok(interventionRepository.findTop50ByOrderByCreatedAtDesc());
+    public ResponseEntity<Page<Intervention>> getInterventions(
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Intervention> result = interventionRepository.findByIdInterventionContainingIgnoreCaseOrderByCreatedAtDesc(search, pageable);
+        return ResponseEntity.ok(result);
     }
 }

@@ -1,4 +1,3 @@
-cat << 'EOF' > kyntus-control-center/src/services/api.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://10.10.10.25:8117/api/dashboard';
 
 export interface SyncStats {
@@ -6,6 +5,23 @@ export interface SyncStats {
   current_bt_offset: number;
   total_api: number;
   is_running: boolean;
+}
+
+export interface Intervention {
+  id: number;
+  id_intervention: string;
+  environment: string;
+  etat: string;
+  type_intervention: string;
+  date_modification_etat: string;
+  detail_intervention: string; // 🚀 L'JSON dyal les détails
+}
+
+export interface PageResponse {
+  content: Intervention[];
+  totalPages: number;
+  totalElements: number;
+  number: number; // Current page
 }
 
 export const fetchStats = async (): Promise<SyncStats | null> => {
@@ -28,11 +44,27 @@ export const resetSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/reset`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
-// 🚀 HADI HIYA LI KANT NA9SA
 export const setManualOffset = async (value: number): Promise<boolean> => {
   try {
     const res = await fetch(`${API_URL}/offset/${value}`, { method: 'POST' });
     return res.ok;
   } catch (e) { return false; }
 };
-EOF
+
+// 🚀 NOUVEAU : Nettoyer les doublons
+export const cleanDuplicates = async (): Promise<string> => {
+  try {
+    const res = await fetch(`${API_URL}/clean-duplicates`, { method: 'POST' });
+    const data = await res.json();
+    return data.message || "Opération terminée.";
+  } catch (e) { return "Erreur lors du nettoyage."; }
+};
+
+// 🚀 NOUVEAU : Fetch avec Pagination et Recherche
+export const fetchInterventions = async (search: string, page: number, size: number = 50): Promise<PageResponse | null> => {
+  try {
+    const res = await fetch(`${API_URL}/interventions?search=${search}&page=${page}&size=${size}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Erreur réseau');
+    return await res.json();
+  } catch (error) { return null; }
+};
