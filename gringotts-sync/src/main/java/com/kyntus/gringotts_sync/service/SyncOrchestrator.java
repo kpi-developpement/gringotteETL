@@ -171,14 +171,17 @@ public class SyncOrchestrator {
                     if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                         List<Intervention> incomingData = exportResp.getData();
 
-                        // 🚀 L'FIX HNA : On sauvegarde les IDs de IONOS dans une liste immuable AVANT de les modifier
+                        // 🚀 L'FIX HNA : On s'assure que les IDs ne sont pas nuls avant de les envoyer à PHP
                         List<Long> idsToAck = incomingData.stream()
                                 .map(Intervention::getId)
-                                .filter(id -> id != null)
+                                .filter(id -> id != null && id > 0)
                                 .collect(Collectors.toList());
 
                         transactionTemplate.executeWithoutResult(status -> {
-                            List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).toList();
+                            List<String> incomingEpsIds = incomingData.stream()
+                                    .map(Intervention::getIdIntervention)
+                                    .filter(id -> id != null && !id.isEmpty())
+                                    .toList();
 
                             List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
                             Map<String, Intervention> existingMap = existingData.stream()
@@ -187,6 +190,10 @@ public class SyncOrchestrator {
                             List<Intervention> toSave = new ArrayList<>();
 
                             for (Intervention incoming : incomingData) {
+                                if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) {
+                                    continue; // On ignore les lignes corrompues sans ID EPS
+                                }
+
                                 Intervention existing = existingMap.get(incoming.getIdIntervention());
                                 if (existing != null) {
                                     existing.setEtat(incoming.getEtat());
@@ -215,12 +222,14 @@ public class SyncOrchestrator {
                             interventionRepository.saveAll(toSave);
                         });
 
-                        // 🚀 On envoie les IDs originaux à PHP
+                        // 🚀 L'FIX HNA : On n'envoie l'ACK que si on a des IDs valides
                         if (!idsToAck.isEmpty()) {
                             phpApiClient.acknowledge(idsToAck);
+                            log.info("⚡ {} interventions traitées (Insert/Update) et effacées de IONOS.", idsToAck.size());
+                        } else {
+                            log.warn("⚠️ Data reçue mais aucun ID IONOS valide. Le buffer risque de bloquer.");
+                            bufferHasData = false;
                         }
-
-                        log.info("⚡ {} interventions traitées (Insert/Update) et effacées de IONOS.", incomingData.size());
                     } else {
                         bufferHasData = false;
                     }

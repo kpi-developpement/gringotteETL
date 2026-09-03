@@ -1,5 +1,6 @@
 package com.kyntus.gringotts_sync.domain;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
@@ -21,7 +22,8 @@ public class Intervention {
     @JsonProperty("id")
     private Long id;
 
-    @JsonProperty("id_intervention")
+    // 🚀 L'FIX HNA : On accepte les deux noms de variables envoyés par Bouygues/PHP
+    @JsonAlias({"id_intervention", "identifiant"})
     @Column(name = "id_intervention", nullable = false)
     private String idIntervention;
 
@@ -70,7 +72,6 @@ public class Intervention {
     @Column(name = "detail_intervention", columnDefinition = "TEXT")
     private String detailIntervention;
 
-    // 🚀 L'FIX HNA : FetchType.EAGER bach y-jbed les logs f d9a we7da bla ma y-tsenna session
     @JsonProperty("actions_log")
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     @JoinColumn(name = "intervention_id")
