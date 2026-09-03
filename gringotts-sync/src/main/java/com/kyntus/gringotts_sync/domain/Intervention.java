@@ -17,6 +17,7 @@ import java.util.List;
 public class Intervention {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // 🚀 L'FIX HNA : Auto-Increment
     @JsonProperty("id")
     private Long id;
 

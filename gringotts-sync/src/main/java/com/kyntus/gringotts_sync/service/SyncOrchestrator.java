@@ -75,6 +75,20 @@ public class SyncOrchestrator {
         stopSync();
 
         try {
+            log.info("🧹 Début du Smart Clean (Suppression des doublons par lots)...");
+            int totalDeleted = 0;
+            while (true) {
+                List<Long> duplicateIds = interventionRepository.findDuplicateIds();
+                if (duplicateIds.isEmpty()) {
+                    break;
+                }
+                interventionRepository.deleteLogsByIds(duplicateIds);
+                int deleted = interventionRepository.deleteInterventionsByIds(duplicateIds);
+                totalDeleted += deleted;
+                log.info("   -> {} doublons supprimés (Total: {})", deleted, totalDeleted);
+            }
+            log.info("🧹 Smart Clean terminé ! Total des doublons supprimés : {}", totalDeleted);
+
             List<Intervention> brokenInterventions = interventionRepository.findInterventionsWithMissingDetails();
             healTotal = brokenInterventions.size();
             log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", healTotal);
@@ -84,12 +98,13 @@ public class SyncOrchestrator {
                 return;
             }
 
+            int chunkSize = 50;
             ObjectMapper mapper = new ObjectMapper();
 
-            for (int i = 0; i < brokenInterventions.size(); i += HEAL_CHUNK_SIZE) {
+            for (int i = 0; i < brokenInterventions.size(); i += chunkSize) {
                 if (!isHealing) break;
 
-                List<Intervention> chunk = brokenInterventions.subList(i, Math.min(i + HEAL_CHUNK_SIZE, brokenInterventions.size()));
+                List<Intervention> chunk = brokenInterventions.subList(i, Math.min(i + chunkSize, brokenInterventions.size()));
                 List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
 
                 boolean success = false;
@@ -152,6 +167,13 @@ public class SyncOrchestrator {
 
                     if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                         List<Intervention> incomingData = exportResp.getData();
+
+                        // 🚀 L'FIX HNA : On extrait les IDs de IONOS AVANT de les modifier !
+                        List<Long> idsToAck = incomingData.stream()
+                                .map(Intervention::getId)
+                                .filter(id -> id != null)
+                                .toList();
+
                         List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).toList();
 
                         List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
@@ -169,6 +191,7 @@ public class SyncOrchestrator {
                                 existing.setPayloadRecu(incoming.getPayloadRecu());
                                 toSave.add(existing);
                             } else {
+                                // Maintenant on peut mettre à null en toute sécurité pour Postgres
                                 incoming.setId(null);
                                 toSave.add(incoming);
                             }
@@ -176,8 +199,10 @@ public class SyncOrchestrator {
 
                         interventionRepository.saveAll(toSave);
 
-                        List<Long> idsToAck = incomingData.stream().map(Intervention::getId).toList();
-                        phpApiClient.acknowledge(idsToAck);
+                        // On envoie les vrais IDs à PHP pour les supprimer
+                        if (!idsToAck.isEmpty()) {
+                            phpApiClient.acknowledge(idsToAck);
+                        }
 
                         log.info("⚡ {} interventions traitées (Insert/Update) et effacées de IONOS.", toSave.size());
                     } else {
@@ -189,8 +214,8 @@ public class SyncOrchestrator {
 
                 int currentOffset = getSavedState(OFFSET_KEY);
                 int totalApi = getSavedState(TOTAL_KEY);
+                long totalLocal = interventionRepository.count();
 
-                // 🚀 L'FIX HNA : La condition de 100% est basée sur l'Offset, pas sur le Total Local
                 if (totalApi > 0 && currentOffset >= totalApi) {
                     log.info("🏁 100% ATTEINT ! L'Offset a parcouru toutes les données de Bouygues. ARRÊT AUTOMATIQUE.");
                     isRunning = false;
