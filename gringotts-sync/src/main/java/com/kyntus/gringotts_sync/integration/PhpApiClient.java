@@ -52,7 +52,7 @@ public class PhpApiClient {
                 .toBodilessEntity();
     }
 
-    // 🚀 NOUVEAU : Appel Heal
+    // 🚀 L'Appel Heal
     public Map<String, Object> healData(List<String> ids) {
         log.info("Appel POST /api/sync/heal pour {} IDs", ids.size());
         return restClient.post()

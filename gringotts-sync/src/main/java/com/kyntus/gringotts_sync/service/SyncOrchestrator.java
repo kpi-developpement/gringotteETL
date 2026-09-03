@@ -1,6 +1,6 @@
 package com.kyntus.gringotts_sync.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper; // 🚀 L'Import li kan na9ess
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.dto.ExportResponse;
@@ -63,7 +63,7 @@ public class SyncOrchestrator {
         startSync();
     }
 
-    // 🚀 NOUVEAU : La fonction Heal
+    // 🚀 La fonction de Réparation (Logique 100% Java)
     public void healDatabase() {
         log.info("🛠️ DÉBUT DE LA RÉPARATION DES DONNÉES...");
         stopSync();
@@ -76,7 +76,7 @@ public class SyncOrchestrator {
             log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", brokenInterventions.size());
 
             int chunkSize = 50;
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = new ObjectMapper(); // 🚀 Java s'occupe de la conversion JSON
 
             for (int i = 0; i < brokenInterventions.size(); i += chunkSize) {
                 List<Intervention> chunk = brokenInterventions.subList(i, Math.min(i + chunkSize, brokenInterventions.size()));
@@ -90,6 +90,7 @@ public class SyncOrchestrator {
                     for (Intervention inv : chunk) {
                         Object detail = healedData.get(inv.getIdIntervention());
                         if (detail != null) {
+                            // 🚀 On convertit l'objet reçu en String JSON avant de sauvegarder
                             inv.setDetailIntervention(mapper.writeValueAsString(detail));
                         }
                     }
