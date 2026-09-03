@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -73,7 +74,6 @@ public class SyncOrchestrator {
         stopSync();
 
         try {
-            // 🚀 L'FIX HNA : Nettoyage par paquets de 1000 pour éviter le Deadlock
             log.info("🧹 Début du Smart Clean (Suppression des doublons par lots)...");
             int totalDeleted = 0;
             while (true) {
@@ -88,7 +88,6 @@ public class SyncOrchestrator {
             }
             log.info("🧹 Smart Clean terminé ! Total des doublons supprimés : {}", totalDeleted);
 
-            // 2. Récupération des détails manquants
             List<Intervention> brokenInterventions = interventionRepository.findInterventionsWithMissingDetails();
             healTotal = brokenInterventions.size();
             log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", healTotal);
@@ -99,7 +98,6 @@ public class SyncOrchestrator {
             }
 
             int chunkSize = 50;
-            ObjectMapper mapper = new ObjectMapper();
 
             for (int i = 0; i < brokenInterventions.size(); i += chunkSize) {
                 List<Intervention> chunk = brokenInterventions.subList(i, Math.min(i + chunkSize, brokenInterventions.size()));
@@ -108,7 +106,15 @@ public class SyncOrchestrator {
                 Map<String, Object> response = phpApiClient.healData(idsToHeal);
 
                 if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
-                    Map<String, String> healedData = (Map<String, String>) response.get("data");
+                    Object rawData = response.get("data");
+                    Map<String, String> healedData = new HashMap<>();
+
+                    // 🚀 L'FIX HNA : On vérifie le type avant de caster pour éviter le ClassCastException
+                    if (rawData instanceof Map) {
+                        healedData = (Map<String, String>) rawData;
+                    } else {
+                        log.warn("⚠️ Bouygues n'a retourné aucun détail pour ce paquet (Array vide reçu).");
+                    }
 
                     for (Intervention inv : chunk) {
                         String detailStr = healedData.get(inv.getIdIntervention());
