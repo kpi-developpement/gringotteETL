@@ -12,7 +12,7 @@ import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate; // 🚀 L'IMPORT JDID
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,8 +28,6 @@ public class SyncOrchestrator {
     private final PhpApiClient phpApiClient;
     private final InterventionRepository interventionRepository;
     private final SyncStateRepository syncStateRepository;
-
-    // 🚀 L'FIX HNA : L'moteur manuel dyal les transactions
     private final TransactionTemplate transactionTemplate;
 
     private volatile boolean isRunning = false;
@@ -149,7 +147,7 @@ public class SyncOrchestrator {
                 }
 
                 if (!success) {
-                    log.error("❌ Impossible de réparer ce paquet après {} tentatives. On passe au suivant.", maxRetries);
+                    log.error("❌ Impossible de réparer ce paquet après {} tentatives. On passe au suivant pour ne pas bloquer le système.", maxRetries);
                     healCurrent += chunk.size();
                 }
             }
@@ -172,12 +170,13 @@ public class SyncOrchestrator {
 
                     if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                         List<Intervention> incomingData = exportResp.getData();
+
+                        // 🚀 L'FIX HNA : On sauvegarde les IDs de IONOS dans une liste immuable AVANT de les modifier
                         List<Long> idsToAck = incomingData.stream()
                                 .map(Intervention::getId)
                                 .filter(id -> id != null)
-                                .toList();
+                                .collect(Collectors.toList());
 
-                        // 🚀 L'FIX HNA : On ouvre une VRAIE transaction manuellement pour ce Thread
                         transactionTemplate.executeWithoutResult(status -> {
                             List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).toList();
 
@@ -198,7 +197,6 @@ public class SyncOrchestrator {
                                     if (incoming.getActionsLog() != null && !incoming.getActionsLog().isEmpty()) {
                                         for (ActionLog newLog : incoming.getActionsLog()) {
                                             newLog.setId(null);
-                                            // 🚀 PLUS D'ERREUR ICI car la session est ouverte par TransactionTemplate !
                                             existing.getActionsLog().add(newLog);
                                         }
                                     }
@@ -217,6 +215,7 @@ public class SyncOrchestrator {
                             interventionRepository.saveAll(toSave);
                         });
 
+                        // 🚀 On envoie les IDs originaux à PHP
                         if (!idsToAck.isEmpty()) {
                             phpApiClient.acknowledge(idsToAck);
                         }
