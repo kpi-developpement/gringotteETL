@@ -12,7 +12,7 @@ import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional; // 🚀 L'Import jdid
+import org.springframework.transaction.support.TransactionTemplate; // 🚀 L'IMPORT JDID
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,6 +28,9 @@ public class SyncOrchestrator {
     private final PhpApiClient phpApiClient;
     private final InterventionRepository interventionRepository;
     private final SyncStateRepository syncStateRepository;
+
+    // 🚀 L'FIX HNA : L'moteur manuel dyal les transactions
+    private final TransactionTemplate transactionTemplate;
 
     private volatile boolean isRunning = false;
     private volatile boolean isHealing = false;
@@ -146,7 +149,7 @@ public class SyncOrchestrator {
                 }
 
                 if (!success) {
-                    log.error("❌ Impossible de réparer ce paquet après {} tentatives. On passe au suivant pour ne pas bloquer le système.", maxRetries);
+                    log.error("❌ Impossible de réparer ce paquet après {} tentatives. On passe au suivant.", maxRetries);
                     healCurrent += chunk.size();
                 }
             }
@@ -159,9 +162,7 @@ public class SyncOrchestrator {
         }
     }
 
-    // 🚀 L'FIX HNA : L'annotation @Transactional bach Hibernate y-khelik t-9ra les logs (Lazy Loading)
-    @Transactional
-    protected void processLoop() {
+    private void processLoop() {
         while (isRunning) {
             try {
                 // 1. ASPIRATEUR
@@ -176,47 +177,51 @@ public class SyncOrchestrator {
                                 .filter(id -> id != null)
                                 .toList();
 
-                        List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).toList();
+                        // 🚀 L'FIX HNA : On ouvre une VRAIE transaction manuellement pour ce Thread
+                        transactionTemplate.executeWithoutResult(status -> {
+                            List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).toList();
 
-                        List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
-                        Map<String, Intervention> existingMap = existingData.stream()
-                                .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
+                            List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
+                            Map<String, Intervention> existingMap = existingData.stream()
+                                    .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
 
-                        List<Intervention> toSave = new ArrayList<>();
+                            List<Intervention> toSave = new ArrayList<>();
 
-                        for (Intervention incoming : incomingData) {
-                            Intervention existing = existingMap.get(incoming.getIdIntervention());
-                            if (existing != null) {
-                                existing.setEtat(incoming.getEtat());
-                                existing.setDateModificationEtat(incoming.getDateModificationEtat());
-                                existing.setDetailIntervention(incoming.getDetailIntervention());
-                                existing.setPayloadRecu(incoming.getPayloadRecu());
+                            for (Intervention incoming : incomingData) {
+                                Intervention existing = existingMap.get(incoming.getIdIntervention());
+                                if (existing != null) {
+                                    existing.setEtat(incoming.getEtat());
+                                    existing.setDateModificationEtat(incoming.getDateModificationEtat());
+                                    existing.setDetailIntervention(incoming.getDetailIntervention());
+                                    existing.setPayloadRecu(incoming.getPayloadRecu());
 
-                                if (incoming.getActionsLog() != null && !incoming.getActionsLog().isEmpty()) {
-                                    for (ActionLog newLog : incoming.getActionsLog()) {
-                                        newLog.setId(null);
-                                        existing.getActionsLog().add(newLog);
+                                    if (incoming.getActionsLog() != null && !incoming.getActionsLog().isEmpty()) {
+                                        for (ActionLog newLog : incoming.getActionsLog()) {
+                                            newLog.setId(null);
+                                            // 🚀 PLUS D'ERREUR ICI car la session est ouverte par TransactionTemplate !
+                                            existing.getActionsLog().add(newLog);
+                                        }
                                     }
-                                }
-                                toSave.add(existing);
-                            } else {
-                                incoming.setId(null);
-                                if (incoming.getActionsLog() != null) {
-                                    for (ActionLog log : incoming.getActionsLog()) {
-                                        log.setId(null);
+                                    toSave.add(existing);
+                                } else {
+                                    incoming.setId(null);
+                                    if (incoming.getActionsLog() != null) {
+                                        for (ActionLog log : incoming.getActionsLog()) {
+                                            log.setId(null);
+                                        }
                                     }
+                                    toSave.add(incoming);
                                 }
-                                toSave.add(incoming);
                             }
-                        }
 
-                        interventionRepository.saveAll(toSave);
+                            interventionRepository.saveAll(toSave);
+                        });
 
                         if (!idsToAck.isEmpty()) {
                             phpApiClient.acknowledge(idsToAck);
                         }
 
-                        log.info("⚡ {} interventions traitées (Insert/Update) et effacées de IONOS.", toSave.size());
+                        log.info("⚡ {} interventions traitées (Insert/Update) et effacées de IONOS.", incomingData.size());
                     } else {
                         bufferHasData = false;
                     }
