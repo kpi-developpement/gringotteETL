@@ -41,17 +41,21 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 NOUVEAU : Le bouton Heal
   const handleHeal = async () => {
     if (window.confirm("Cela va nettoyer les doublons et re-télécharger les détails manquants. Continuer ?")) {
-      const msg = await healData();
-      alert(msg);
+      await healData();
+      loadStats();
     }
   };
 
   const totalApi = stats?.total_api || 0;
   const totalLocal = stats?.total_interventions_local || 0;
   const progress = totalApi > 0 ? Math.min(100, Math.round((totalLocal / totalApi) * 100)) : 0;
+
+  // 🚀 NOUVEAU : Calcul de la progression de la réparation
+  const healTotal = stats?.heal_total || 0;
+  const healCurrent = stats?.heal_current || 0;
+  const healProgress = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 0;
 
   return (
     <div className={styles.container}>
@@ -61,22 +65,40 @@ export default function DashboardPage() {
           <p className={styles.pageSubtitle}>Mode Turbo (Logique Java) 🚀</p>
         </div>
         <div className={styles.statusContainer}>
-          <span className={stats?.is_running ? styles.statusOnline : styles.statusOffline}>
-            {stats?.is_running ? '🟢 EN COURS D\'ASPIRATION' : '🔴 À L\'ARRÊT'}
+          {/* 🚀 NOUVEAU : Affichage du statut HEALING */}
+          <span className={stats?.is_healing ? styles.statusHealing : stats?.is_running ? styles.statusOnline : styles.statusOffline}>
+            {stats?.is_healing ? '🛠️ RÉPARATION EN COURS' : stats?.is_running ? '🟢 EN COURS D\'ASPIRATION' : '🔴 À L\'ARRÊT'}
           </span>
         </div>
       </header>
 
       <main className={styles.main}>
-        <div className={styles.progressContainer}>
-          <div className={styles.progressHeader}>
-            <span className={styles.progressTitle}>Progression Réelle (EPS Uniques)</span>
-            <span className={styles.progressText}>{totalLocal.toLocaleString()} / {totalApi.toLocaleString()} ({progress}%)</span>
+        
+        {/* 🚀 NOUVEAU : Progress Bar de la Réparation (Visible uniquement si is_healing = true) */}
+        {stats?.is_healing && (
+          <div className={styles.progressContainer} style={{ borderColor: '#059669', backgroundColor: '#ecfdf5' }}>
+            <div className={styles.progressHeader}>
+              <span className={styles.progressTitle} style={{ color: '#065f46' }}>Progression de la Réparation (Détails manquants)</span>
+              <span className={styles.progressText} style={{ color: '#047857' }}>{healCurrent.toLocaleString()} / {healTotal.toLocaleString()} ({healProgress}%)</span>
+            </div>
+            <div className={styles.progressBarBg}>
+              <div className={styles.progressBarFill} style={{ width: `${healProgress}%`, background: 'linear-gradient(90deg, #10b981, #34d399)' }}></div>
+            </div>
           </div>
-          <div className={styles.progressBarBg}>
-            <div className={styles.progressBarFill} style={{ width: `${progress}%` }}></div>
+        )}
+
+        {/* Progress Bar Normale */}
+        {!stats?.is_healing && (
+          <div className={styles.progressContainer}>
+            <div className={styles.progressHeader}>
+              <span className={styles.progressTitle}>Progression Réelle (EPS Uniques)</span>
+              <span className={styles.progressText}>{totalLocal.toLocaleString()} / {totalApi.toLocaleString()} ({progress}%)</span>
+            </div>
+            <div className={styles.progressBarBg}>
+              <div className={styles.progressBarFill} style={{ width: `${progress}%` }}></div>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className={styles.grid}>
           <StatCard 
@@ -95,19 +117,21 @@ export default function DashboardPage() {
           <h2 className={styles.panelTitle}>Contrôle du Moteur</h2>
           
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '20px', flexWrap: 'wrap' }}>
-            {!stats?.is_running ? (
+            {!stats?.is_running && !stats?.is_healing ? (
               <button className={styles.buttonStart} onClick={handleStart}>▶ DÉMARRER</button>
             ) : (
-              <button className={styles.buttonStop} onClick={handleStop}>⏹ STOPPER</button>
+              <button className={styles.buttonStop} onClick={handleStop} disabled={stats?.is_healing}>
+                {stats?.is_healing ? 'Veuillez patienter...' : '⏹ STOPPER'}
+              </button>
             )}
             <Link href="/interventions" className={styles.buttonLink}>Voir les données</Link>
           </div>
 
-          {/* 🚀 L'Bouton Heal */}
           <div style={{ marginTop: '20px' }}>
             <button 
               onClick={handleHeal}
-              style={{ backgroundColor: '#059669', color: 'white', border: 'none', padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '6px', cursor: 'pointer' }}
+              disabled={stats?.is_running || stats?.is_healing}
+              style={{ backgroundColor: (stats?.is_running || stats?.is_healing) ? '#9ca3af' : '#059669', color: 'white', border: 'none', padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '6px', cursor: (stats?.is_running || stats?.is_healing) ? 'not-allowed' : 'pointer' }}
             >
               🛠️ RÉPARER LES DONNÉES (Smart Clean & Heal)
             </button>
@@ -125,7 +149,8 @@ export default function DashboardPage() {
               />
               <button 
                 onClick={handleSetOffset}
-                style={{ backgroundColor: 'var(--kyntus-blue)', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+                disabled={stats?.is_running || stats?.is_healing}
+                style={{ backgroundColor: (stats?.is_running || stats?.is_healing) ? '#9ca3af' : 'var(--kyntus-blue)', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: (stats?.is_running || stats?.is_healing) ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
               >
                 Valider l'Offset
               </button>
@@ -133,7 +158,7 @@ export default function DashboardPage() {
           </div>
 
           <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
-            <button className={styles.buttonReset} onClick={handleReset}>
+            <button className={styles.buttonReset} onClick={handleReset} disabled={stats?.is_running || stats?.is_healing}>
               ⚠️ RESET & RESTART FROM ZERO
             </button>
           </div>

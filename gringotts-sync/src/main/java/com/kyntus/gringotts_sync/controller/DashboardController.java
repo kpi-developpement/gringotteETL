@@ -36,6 +36,11 @@ public class DashboardController {
         stats.put("total_api", totalApi);
         stats.put("is_running", syncOrchestrator.isRunning());
 
+        // 🚀 NOUVEAU : On envoie les stats de la réparation au Frontend
+        stats.put("is_healing", syncOrchestrator.isHealing());
+        stats.put("heal_total", syncOrchestrator.getHealTotal());
+        stats.put("heal_current", syncOrchestrator.getHealCurrent());
+
         return ResponseEntity.ok(stats);
     }
 
@@ -75,7 +80,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " enregistrements excédentaires supprimés."));
     }
 
-    // 🚀 NOUVEAU : Endpoint Heal
     @PostMapping("/heal")
     public ResponseEntity<Map<String, String>> healData() {
         new Thread(syncOrchestrator::healDatabase).start();

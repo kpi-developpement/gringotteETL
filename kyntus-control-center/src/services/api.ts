@@ -5,6 +5,10 @@ export interface SyncStats {
   current_bt_offset: number;
   total_api: number;
   is_running: boolean;
+  // 🚀 NOUVEAU
+  is_healing: boolean;
+  heal_total: number;
+  heal_current: number;
 }
 
 export interface Intervention {
@@ -67,7 +71,6 @@ export const trimDatabase = async (keepCount: number): Promise<string> => {
   } catch (e) { return "Erreur lors de la suppression."; }
 };
 
-// 🚀 NOUVEAU
 export const healData = async (): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/heal`, { method: 'POST' });

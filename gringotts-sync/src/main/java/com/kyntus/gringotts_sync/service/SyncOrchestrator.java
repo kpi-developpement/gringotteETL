@@ -1,6 +1,6 @@
 package com.kyntus.gringotts_sync.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper; // 🚀 L'Import li kan na9ess
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.dto.ExportResponse;
@@ -27,16 +27,23 @@ public class SyncOrchestrator {
     private final SyncStateRepository syncStateRepository;
 
     private volatile boolean isRunning = false;
+
+    // 🚀 NOUVEAU : Variables pour suivre la réparation (Heal)
+    private volatile boolean isHealing = false;
+    private volatile int healTotal = 0;
+    private volatile int healCurrent = 0;
+
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
     private static final int BATCH_SIZE = 500;
 
-    public boolean isRunning() {
-        return isRunning;
-    }
+    public boolean isRunning() { return isRunning; }
+    public boolean isHealing() { return isHealing; }
+    public int getHealTotal() { return healTotal; }
+    public int getHealCurrent() { return healCurrent; }
 
     public void startSync() {
-        if (isRunning) return;
+        if (isRunning || isHealing) return;
         isRunning = true;
         log.info("🚀 DÉMARRAGE DU MODE TURBO (LOGIQUE JAVA)");
         new Thread(this::processLoop).start();
@@ -52,19 +59,23 @@ public class SyncOrchestrator {
         stopSync();
         try {
             phpApiClient.resetIonos();
-            log.info("✅ IONOS vidé avec succès.");
         } catch (Exception e) {
-            log.error("Erreur lors du vidage de IONOS : {}", e.getMessage());
+            log.error("Erreur vidage IONOS : {}", e.getMessage());
         }
         interventionRepository.deleteAll();
-        log.info("✅ Base de données locale vidée.");
         saveState(OFFSET_KEY, 0);
         saveState(TOTAL_KEY, 0);
         startSync();
     }
 
-    // 🚀 La fonction de Réparation (Logique 100% Java)
+    // 🚀 L'FIX HNA : On met à jour les variables de progression
     public void healDatabase() {
+        if (isHealing) return; // Empêche de lancer 2 fois si tu cliques 2 fois
+
+        isHealing = true;
+        healTotal = 0;
+        healCurrent = 0;
+
         log.info("🛠️ DÉBUT DE LA RÉPARATION DES DONNÉES...");
         stopSync();
 
@@ -73,10 +84,16 @@ public class SyncOrchestrator {
             log.info("🧹 Smart Clean terminé : {} doublons supprimés.", deleted);
 
             List<Intervention> brokenInterventions = interventionRepository.findInterventionsWithMissingDetails();
-            log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", brokenInterventions.size());
+            healTotal = brokenInterventions.size();
+            log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", healTotal);
+
+            if (healTotal == 0) {
+                isHealing = false;
+                return;
+            }
 
             int chunkSize = 50;
-            ObjectMapper mapper = new ObjectMapper(); // 🚀 Java s'occupe de la conversion JSON
+            ObjectMapper mapper = new ObjectMapper();
 
             for (int i = 0; i < brokenInterventions.size(); i += chunkSize) {
                 List<Intervention> chunk = brokenInterventions.subList(i, Math.min(i + chunkSize, brokenInterventions.size()));
@@ -90,18 +107,22 @@ public class SyncOrchestrator {
                     for (Intervention inv : chunk) {
                         Object detail = healedData.get(inv.getIdIntervention());
                         if (detail != null) {
-                            // 🚀 On convertit l'objet reçu en String JSON avant de sauvegarder
                             inv.setDetailIntervention(mapper.writeValueAsString(detail));
                         }
                     }
                     interventionRepository.saveAll(chunk);
-                    log.info("✅ Paquet réparé et sauvegardé ({} / {})", Math.min(i + chunkSize, brokenInterventions.size()), brokenInterventions.size());
+
+                    // 🚀 Mise à jour de la progression
+                    healCurrent += chunk.size();
+                    log.info("✅ Paquet réparé ({} / {})", healCurrent, healTotal);
                 }
             }
             log.info("🎉 RÉPARATION TERMINÉE AVEC SUCCÈS !");
 
         } catch (Exception e) {
             log.error("❌ Erreur pendant la réparation : ", e);
+        } finally {
+            isHealing = false; // On libère le système à la fin
         }
     }
 
@@ -171,11 +192,7 @@ public class SyncOrchestrator {
                     saveState(OFFSET_KEY, importResp.getNextOffset());
                     saveState(TOTAL_KEY, importResp.getTotalApi());
 
-                    log.info("📥 Import BT : Offset {} -> {}. Total dispo : {}",
-                            currentOffset, importResp.getNextOffset(), importResp.getTotalApi());
-
                 } else {
-                    log.warn("⚠️ Erreur API Bouygues, pause de 2s...");
                     Thread.sleep(2000);
                 }
 
@@ -184,7 +201,6 @@ public class SyncOrchestrator {
                 try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             }
         }
-        log.info("⏹️ BOUCLE ARRÊTÉE.");
     }
 
     private int getSavedState(String key) {

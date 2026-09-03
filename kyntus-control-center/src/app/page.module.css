@@ -117,3 +117,13 @@
   background-color: #b91c1c; color: white; border: none; padding: 12px 24px; font-size: 1rem; font-weight: 600; border-radius: 6px; cursor: pointer;
 }
 .buttonReset:hover { background-color: #991b1b; }
+.statusHealing {
+  background-color: #ecfdf5;
+  color: #047857;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border: 1px solid #10b981;
+}
