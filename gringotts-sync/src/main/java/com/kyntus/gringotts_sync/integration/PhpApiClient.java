@@ -60,22 +60,18 @@ public class PhpApiClient {
                 .toBodilessEntity();
     }
 
-    // 🚀 L'FIX HNA : On utilise une Map native de Java au lieu du DTO pour garantir le JSON {"ids": [...]}
+    // 🚀 L'FIX HNA : On envoie les IDs dans l'URL (GET) au lieu du Body (POST)
     public Map<String, Object> healData(List<String> ids) {
         List<String> cleanIds = ids.stream()
                 .filter(Objects::nonNull)
                 .filter(id -> !id.trim().isEmpty())
                 .toList();
 
-        log.info("Appel POST /api/sync/heal pour {} IDs valides", cleanIds.size());
+        String idsString = String.join(",", cleanIds);
+        log.info("Appel GET /api/sync/heal pour {} IDs valides", cleanIds.size());
 
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("ids", cleanIds);
-
-        return restClient.post()
-                .uri("/api/sync/heal")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(requestBody) // 🚀 Map native = JSON 100% valide garanti
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/api/sync/heal").queryParam("ids", idsString).build())
                 .retrieve()
                 .body(Map.class);
     }
