@@ -1,6 +1,5 @@
 package com.kyntus.gringotts_sync.integration;
 
-import com.kyntus.gringotts_sync.dto.AckRequest;
 import com.kyntus.gringotts_sync.dto.ExportResponse;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
 import lombok.RequiredArgsConstructor;
@@ -28,11 +27,15 @@ public class PhpApiClient {
                 .body(ExportResponse.class);
     }
 
+    // 🚀 L'FIX ULTIME HNA : On utilise une Map native au lieu de AckRequest
     public void acknowledge(List<Long> ids) {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("ids", ids);
+
         restClient.post()
                 .uri("/api/sync/ack")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(new AckRequest(ids))
+                .body(requestBody) // 🚀 Map = JSON 100% valide garanti
                 .retrieve()
                 .body(Map.class);
     }
@@ -60,7 +63,6 @@ public class PhpApiClient {
                 .toBodilessEntity();
     }
 
-    // 🚀 L'FIX HNA : On envoie les IDs dans l'URL (GET) au lieu du Body (POST)
     public Map<String, Object> healData(List<String> ids) {
         List<String> cleanIds = ids.stream()
                 .filter(Objects::nonNull)
