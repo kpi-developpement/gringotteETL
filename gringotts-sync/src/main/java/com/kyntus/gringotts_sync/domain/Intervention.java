@@ -17,7 +17,7 @@ import java.util.List;
 public class Intervention {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // 🚀 L'FIX HNA : C'est ça qui dit à Postgres de générer l'ID
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @JsonProperty("id")
     private Long id;
 
@@ -70,8 +70,9 @@ public class Intervention {
     @Column(name = "detail_intervention", columnDefinition = "TEXT")
     private String detailIntervention;
 
+    // 🚀 L'FIX HNA : FetchType.EAGER bach y-jbed les logs f d9a we7da bla ma y-tsenna session
     @JsonProperty("actions_log")
-    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     @JoinColumn(name = "intervention_id")
     private List<ActionLog> actionsLog;
 }
