@@ -39,17 +39,27 @@ public class PhpApiClient {
         return restClient.post()
                 .uri("/api/sync/import")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("offset", offset, "limit", limit))
+                .body(Map.of("offset", offset, "limit", limit, "fetch_details", true))
                 .retrieve()
                 .body(ImportResponse.class);
     }
 
     public void resetIonos() {
-        log.info("Appel POST /api/sync/reset pour vider IONOS");
         restClient.post()
                 .uri("/api/sync/reset")
                 .contentType(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    // 🚀 NOUVEAU : Appel Heal
+    public Map<String, Object> healData(List<String> ids) {
+        log.info("Appel POST /api/sync/heal pour {} IDs", ids.size());
+        return restClient.post()
+                .uri("/api/sync/heal")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("ids", ids))
+                .retrieve()
+                .body(Map.class);
     }
 }

@@ -6,7 +6,6 @@ import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -16,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
 
-@Slf4j
 @RestController
 @RequestMapping("/api/dashboard")
 @RequiredArgsConstructor
@@ -71,35 +69,19 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " doublons supprimés avec succès."));
     }
 
-    // 🚀 L'FIX HNA : L'opération kat-dar f Background Thread bach ma t-blocach l'navigateur
     @PostMapping("/trim/{keepCount}")
     public ResponseEntity<Map<String, Object>> trimDatabase(@PathVariable int keepCount) {
-        new Thread(() -> {
-            try {
-                log.info("Début du nettoyage de la base de données (Garder les {} premiers)...", keepCount);
-                int offset = keepCount - 1;
-                if (offset < 0) offset = 0;
-
-                Long cutoffId = interventionRepository.findCutoffId(offset);
-                if (cutoffId != null) {
-                    interventionRepository.deleteExcessLogs(cutoffId);
-                    int deleted = interventionRepository.deleteExcessInterventions(cutoffId);
-                    log.info("Nettoyage terminé ! {} interventions excédentaires supprimées.", deleted);
-                } else {
-                    log.warn("Impossible de trouver l'ID de coupure.");
-                }
-            } catch (Exception e) {
-                log.error("Erreur lors du nettoyage de la base : ", e);
-            }
-        }).start();
-
-        return ResponseEntity.ok(Map.of(
-                "ok", true,
-                "message", "Le nettoyage a commencé en arrière-plan. Laissez le serveur travailler 2 à 3 minutes, puis rafraîchissez la page."
-        ));
+        int deletedCount = interventionRepository.deleteExcessRecords(keepCount);
+        return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " enregistrements excédentaires supprimés."));
     }
 
-    // 🚀 L'FIX HNA : N-siftou l'objet m-formati bach n-7iydou l'Warning dyal PageImpl
+    // 🚀 NOUVEAU : Endpoint Heal
+    @PostMapping("/heal")
+    public ResponseEntity<Map<String, String>> healData() {
+        new Thread(syncOrchestrator::healDatabase).start();
+        return ResponseEntity.ok(Map.of("message", "Processus de réparation lancé en arrière-plan..."));
+    }
+
     @GetMapping("/interventions")
     public ResponseEntity<Map<String, Object>> getInterventions(
             @RequestParam(defaultValue = "") String search,

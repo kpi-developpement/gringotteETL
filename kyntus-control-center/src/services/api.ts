@@ -59,13 +59,21 @@ export const cleanDuplicates = async (): Promise<string> => {
   } catch (e) { return "Erreur lors du nettoyage."; }
 };
 
-// 🚀 NOUVEAU : Fonction pour couper la DB
 export const trimDatabase = async (keepCount: number): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/trim/${keepCount}`, { method: 'POST' });
     const data = await res.json();
     return data.message || "Opération terminée.";
   } catch (e) { return "Erreur lors de la suppression."; }
+};
+
+// 🚀 NOUVEAU
+export const healData = async (): Promise<string> => {
+  try {
+    const res = await fetch(`${API_URL}/heal`, { method: 'POST' });
+    const data = await res.json();
+    return data.message || "Réparation lancée.";
+  } catch (e) { return "Erreur lors du lancement de la réparation."; }
 };
 
 export const fetchInterventions = async (search: string, page: number, size: number = 50): Promise<PageResponse | null> => {
