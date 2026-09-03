@@ -34,8 +34,6 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-
-    // 🚀 L'FIX HNA : On réduit la vitesse depuis Java pour ne pas étouffer Bouygues
     private static final int BATCH_SIZE = 200;
     private static final int HEAL_CHUNK_SIZE = 20;
 
@@ -88,14 +86,12 @@ public class SyncOrchestrator {
 
             ObjectMapper mapper = new ObjectMapper();
 
-            // 🚀 L'FIX HNA : On boucle 20 par 20
             for (int i = 0; i < brokenInterventions.size(); i += HEAL_CHUNK_SIZE) {
-                if (!isHealing) break; // Si on clique sur STOP
+                if (!isHealing) break;
 
                 List<Intervention> chunk = brokenInterventions.subList(i, Math.min(i + HEAL_CHUNK_SIZE, brokenInterventions.size()));
                 List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
 
-                // 🚀 L'FIX ANTI-CRASH : Système de Retry robuste (5 tentatives)
                 boolean success = false;
                 int maxRetries = 5;
 
@@ -123,13 +119,12 @@ public class SyncOrchestrator {
                             log.info("✅ Paquet réparé ({} / {})", healCurrent, healTotal);
                             success = true;
 
-                            // Petite pause de courtoisie pour Bouygues
                             Thread.sleep(1000);
-                            break; // Succès, on sort de la boucle de retry
+                            break;
                         }
                     } catch (Exception e) {
                         log.warn("⚠️ Erreur API Bouygues (Tentative {}/{}) : {}. Pause de 10s...", attempt, maxRetries, e.getMessage());
-                        Thread.sleep(10000); // 🚀 On attend 10 secondes si Bouygues crash
+                        Thread.sleep(10000);
                     }
                 }
 
@@ -194,15 +189,14 @@ public class SyncOrchestrator {
 
                 int currentOffset = getSavedState(OFFSET_KEY);
                 int totalApi = getSavedState(TOTAL_KEY);
-                long totalLocal = interventionRepository.count();
 
-                if (totalApi > 0 && totalLocal >= totalApi) {
-                    log.info("🏁 100% ATTEINT ! Nous avons {} EPS uniques en base. ARRÊT AUTOMATIQUE.", totalLocal);
+                // 🚀 L'FIX HNA : La condition de 100% est basée sur l'Offset, pas sur le Total Local
+                if (totalApi > 0 && currentOffset >= totalApi) {
+                    log.info("🏁 100% ATTEINT ! L'Offset a parcouru toutes les données de Bouygues. ARRÊT AUTOMATIQUE.");
                     isRunning = false;
                     break;
                 }
 
-                // 🚀 L'FIX ANTI-CRASH POUR L'IMPORT
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
@@ -222,7 +216,7 @@ public class SyncOrchestrator {
                                     currentOffset, importResp.getNextOffset(), importResp.getTotalApi());
 
                             importSuccess = true;
-                            break; // Succès, on sort du retry
+                            break;
                         }
                     } catch (Exception e) {
                         log.warn("⚠️ Erreur Import BT (Tentative {}/3) : {}. Pause de 10s...", attempt, e.getMessage());
