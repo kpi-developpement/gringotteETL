@@ -27,8 +27,6 @@ public class SyncOrchestrator {
     private final SyncStateRepository syncStateRepository;
 
     private volatile boolean isRunning = false;
-
-    // 🚀 NOUVEAU : Variables pour suivre la réparation (Heal)
     private volatile boolean isHealing = false;
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
@@ -57,20 +55,15 @@ public class SyncOrchestrator {
     public void resetAndStartFromZero() {
         log.info("⚠️ RESET TOTAL DEMANDÉ...");
         stopSync();
-        try {
-            phpApiClient.resetIonos();
-        } catch (Exception e) {
-            log.error("Erreur vidage IONOS : {}", e.getMessage());
-        }
+        try { phpApiClient.resetIonos(); } catch (Exception e) {}
         interventionRepository.deleteAll();
         saveState(OFFSET_KEY, 0);
         saveState(TOTAL_KEY, 0);
         startSync();
     }
 
-    // 🚀 L'FIX HNA : On met à jour les variables de progression
     public void healDatabase() {
-        if (isHealing) return; // Empêche de lancer 2 fois si tu cliques 2 fois
+        if (isHealing) return;
 
         isHealing = true;
         healTotal = 0;
@@ -80,9 +73,22 @@ public class SyncOrchestrator {
         stopSync();
 
         try {
-            int deleted = interventionRepository.deleteDuplicatesSmart();
-            log.info("🧹 Smart Clean terminé : {} doublons supprimés.", deleted);
+            // 🚀 L'FIX HNA : Nettoyage par paquets de 1000 pour éviter le Deadlock
+            log.info("🧹 Début du Smart Clean (Suppression des doublons par lots)...");
+            int totalDeleted = 0;
+            while (true) {
+                List<Long> duplicateIds = interventionRepository.findDuplicateIds();
+                if (duplicateIds.isEmpty()) {
+                    break;
+                }
+                interventionRepository.deleteLogsByIds(duplicateIds);
+                int deleted = interventionRepository.deleteInterventionsByIds(duplicateIds);
+                totalDeleted += deleted;
+                log.info("   -> {} doublons supprimés (Total: {})", deleted, totalDeleted);
+            }
+            log.info("🧹 Smart Clean terminé ! Total des doublons supprimés : {}", totalDeleted);
 
+            // 2. Récupération des détails manquants
             List<Intervention> brokenInterventions = interventionRepository.findInterventionsWithMissingDetails();
             healTotal = brokenInterventions.size();
             log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", healTotal);
@@ -102,17 +108,16 @@ public class SyncOrchestrator {
                 Map<String, Object> response = phpApiClient.healData(idsToHeal);
 
                 if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
-                    Map<String, Object> healedData = (Map<String, Object>) response.get("data");
+                    Map<String, String> healedData = (Map<String, String>) response.get("data");
 
                     for (Intervention inv : chunk) {
-                        Object detail = healedData.get(inv.getIdIntervention());
-                        if (detail != null) {
-                            inv.setDetailIntervention(mapper.writeValueAsString(detail));
+                        String detailStr = healedData.get(inv.getIdIntervention());
+                        if (detailStr != null) {
+                            inv.setDetailIntervention(detailStr);
                         }
                     }
                     interventionRepository.saveAll(chunk);
 
-                    // 🚀 Mise à jour de la progression
                     healCurrent += chunk.size();
                     log.info("✅ Paquet réparé ({} / {})", healCurrent, healTotal);
                 }
@@ -122,7 +127,7 @@ public class SyncOrchestrator {
         } catch (Exception e) {
             log.error("❌ Erreur pendant la réparation : ", e);
         } finally {
-            isHealing = false; // On libère le système à la fin
+            isHealing = false;
         }
     }
 
