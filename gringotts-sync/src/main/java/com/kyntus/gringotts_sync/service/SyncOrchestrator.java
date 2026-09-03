@@ -12,6 +12,7 @@ import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional; // 🚀 L'Import jdid
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -158,7 +159,9 @@ public class SyncOrchestrator {
         }
     }
 
-    private void processLoop() {
+    // 🚀 L'FIX HNA : L'annotation @Transactional bach Hibernate y-khelik t-9ra les logs (Lazy Loading)
+    @Transactional
+    protected void processLoop() {
         while (isRunning) {
             try {
                 // 1. ASPIRATEUR
@@ -189,16 +192,14 @@ public class SyncOrchestrator {
                                 existing.setDetailIntervention(incoming.getDetailIntervention());
                                 existing.setPayloadRecu(incoming.getPayloadRecu());
 
-                                // 🚀 L'FIX HNA : On met à jour les logs existants (Merge)
                                 if (incoming.getActionsLog() != null && !incoming.getActionsLog().isEmpty()) {
                                     for (ActionLog newLog : incoming.getActionsLog()) {
-                                        newLog.setId(null); // On force la création d'un nouveau log local
+                                        newLog.setId(null);
                                         existing.getActionsLog().add(newLog);
                                     }
                                 }
                                 toSave.add(existing);
                             } else {
-                                // 🚀 L'FIX HNA : On met l'ID de l'intervention ET de ses logs à null
                                 incoming.setId(null);
                                 if (incoming.getActionsLog() != null) {
                                     for (ActionLog log : incoming.getActionsLog()) {
