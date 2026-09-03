@@ -17,7 +17,7 @@ import java.util.List;
 public class Intervention {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // 🚀 L'FIX HNA : Auto-Increment
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // 🚀 L'FIX HNA : C'est ça qui dit à Postgres de générer l'ID
     @JsonProperty("id")
     private Long id;
 

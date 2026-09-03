@@ -1,6 +1,7 @@
 package com.kyntus.gringotts_sync.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.dto.ExportResponse;
@@ -167,8 +168,6 @@ public class SyncOrchestrator {
 
                     if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                         List<Intervention> incomingData = exportResp.getData();
-
-                        // 🚀 L'FIX HNA : On extrait les IDs de IONOS AVANT de les modifier !
                         List<Long> idsToAck = incomingData.stream()
                                 .map(Intervention::getId)
                                 .filter(id -> id != null)
@@ -189,17 +188,29 @@ public class SyncOrchestrator {
                                 existing.setDateModificationEtat(incoming.getDateModificationEtat());
                                 existing.setDetailIntervention(incoming.getDetailIntervention());
                                 existing.setPayloadRecu(incoming.getPayloadRecu());
+
+                                // 🚀 L'FIX HNA : On met à jour les logs existants (Merge)
+                                if (incoming.getActionsLog() != null && !incoming.getActionsLog().isEmpty()) {
+                                    for (ActionLog newLog : incoming.getActionsLog()) {
+                                        newLog.setId(null); // On force la création d'un nouveau log local
+                                        existing.getActionsLog().add(newLog);
+                                    }
+                                }
                                 toSave.add(existing);
                             } else {
-                                // Maintenant on peut mettre à null en toute sécurité pour Postgres
+                                // 🚀 L'FIX HNA : On met l'ID de l'intervention ET de ses logs à null
                                 incoming.setId(null);
+                                if (incoming.getActionsLog() != null) {
+                                    for (ActionLog log : incoming.getActionsLog()) {
+                                        log.setId(null);
+                                    }
+                                }
                                 toSave.add(incoming);
                             }
                         }
 
                         interventionRepository.saveAll(toSave);
 
-                        // On envoie les vrais IDs à PHP pour les supprimer
                         if (!idsToAck.isEmpty()) {
                             phpApiClient.acknowledge(idsToAck);
                         }

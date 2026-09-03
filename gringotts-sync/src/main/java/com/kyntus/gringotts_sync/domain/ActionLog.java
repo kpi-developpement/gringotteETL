@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 public class ActionLog {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // 🚀 L'FIX HNA : Auto-Increment
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // 🚀 L'FIX HNA AUSSI
     @JsonProperty("id")
     private Long id;
 
