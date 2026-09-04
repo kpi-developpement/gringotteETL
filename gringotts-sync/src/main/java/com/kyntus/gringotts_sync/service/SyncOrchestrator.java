@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -37,14 +36,12 @@ public class SyncOrchestrator {
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
 
-    // VARIABLES POUR L'ETA
     private volatile long syncStartTime = 0;
     private volatile int totalProcessedSinceStart = 0;
     private volatile String currentEta = "Calcul en cours...";
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    // 🚀 L'BATCH kber (500) hit Java ghaytkellef b l'Multithreading l-dakhel
     private static final int BATCH_SIZE = 500;
 
     public boolean isRunning() { return isRunning; }
@@ -59,7 +56,7 @@ public class SyncOrchestrator {
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
         currentEta = "Calcul en cours...";
-        log.info("🚀 DÉMARRAGE DU MODE V8 TWIN-TURBO ({} PAR BATCH - THREADS PARALLELES)", BATCH_SIZE);
+        log.info("🚀 DÉMARRAGE DU MODE TURBO ({} PAR BATCH - PHP MULTI-CURL)", BATCH_SIZE);
         new Thread(this::processLoop).start();
     }
 
@@ -97,7 +94,7 @@ public class SyncOrchestrator {
             }
 
             List<String> idsToHeal = brokenInterventions.stream().map(Intervention::getIdIntervention).toList();
-            Map<String, String> fetchedDetails = fetchDetailsConcurrently(idsToHeal, true);
+            Map<String, String> fetchedDetails = fetchDetailsSafely(idsToHeal, true);
 
             for (Intervention inv : brokenInterventions) {
                 String d = fetchedDetails.get(inv.getIdIntervention());
@@ -113,68 +110,50 @@ public class SyncOrchestrator {
         }
     }
 
-    // 💡 L'IDÉE BRILLANTE : MULTITHREADING F JAVA BACH N-BYPASSIW AKAMAI
-    private Map<String, String> fetchDetailsConcurrently(List<String> ids, boolean isHealingMode) {
-        Map<String, String> results = new ConcurrentHashMap<>();
+    // 💡 L'FIX HNA : Séquentiel côté Java (par lots de 100) -> Parallèle contrôlé côté PHP
+    private Map<String, String> fetchDetailsSafely(List<String> ids, boolean isHealingMode) {
+        Map<String, String> results = new HashMap<>();
         if (ids.isEmpty()) return results;
 
-        int chunkSize = 25; // 25 is safe limit per request
-        List<List<String>> chunks = new ArrayList<>();
+        int chunkSize = 100; // Limite de sécurité pour la longueur de l'URL GET
+        int totalChunks = (int) Math.ceil((double) ids.size() / chunkSize);
+
         for (int i = 0; i < ids.size(); i += chunkSize) {
-            chunks.add(ids.subList(i, Math.min(i + chunkSize, ids.size())));
-        }
+            if (!isRunning && !isHealing) break;
 
-        // 4 Threads x 25 = 100 requêtes max vers Bouygues en parallèle. (Mode furtif 🥷)
-        ExecutorService executor = Executors.newFixedThreadPool(4);
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
+            List<String> chunk = ids.subList(i, Math.min(i + chunkSize, ids.size()));
+            int chunkIndex = (i / chunkSize) + 1;
 
-        int totalChunks = chunks.size();
-        log.info("🧩 Lancement de 4 Ninja Threads pour récupérer {} sous-lots...", totalChunks);
-
-        for (int i = 0; i < chunks.size(); i++) {
-            List<String> chunk = chunks.get(i);
-            int chunkIndex = i + 1;
-
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                boolean success = false;
-                for (int attempt = 1; attempt <= 5; attempt++) {
-                    try {
-                        Map<String, Object> response = phpApiClient.healData(chunk);
-                        if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
-                            Object rawData = response.get("data");
-                            if (rawData instanceof Map) {
-                                Map<String, String> healedData = (Map<String, String>) rawData;
-                                results.putAll(healedData);
-                            }
-                            success = true;
-                            if (isHealingMode) {
-                                healCurrent += chunk.size();
-                            }
-                            break;
+            boolean success = false;
+            for (int attempt = 1; attempt <= 5; attempt++) {
+                try {
+                    Map<String, Object> response = phpApiClient.healData(chunk);
+                    if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                        Object rawData = response.get("data");
+                        if (rawData instanceof Map) {
+                            results.putAll((Map<String, String>) rawData);
                         }
-                    } catch (RestClientResponseException e) {
-                        if (e.getStatusCode().value() == 403) {
-                            log.warn("⚠️ [WAF AKAMAI] Blocage 403 sur lot {}/{} (Tentative {}/5). Thread en mode furtif (pause 15s)...", chunkIndex, totalChunks, attempt);
-                            sleep(15000);
-                        } else {
-                            log.warn("⚠️ [ERREUR PHP] HTTP {} sur lot {}/{} : {}", e.getStatusCode(), chunkIndex, totalChunks, e.getResponseBodyAsString());
-                            sleep(5000);
-                        }
-                    } catch (Exception e) {
+                        success = true;
+                        if (isHealingMode) healCurrent += chunk.size();
+                        break;
+                    }
+                } catch (RestClientResponseException e) {
+                    if (e.getStatusCode().value() == 403) {
+                        log.warn("⚠️ [WAF AKAMAI] Blocage 403 sur lot {}/{}. Le Pare-feu est fâché. Pause 30s...", chunkIndex, totalChunks);
+                        sleep(30000);
+                    } else {
+                        log.warn("⚠️ [ERREUR PHP] HTTP {} sur lot {}/{} : {}", e.getStatusCode(), chunkIndex, totalChunks, e.getResponseBodyAsString());
                         sleep(5000);
                     }
+                } catch (Exception e) {
+                    sleep(5000);
                 }
-                if (!success) {
-                    log.error("❌ Echec définitif pour le sous-lot {}/{} après 5 tentatives.", chunkIndex, totalChunks);
-                    if (isHealingMode) healCurrent += chunk.size();
-                }
-            }, executor);
-            futures.add(future);
+            }
+            if (!success) {
+                log.error("❌ Echec définitif pour le sous-lot {}/{} après 5 tentatives.", chunkIndex, totalChunks);
+                if (isHealingMode) healCurrent += chunk.size();
+            }
         }
-
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        executor.shutdown();
-
         return results;
     }
 
@@ -199,14 +178,14 @@ public class SyncOrchestrator {
                                     .filter(id -> id != null && id > 0)
                                     .collect(Collectors.toList());
 
-                            // 🚀 FETCH DETAILS ASYNCHRONE AVANT SAUVEGARDE
+                            // 🚀 FETCH DETAILS ASYNCHRONE SÉQUENTIEL AVANT SAUVEGARDE
                             List<String> idsNeedingDetails = incomingData.stream()
                                     .filter(inv -> inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("null"))
                                     .map(Intervention::getIdIntervention)
                                     .toList();
 
                             if (!idsNeedingDetails.isEmpty()) {
-                                Map<String, String> fetchedDetails = fetchDetailsConcurrently(idsNeedingDetails, false);
+                                Map<String, String> fetchedDetails = fetchDetailsSafely(idsNeedingDetails, false);
                                 for (Intervention inv : incomingData) {
                                     String detail = fetchedDetails.get(inv.getIdIntervention());
                                     if (detail != null) {
@@ -267,10 +246,14 @@ public class SyncOrchestrator {
                         } else {
                             bufferHasData = false;
                         }
-                    } catch (Exception e) {
-                        log.error("❌ [ERREUR JAVA/RÉSEAU - EXPORT] : {}", e.getMessage());
+                    } catch (RestClientResponseException e) {
+                        log.error("🚨 [CRASH API PHP - EXPORT] HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
                         bufferHasData = false;
-                        Thread.sleep(5000);
+                        sleep(5000);
+                    } catch (Exception e) {
+                        log.error("❌ [ERREUR JAVA - EXPORT] : {}", e.getMessage());
+                        bufferHasData = false;
+                        sleep(5000);
                     }
                 }
 
@@ -316,19 +299,24 @@ public class SyncOrchestrator {
                             break;
                         }
                     } catch (RestClientResponseException e) {
-                        log.error("🚨 [CRASH API PHP - IMPORT BYTEL] HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
-                        Thread.sleep(10000);
+                        if (e.getStatusCode().value() == 403) {
+                            log.warn("⚠️ [WAF AKAMAI] Blocage 403 sur la liste BT (Tentative {}/3). Pause 30s...", attempt);
+                            sleep(30000);
+                        } else {
+                            log.error("🚨 [CRASH API PHP - IMPORT] HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
+                            sleep(10000);
+                        }
                     } catch (Exception e) {
-                        Thread.sleep(10000);
+                        sleep(10000);
                     }
                 }
 
                 if (!importSuccess && isRunning) {
-                    Thread.sleep(30000);
+                    sleep(30000);
                 }
 
             } catch (Exception e) {
-                try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
+                sleep(5000);
             }
         }
         log.info("⏹️ BOUCLE ARRÊTÉE.");
