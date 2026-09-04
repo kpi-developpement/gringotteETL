@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -43,8 +44,8 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    // 🚀 L'FIX HNA : 150 hiya le Max Safe Limit bach n-garantiw vitesse mzyana bla man-khen9o Bouygues
-    private static final int BATCH_SIZE = 150;
+    // 🚀 L'BATCH kber (500) hit Java ghaytkellef b l'Multithreading l-dakhel
+    private static final int BATCH_SIZE = 500;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -58,7 +59,7 @@ public class SyncOrchestrator {
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
         currentEta = "Calcul en cours...";
-        log.info("🚀 DÉMARRAGE DU MODE TURBO ({} PAR BATCH - OPTIMISÉ POUR VITESSE/STABILITÉ)", BATCH_SIZE);
+        log.info("🚀 DÉMARRAGE DU MODE V8 TWIN-TURBO ({} PAR BATCH - THREADS PARALLELES)", BATCH_SIZE);
         new Thread(this::processLoop).start();
     }
 
@@ -80,26 +81,12 @@ public class SyncOrchestrator {
 
     public void healDatabase() {
         if (isHealing) return;
-
         isHealing = true;
         healTotal = 0;
         healCurrent = 0;
-
         log.info("🛠️ DÉBUT DE LA RÉPARATION DES DONNÉES...");
         stopSync();
-
         try {
-            log.info("🧹 Début du Smart Clean...");
-            int totalDeleted = 0;
-            while (true) {
-                List<Long> duplicateIds = interventionRepository.findDuplicateIds();
-                if (duplicateIds.isEmpty()) break;
-                interventionRepository.deleteLogsByIds(duplicateIds);
-                int deleted = interventionRepository.deleteInterventionsByIds(duplicateIds);
-                totalDeleted += deleted;
-            }
-            log.info("🧹 Smart Clean terminé ! Doublons supprimés : {}", totalDeleted);
-
             List<Intervention> brokenInterventions = interventionRepository.findInterventionsWithMissingDetails();
             healTotal = brokenInterventions.size();
             log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", healTotal);
@@ -109,56 +96,14 @@ public class SyncOrchestrator {
                 return;
             }
 
-            int chunkSize = 50;
-            for (int i = 0; i < brokenInterventions.size(); i += chunkSize) {
-                if (!isHealing) break;
+            List<String> idsToHeal = brokenInterventions.stream().map(Intervention::getIdIntervention).toList();
+            Map<String, String> fetchedDetails = fetchDetailsConcurrently(idsToHeal, true);
 
-                List<Intervention> chunk = brokenInterventions.subList(i, Math.min(i + chunkSize, brokenInterventions.size()));
-                List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
-
-                boolean success = false;
-                for (int attempt = 1; attempt <= 3; attempt++) {
-                    try {
-                        Map<String, Object> response = phpApiClient.healData(idsToHeal);
-
-                        if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
-                            Object rawData = response.get("data");
-                            Map<String, String> healedData = new HashMap<>();
-
-                            if (rawData instanceof Map) {
-                                healedData = (Map<String, String>) rawData;
-                            }
-
-                            for (Intervention inv : chunk) {
-                                String detailStr = healedData.get(inv.getIdIntervention());
-                                if (detailStr != null) {
-                                    inv.setDetailIntervention(detailStr);
-                                }
-                            }
-                            interventionRepository.saveAll(chunk);
-
-                            healCurrent += chunk.size();
-                            success = true;
-                            Thread.sleep(1000);
-                            break;
-                        }
-                    } catch (RestClientResponseException e) {
-                        log.error("\n==================================================" +
-                                "\n🚨 [CRASH API PHP - HEAL] 🚨" +
-                                "\n🔌 HTTP CODE  : " + e.getStatusCode() +
-                                "\n📩 BODY REÇU  : " + e.getResponseBodyAsString() +
-                                "\n==================================================");
-                        Thread.sleep(5000);
-                    } catch (Exception e) {
-                        log.warn("⚠️ [HEAL] Erreur Java/Réseau : {}", e.getMessage());
-                        Thread.sleep(5000);
-                    }
-                }
-
-                if (!success) {
-                    healCurrent += chunk.size();
-                }
+            for (Intervention inv : brokenInterventions) {
+                String d = fetchedDetails.get(inv.getIdIntervention());
+                if (d != null) inv.setDetailIntervention(d);
             }
+            interventionRepository.saveAll(brokenInterventions);
             log.info("🎉 RÉPARATION TERMINÉE !");
 
         } catch (Exception e) {
@@ -168,10 +113,79 @@ public class SyncOrchestrator {
         }
     }
 
+    // 💡 L'IDÉE BRILLANTE : MULTITHREADING F JAVA BACH N-BYPASSIW AKAMAI
+    private Map<String, String> fetchDetailsConcurrently(List<String> ids, boolean isHealingMode) {
+        Map<String, String> results = new ConcurrentHashMap<>();
+        if (ids.isEmpty()) return results;
+
+        int chunkSize = 25; // 25 is safe limit per request
+        List<List<String>> chunks = new ArrayList<>();
+        for (int i = 0; i < ids.size(); i += chunkSize) {
+            chunks.add(ids.subList(i, Math.min(i + chunkSize, ids.size())));
+        }
+
+        // 4 Threads x 25 = 100 requêtes max vers Bouygues en parallèle. (Mode furtif 🥷)
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        int totalChunks = chunks.size();
+        log.info("🧩 Lancement de 4 Ninja Threads pour récupérer {} sous-lots...", totalChunks);
+
+        for (int i = 0; i < chunks.size(); i++) {
+            List<String> chunk = chunks.get(i);
+            int chunkIndex = i + 1;
+
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                boolean success = false;
+                for (int attempt = 1; attempt <= 5; attempt++) {
+                    try {
+                        Map<String, Object> response = phpApiClient.healData(chunk);
+                        if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                            Object rawData = response.get("data");
+                            if (rawData instanceof Map) {
+                                Map<String, String> healedData = (Map<String, String>) rawData;
+                                results.putAll(healedData);
+                            }
+                            success = true;
+                            if (isHealingMode) {
+                                healCurrent += chunk.size();
+                            }
+                            break;
+                        }
+                    } catch (RestClientResponseException e) {
+                        if (e.getStatusCode().value() == 403) {
+                            log.warn("⚠️ [WAF AKAMAI] Blocage 403 sur lot {}/{} (Tentative {}/5). Thread en mode furtif (pause 15s)...", chunkIndex, totalChunks, attempt);
+                            sleep(15000);
+                        } else {
+                            log.warn("⚠️ [ERREUR PHP] HTTP {} sur lot {}/{} : {}", e.getStatusCode(), chunkIndex, totalChunks, e.getResponseBodyAsString());
+                            sleep(5000);
+                        }
+                    } catch (Exception e) {
+                        sleep(5000);
+                    }
+                }
+                if (!success) {
+                    log.error("❌ Echec définitif pour le sous-lot {}/{} après 5 tentatives.", chunkIndex, totalChunks);
+                    if (isHealingMode) healCurrent += chunk.size();
+                }
+            }, executor);
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        executor.shutdown();
+
+        return results;
+    }
+
+    private void sleep(long millis) {
+        try { Thread.sleep(millis); } catch (InterruptedException ignored) {}
+    }
+
     private void processLoop() {
         while (isRunning) {
             try {
-                // 1. L'ASPIRATEUR (Vidage IONOS)
+                // 1. L'ASPIRATEUR & FETCH DES DÉTAILS
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
@@ -184,6 +198,22 @@ public class SyncOrchestrator {
                                     .map(Intervention::getId)
                                     .filter(id -> id != null && id > 0)
                                     .collect(Collectors.toList());
+
+                            // 🚀 FETCH DETAILS ASYNCHRONE AVANT SAUVEGARDE
+                            List<String> idsNeedingDetails = incomingData.stream()
+                                    .filter(inv -> inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("null"))
+                                    .map(Intervention::getIdIntervention)
+                                    .toList();
+
+                            if (!idsNeedingDetails.isEmpty()) {
+                                Map<String, String> fetchedDetails = fetchDetailsConcurrently(idsNeedingDetails, false);
+                                for (Intervention inv : incomingData) {
+                                    String detail = fetchedDetails.get(inv.getIdIntervention());
+                                    if (detail != null) {
+                                        inv.setDetailIntervention(detail);
+                                    }
+                                }
+                            }
 
                             transactionTemplate.executeWithoutResult(status -> {
                                 List<String> incomingEpsIds = incomingData.stream()
@@ -204,9 +234,7 @@ public class SyncOrchestrator {
                                         existing = incoming;
                                         existing.setId(null);
                                         if (existing.getActionsLog() != null) {
-                                            for (ActionLog log : existing.getActionsLog()) {
-                                                log.setId(null);
-                                            }
+                                            for (ActionLog log : existing.getActionsLog()) log.setId(null);
                                         }
                                         existingMap.put(existing.getIdIntervention(), existing);
                                     } else {
@@ -220,11 +248,8 @@ public class SyncOrchestrator {
                                         }
                                         existing.setPayloadRecu(incoming.getPayloadRecu());
 
-                                        if (existing.getActionsLog() != null) {
-                                            existing.getActionsLog().clear();
-                                        } else {
-                                            existing.setActionsLog(new ArrayList<>());
-                                        }
+                                        if (existing.getActionsLog() != null) existing.getActionsLog().clear();
+                                        else existing.setActionsLog(new ArrayList<>());
 
                                         if (incoming.getActionsLog() != null) {
                                             for (ActionLog newLog : incoming.getActionsLog()) {
@@ -237,28 +262,13 @@ public class SyncOrchestrator {
                                 interventionRepository.saveAll(existingMap.values());
                             });
 
-                            if (!idsToAck.isEmpty()) {
-                                phpApiClient.acknowledge(idsToAck);
-                            } else {
-                                bufferHasData = false;
-                            }
+                            if (!idsToAck.isEmpty()) phpApiClient.acknowledge(idsToAck);
+                            else bufferHasData = false;
                         } else {
                             bufferHasData = false;
                         }
-                    } catch (RestClientResponseException e) {
-                        log.error("\n==================================================" +
-                                "\n🚨 [CRASH API PHP - EXPORT (Aspirateur)] 🚨" +
-                                "\n📌 OPÉRATION  : Vidage de la base IONOS vers Local" +
-                                "\n🔌 HTTP CODE  : " + e.getStatusCode() +
-                                "\n📩 BODY REÇU  : " + e.getResponseBodyAsString() +
-                                "\n==================================================");
-                        bufferHasData = false;
-                        Thread.sleep(5000);
                     } catch (Exception e) {
-                        log.error("\n==================================================" +
-                                "\n💥 [ERREUR JAVA/RÉSEAU - EXPORT] 💥" +
-                                "\n📌 DÉTAILS    : " + e.getMessage() +
-                                "\n==================================================");
+                        log.error("❌ [ERREUR JAVA/RÉSEAU - EXPORT] : {}", e.getMessage());
                         bufferHasData = false;
                         Thread.sleep(5000);
                     }
@@ -276,7 +286,7 @@ public class SyncOrchestrator {
                     break;
                 }
 
-                // 2. IMPORT BT (FULL DETAILS)
+                // 2. IMPORT BT (SANS DÉTAILS - 1 SEULE REQUÊTE ULTRA RAPIDE)
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
@@ -292,7 +302,6 @@ public class SyncOrchestrator {
                             saveState(OFFSET_KEY, importResp.getNextOffset());
                             saveState(TOTAL_KEY, importResp.getTotalApi());
 
-                            // CALCUL DE L'ETA
                             totalProcessedSinceStart += importResp.getBatchCount();
                             long elapsedMillis = System.currentTimeMillis() - syncStartTime;
                             if (totalProcessedSinceStart > 0) {
@@ -302,38 +311,23 @@ public class SyncOrchestrator {
                                 currentEta = formatDuration(remainingMillis);
                             }
 
-                            log.info("📥 Import BT : Offset {} -> {}. ETA: {}",
-                                    currentOffset, importResp.getNextOffset(), currentEta);
-
+                            log.info("📥 Liste BT : Offset {} -> {}. ETA: {}", currentOffset, importResp.getNextOffset(), currentEta);
                             importSuccess = true;
                             break;
                         }
                     } catch (RestClientResponseException e) {
-                        log.error("\n==================================================" +
-                                "\n🚨 [CRASH API PHP - IMPORT BYTEL] 🚨" +
-                                "\n📌 OPÉRATION  : Import depuis Bouygues (Tentative " + attempt + "/3)" +
-                                "\n🔌 HTTP CODE  : " + e.getStatusCode() +
-                                "\n📦 PARAMÈTRES : Offset=" + currentOffset + " | Limit=" + BATCH_SIZE +
-                                "\n📩 BODY REÇU  : " + e.getResponseBodyAsString() +
-                                "\n==================================================");
+                        log.error("🚨 [CRASH API PHP - IMPORT BYTEL] HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
                         Thread.sleep(10000);
                     } catch (Exception e) {
-                        log.warn("\n==================================================" +
-                                "\n💥 [ERREUR JAVA/RÉSEAU - IMPORT BYTEL] 💥" +
-                                "\n📌 TENTATIVE  : " + attempt + "/3" +
-                                "\n📌 DÉTAILS    : " + e.getMessage() +
-                                "\n==================================================");
                         Thread.sleep(10000);
                     }
                 }
 
                 if (!importSuccess && isRunning) {
-                    log.error("❌ Échec de l'import après 3 tentatives. On patiente 30s avant de reprendre...");
                     Thread.sleep(30000);
                 }
 
             } catch (Exception e) {
-                log.error("❌ Erreur générale non gérée dans la boucle : ", e);
                 try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
             }
         }

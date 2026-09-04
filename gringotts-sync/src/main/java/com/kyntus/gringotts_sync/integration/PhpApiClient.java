@@ -43,8 +43,8 @@ public class PhpApiClient {
     }
 
     public ImportResponse triggerImport(int offset, int limit) {
-        // 🚀 L'FIX HNA : fetch_details = true bach njibo détails f de99a we7da
-        String jsonBody = String.format("{\"offset\":%d,\"limit\":%d,\"fetch_details\":true}", offset, limit);
+        // 🚀 L'FIX BRILLANT: fetch_details = false. Java howa li ghay-tjellf b details asynchrone
+        String jsonBody = String.format("{\"offset\":%d,\"limit\":%d,\"fetch_details\":false}", offset, limit);
 
         return restClient.post()
                 .uri("/api/sync/import")
@@ -70,8 +70,6 @@ public class PhpApiClient {
                 .toList();
 
         String idsString = String.join(",", cleanIds);
-        log.info("Appel GET /api/sync/heal pour {} IDs valides", cleanIds.size());
-
         return restClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/api/sync/heal").queryParam("ids", idsString).build())
                 .retrieve()
