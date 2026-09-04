@@ -52,13 +52,9 @@ public class SyncOrchestrator {
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
 
-    // 🚀 L'FIX HNA : Paramètres de la "Boîte de Vitesse"
-    private static final int IONOS_EXPORT_BATCH = 300; // Rapide (Serveur interne)
-    private static final int RADAR_MAX_BATCH = 200;    // Vitesse max Bouygues
-    private static final int RADAR_MIN_BATCH = 50;     // Vitesse min Bouygues
-
-    private volatile int currentRadarBatch = RADAR_MAX_BATCH;
-    private volatile int consecutiveSuccesses = 0;
+    // 🚀 L'FIX HNA : Retour à 300 Fixe. L'Auto-scaling a été retiré.
+    private static final int IONOS_EXPORT_BATCH = 300;
+    private static final int RADAR_BATCH = 300;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -91,10 +87,8 @@ public class SyncOrchestrator {
         recentAlerts.clear();
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
-        currentRadarBatch = RADAR_MAX_BATCH;
-        consecutiveSuccesses = 0;
 
-        addAlert("[SYSTEM] Démarrage du Daemon 24/7 (Auto-Scaling Actif)");
+        addAlert("[SYSTEM] Démarrage du Daemon 24/7 (Radar à 300 Fixe)");
 
         new Thread(this::circularRadarLoop).start();
         new Thread(this::backgroundHealerLoop).start();
@@ -142,7 +136,6 @@ public class SyncOrchestrator {
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
-                        // EXPORT IONOS TOUJOURS A 300 (Il est très rapide)
                         ExportResponse exportResp = phpApiClient.export(IONOS_EXPORT_BATCH);
                         if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                             List<Intervention> incomingData = exportResp.getData();
@@ -216,8 +209,8 @@ public class SyncOrchestrator {
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
-                        // 🚀 DYNAMIQUE: On utilise le currentRadarBatch
-                        ImportResponse importResp = phpApiClient.triggerImport(currentOffset, currentRadarBatch);
+                        // 🚀 On utilise le RADAR_BATCH fixe à 300
+                        ImportResponse importResp = phpApiClient.triggerImport(currentOffset, RADAR_BATCH);
 
                         if (importResp != null && importResp.isOk()) {
                             if (importResp.getBatchCount() == 0) {
@@ -230,14 +223,6 @@ public class SyncOrchestrator {
                             totalRadarProcessed += importResp.getBatchCount();
                             totalProcessedSinceStart += importResp.getBatchCount();
 
-                            // 🚀 DYNAMIQUE: Augmentation de vitesse après 5 succès consécutifs
-                            consecutiveSuccesses++;
-                            if (consecutiveSuccesses >= 5 && currentRadarBatch < RADAR_MAX_BATCH) {
-                                currentRadarBatch = Math.min(RADAR_MAX_BATCH, currentRadarBatch + 50);
-                                consecutiveSuccesses = 0;
-                                addAlert("⚡ [AUTO-SCALE] Serveur stable. Accélération du Radar à " + currentRadarBatch + " EPS");
-                            }
-
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
                                 long elapsedMillis = System.currentTimeMillis() - syncStartTime;
                                 long millisPerItem = elapsedMillis / totalProcessedSinceStart;
@@ -245,7 +230,7 @@ public class SyncOrchestrator {
                                 currentEta = formatDuration(remainingItems * millisPerItem);
                             }
                             importSuccess = true;
-                            radarStatus = "Vitesse: " + currentRadarBatch + " EPS (Offset: " + importResp.getNextOffset() + ")";
+                            radarStatus = "Vitesse: " + RADAR_BATCH + " EPS (Offset: " + importResp.getNextOffset() + ")";
                             sleep(2000);
                             break;
                         }
@@ -258,16 +243,9 @@ public class SyncOrchestrator {
                             sleep(15 * 60 * 1000);
                         }
                         else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504 || body.contains("GatewayTimeout")) {
-                            // 🚀 DYNAMIQUE: Rétrogradage en cas d'erreur de surcharge
-                            if (currentRadarBatch > RADAR_MIN_BATCH) {
-                                currentRadarBatch = Math.max(RADAR_MIN_BATCH, currentRadarBatch / 2);
-                                consecutiveSuccesses = 0;
-                                addAlert("⚠️ [AUTO-SCALE] Surcharge Bouygues détectée. Rétrogradage du Radar à " + currentRadarBatch + " EPS");
-                            } else {
-                                addAlert("⚠️ [RADAR] Serveur Bouygues extrêmement lent (HTTP " + e.getStatusCode() + ")");
-                            }
-                            radarStatus = "Retrogradage (HTTP " + e.getStatusCode() + ")";
-                            sleep(10000); // On laisse souffler le serveur
+                            addAlert("[RADAR] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ") - Retry...");
+                            radarStatus = "Erreur HTTP " + e.getStatusCode() + " - Retry...";
+                            sleep(15000); // Pause prolongée de 15s pour laisser Bouygues digérer le gros Offset
                         }
                         else {
                             addAlert("[RADAR] Erreur Inconnue (HTTP " + e.getStatusCode() + ")");
