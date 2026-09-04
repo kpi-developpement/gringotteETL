@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,14 +36,13 @@ public class SyncOrchestrator {
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
 
-    // 🚀 VARIABLES POUR L'ETA
+    // VARIABLES POUR L'ETA
     private volatile long syncStartTime = 0;
     private volatile int totalProcessedSinceStart = 0;
     private volatile String currentEta = "Calcul en cours...";
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    // 🚀 L'FIX HNA : Batch Size wla 100 (Safe limit pour Bouygues avec fetch_details=true)
     private static final int BATCH_SIZE = 100;
 
     public boolean isRunning() { return isRunning; }
@@ -141,7 +141,11 @@ public class SyncOrchestrator {
                             Thread.sleep(1000);
                             break;
                         }
+                    } catch (RestClientResponseException e) {
+                        log.warn("⚠️ [HEAL] Erreur API PHP HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
+                        Thread.sleep(5000);
                     } catch (Exception e) {
+                        log.warn("⚠️ [HEAL] Erreur Java/Réseau : {}", e.getMessage());
                         Thread.sleep(5000);
                     }
                 }
@@ -165,74 +169,82 @@ public class SyncOrchestrator {
                 // 1. L'ASPIRATEUR (Vidage IONOS)
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
-                    ExportResponse exportResp = phpApiClient.export(BATCH_SIZE);
+                    try {
+                        ExportResponse exportResp = phpApiClient.export(BATCH_SIZE);
 
-                    if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
-                        List<Intervention> incomingData = exportResp.getData();
+                        if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
+                            List<Intervention> incomingData = exportResp.getData();
 
-                        List<Long> idsToAck = incomingData.stream()
-                                .map(Intervention::getId)
-                                .filter(id -> id != null && id > 0)
-                                .collect(Collectors.toList());
+                            List<Long> idsToAck = incomingData.stream()
+                                    .map(Intervention::getId)
+                                    .filter(id -> id != null && id > 0)
+                                    .collect(Collectors.toList());
 
-                        transactionTemplate.executeWithoutResult(status -> {
-                            List<String> incomingEpsIds = incomingData.stream()
-                                    .map(Intervention::getIdIntervention)
-                                    .filter(id -> id != null && !id.isEmpty())
-                                    .toList();
+                            transactionTemplate.executeWithoutResult(status -> {
+                                List<String> incomingEpsIds = incomingData.stream()
+                                        .map(Intervention::getIdIntervention)
+                                        .filter(id -> id != null && !id.isEmpty())
+                                        .toList();
 
-                            List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
-                            Map<String, Intervention> existingMap = existingData.stream()
-                                    .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
+                                List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
+                                Map<String, Intervention> existingMap = existingData.stream()
+                                        .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
 
-                            for (Intervention incoming : incomingData) {
-                                if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
+                                for (Intervention incoming : incomingData) {
+                                    if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
 
-                                Intervention existing = existingMap.get(incoming.getIdIntervention());
+                                    Intervention existing = existingMap.get(incoming.getIdIntervention());
 
-                                if (existing == null) {
-                                    existing = incoming;
-                                    existing.setId(null);
-                                    if (existing.getActionsLog() != null) {
-                                        for (ActionLog log : existing.getActionsLog()) {
-                                            log.setId(null);
+                                    if (existing == null) {
+                                        existing = incoming;
+                                        existing.setId(null);
+                                        if (existing.getActionsLog() != null) {
+                                            for (ActionLog log : existing.getActionsLog()) {
+                                                log.setId(null);
+                                            }
                                         }
-                                    }
-                                    existingMap.put(existing.getIdIntervention(), existing);
-                                } else {
-                                    existing.setEtat(incoming.getEtat());
-                                    existing.setDateModificationEtat(incoming.getDateModificationEtat());
-                                    existing.setTypeIntervention(incoming.getTypeIntervention());
-                                    existing.setMainteneur(incoming.getMainteneur());
-
-                                    if (incoming.getDetailIntervention() != null && !incoming.getDetailIntervention().isEmpty() && !incoming.getDetailIntervention().equals("null")) {
-                                        existing.setDetailIntervention(incoming.getDetailIntervention());
-                                    }
-                                    existing.setPayloadRecu(incoming.getPayloadRecu());
-
-                                    if (existing.getActionsLog() != null) {
-                                        existing.getActionsLog().clear();
+                                        existingMap.put(existing.getIdIntervention(), existing);
                                     } else {
-                                        existing.setActionsLog(new ArrayList<>());
-                                    }
+                                        existing.setEtat(incoming.getEtat());
+                                        existing.setDateModificationEtat(incoming.getDateModificationEtat());
+                                        existing.setTypeIntervention(incoming.getTypeIntervention());
+                                        existing.setMainteneur(incoming.getMainteneur());
 
-                                    if (incoming.getActionsLog() != null) {
-                                        for (ActionLog newLog : incoming.getActionsLog()) {
-                                            newLog.setId(null);
-                                            existing.getActionsLog().add(newLog);
+                                        if (incoming.getDetailIntervention() != null && !incoming.getDetailIntervention().isEmpty() && !incoming.getDetailIntervention().equals("null")) {
+                                            existing.setDetailIntervention(incoming.getDetailIntervention());
+                                        }
+                                        existing.setPayloadRecu(incoming.getPayloadRecu());
+
+                                        if (existing.getActionsLog() != null) {
+                                            existing.getActionsLog().clear();
+                                        } else {
+                                            existing.setActionsLog(new ArrayList<>());
+                                        }
+
+                                        if (incoming.getActionsLog() != null) {
+                                            for (ActionLog newLog : incoming.getActionsLog()) {
+                                                newLog.setId(null);
+                                                existing.getActionsLog().add(newLog);
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            interventionRepository.saveAll(existingMap.values());
-                        });
+                                interventionRepository.saveAll(existingMap.values());
+                            });
 
-                        if (!idsToAck.isEmpty()) {
-                            phpApiClient.acknowledge(idsToAck);
+                            if (!idsToAck.isEmpty()) {
+                                phpApiClient.acknowledge(idsToAck);
+                            } else {
+                                bufferHasData = false;
+                            }
                         } else {
                             bufferHasData = false;
                         }
-                    } else {
+                    } catch (RestClientResponseException e) {
+                        log.error("❌ [EXPORT] Erreur API PHP HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
+                        bufferHasData = false;
+                    } catch (Exception e) {
+                        log.error("❌ [EXPORT] Erreur Interne/Réseau : {}", e.getMessage());
                         bufferHasData = false;
                     }
                 }
@@ -281,9 +293,13 @@ public class SyncOrchestrator {
                             importSuccess = true;
                             break;
                         }
+                    } catch (RestClientResponseException e) {
+                        // 🚀 SNIPER LOG : Hna ghadi nchoufo ach kaygoul l'PHP b ddebt!
+                        log.warn("⚠️ [IMPORT] Erreur API PHP HTTP {} (Tentative {}/3) : {}", e.getStatusCode(), attempt, e.getResponseBodyAsString());
+                        Thread.sleep(10000);
                     } catch (Exception e) {
-                        log.warn("⚠️ Erreur Import BT (Tentative {}/3). Pause de 10s...", attempt);
-                        Thread.sleep(10000); // 10s d'attente 9bel retry
+                        log.warn("⚠️ [IMPORT] Erreur Java/Réseau (Tentative {}/3) : {}", attempt, e.getMessage());
+                        Thread.sleep(10000);
                     }
                 }
 
@@ -293,6 +309,7 @@ public class SyncOrchestrator {
                 }
 
             } catch (Exception e) {
+                log.error("❌ Erreur générale non gérée dans la boucle : ", e);
                 try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
             }
         }
