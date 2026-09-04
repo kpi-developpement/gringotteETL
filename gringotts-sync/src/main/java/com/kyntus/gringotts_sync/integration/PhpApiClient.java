@@ -8,10 +8,10 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -27,29 +27,29 @@ public class PhpApiClient {
                 .body(ExportResponse.class);
     }
 
-    // 🚀 L'FIX ULTIME HNA : On utilise une Map native au lieu de AckRequest
     public void acknowledge(List<Long> ids) {
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("ids", ids);
+        String jsonIds = ids.stream()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+
+        String jsonBody = "{\"ids\":[" + jsonIds + "]}";
 
         restClient.post()
                 .uri("/api/sync/ack")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(requestBody) // 🚀 Map = JSON 100% valide garanti
+                .body(jsonBody)
                 .retrieve()
-                .body(Map.class);
+                .toBodilessEntity();
     }
 
     public ImportResponse triggerImport(int offset, int limit) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("offset", offset);
-        body.put("limit", limit);
-        body.put("fetch_details", true);
+        // 🚀 L'FIX HNA : fetch_details = true bach njibo détails f de99a we7da !
+        String jsonBody = String.format("{\"offset\":%d,\"limit\":%d,\"fetch_details\":true}", offset, limit);
 
         return restClient.post()
                 .uri("/api/sync/import")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
+                .body(jsonBody)
                 .retrieve()
                 .body(ImportResponse.class);
     }

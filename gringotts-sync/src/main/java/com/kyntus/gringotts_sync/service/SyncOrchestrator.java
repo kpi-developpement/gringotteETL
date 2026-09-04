@@ -35,26 +35,36 @@ public class SyncOrchestrator {
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
 
+    // 🚀 VARIABLES POUR L'ETA
+    private volatile long syncStartTime = 0;
+    private volatile int totalProcessedSinceStart = 0;
+    private volatile String currentEta = "Calcul en cours...";
+
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    private static final int BATCH_SIZE = 200;
-    private static final int HEAL_CHUNK_SIZE = 20;
+    // 🚀 BATCH_SIZE à 50 est OBLIGATOIRE avec fetch_details=true pour éviter les Timeout de Bouygues
+    private static final int BATCH_SIZE = 50;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
     public int getHealTotal() { return healTotal; }
     public int getHealCurrent() { return healCurrent; }
+    public String getCurrentEta() { return currentEta; }
 
     public void startSync() {
         if (isRunning || isHealing) return;
         isRunning = true;
-        log.info("🚀 DÉMARRAGE DU MODE TURBO (LOGIQUE JAVA)");
+        syncStartTime = System.currentTimeMillis();
+        totalProcessedSinceStart = 0;
+        currentEta = "Calcul en cours...";
+        log.info("🚀 DÉMARRAGE DU MODE TURBO (LOGIQUE JAVA - FULL DETAILS)");
         new Thread(this::processLoop).start();
     }
 
     public void stopSync() {
         log.info("🛑 ARRÊT DEMANDÉ PAR L'UTILISATEUR");
         isRunning = false;
+        currentEta = "Arrêté";
     }
 
     public void resetAndStartFromZero() {
@@ -78,19 +88,16 @@ public class SyncOrchestrator {
         stopSync();
 
         try {
-            log.info("🧹 Début du Smart Clean (Suppression des doublons par lots)...");
+            log.info("🧹 Début du Smart Clean...");
             int totalDeleted = 0;
             while (true) {
                 List<Long> duplicateIds = interventionRepository.findDuplicateIds();
-                if (duplicateIds.isEmpty()) {
-                    break;
-                }
+                if (duplicateIds.isEmpty()) break;
                 interventionRepository.deleteLogsByIds(duplicateIds);
                 int deleted = interventionRepository.deleteInterventionsByIds(duplicateIds);
                 totalDeleted += deleted;
-                log.info("   -> {} doublons supprimés (Total: {})", deleted, totalDeleted);
             }
-            log.info("🧹 Smart Clean terminé ! Total des doublons supprimés : {}", totalDeleted);
+            log.info("🧹 Smart Clean terminé ! Doublons supprimés : {}", totalDeleted);
 
             List<Intervention> brokenInterventions = interventionRepository.findInterventionsWithMissingDetails();
             healTotal = brokenInterventions.size();
@@ -102,8 +109,6 @@ public class SyncOrchestrator {
             }
 
             int chunkSize = 50;
-            ObjectMapper mapper = new ObjectMapper();
-
             for (int i = 0; i < brokenInterventions.size(); i += chunkSize) {
                 if (!isHealing) break;
 
@@ -111,9 +116,7 @@ public class SyncOrchestrator {
                 List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
 
                 boolean success = false;
-                int maxRetries = 5;
-
-                for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                for (int attempt = 1; attempt <= 5; attempt++) {
                     try {
                         Map<String, Object> response = phpApiClient.healData(idsToHeal);
 
@@ -134,20 +137,16 @@ public class SyncOrchestrator {
                             interventionRepository.saveAll(chunk);
 
                             healCurrent += chunk.size();
-                            log.info("✅ Paquet réparé ({} / {})", healCurrent, healTotal);
                             success = true;
-
                             Thread.sleep(1000);
                             break;
                         }
                     } catch (Exception e) {
-                        log.warn("⚠️ Erreur API Bouygues (Tentative {}/{}) : {}. Pause de 10s...", attempt, maxRetries, e.getMessage());
-                        Thread.sleep(10000);
+                        Thread.sleep(5000);
                     }
                 }
 
                 if (!success) {
-                    log.error("❌ Impossible de réparer ce paquet après {} tentatives. On passe au suivant pour ne pas bloquer le système.", maxRetries);
                     healCurrent += chunk.size();
                 }
             }
@@ -163,7 +162,7 @@ public class SyncOrchestrator {
     private void processLoop() {
         while (isRunning) {
             try {
-                // 1. ASPIRATEUR
+                // 1. L'ASPIRATEUR : Ymessa7 Ionos kamel w y-sauvi 3ndna f DW b chkel safe
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     ExportResponse exportResp = phpApiClient.export(BATCH_SIZE);
@@ -171,7 +170,6 @@ public class SyncOrchestrator {
                     if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                         List<Intervention> incomingData = exportResp.getData();
 
-                        // 🚀 L'FIX HNA : On s'assure que les IDs ne sont pas nuls avant de les envoyer à PHP
                         List<Long> idsToAck = incomingData.stream()
                                 .map(Intervention::getId)
                                 .filter(id -> id != null && id > 0)
@@ -187,47 +185,51 @@ public class SyncOrchestrator {
                             Map<String, Intervention> existingMap = existingData.stream()
                                     .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
 
-                            List<Intervention> toSave = new ArrayList<>();
-
                             for (Intervention incoming : incomingData) {
-                                if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) {
-                                    continue; // On ignore les lignes corrompues sans ID EPS
-                                }
+                                if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
 
                                 Intervention existing = existingMap.get(incoming.getIdIntervention());
-                                if (existing != null) {
+
+                                if (existing == null) {
+                                    existing = incoming;
+                                    existing.setId(null);
+                                    if (existing.getActionsLog() != null) {
+                                        for (ActionLog log : existing.getActionsLog()) {
+                                            log.setId(null);
+                                        }
+                                    }
+                                    existingMap.put(existing.getIdIntervention(), existing);
+                                } else {
                                     existing.setEtat(incoming.getEtat());
                                     existing.setDateModificationEtat(incoming.getDateModificationEtat());
-                                    existing.setDetailIntervention(incoming.getDetailIntervention());
+                                    existing.setTypeIntervention(incoming.getTypeIntervention());
+                                    existing.setMainteneur(incoming.getMainteneur());
+
+                                    if (incoming.getDetailIntervention() != null && !incoming.getDetailIntervention().isEmpty() && !incoming.getDetailIntervention().equals("null")) {
+                                        existing.setDetailIntervention(incoming.getDetailIntervention());
+                                    }
                                     existing.setPayloadRecu(incoming.getPayloadRecu());
 
-                                    if (incoming.getActionsLog() != null && !incoming.getActionsLog().isEmpty()) {
+                                    if (existing.getActionsLog() != null) {
+                                        existing.getActionsLog().clear();
+                                    } else {
+                                        existing.setActionsLog(new ArrayList<>());
+                                    }
+
+                                    if (incoming.getActionsLog() != null) {
                                         for (ActionLog newLog : incoming.getActionsLog()) {
                                             newLog.setId(null);
                                             existing.getActionsLog().add(newLog);
                                         }
                                     }
-                                    toSave.add(existing);
-                                } else {
-                                    incoming.setId(null);
-                                    if (incoming.getActionsLog() != null) {
-                                        for (ActionLog log : incoming.getActionsLog()) {
-                                            log.setId(null);
-                                        }
-                                    }
-                                    toSave.add(incoming);
                                 }
                             }
-
-                            interventionRepository.saveAll(toSave);
+                            interventionRepository.saveAll(existingMap.values());
                         });
 
-                        // 🚀 L'FIX HNA : On n'envoie l'ACK que si on a des IDs valides
                         if (!idsToAck.isEmpty()) {
                             phpApiClient.acknowledge(idsToAck);
-                            log.info("⚡ {} interventions traitées (Insert/Update) et effacées de IONOS.", idsToAck.size());
                         } else {
-                            log.warn("⚠️ Data reçue mais aucun ID IONOS valide. Le buffer risque de bloquer.");
                             bufferHasData = false;
                         }
                     } else {
@@ -239,14 +241,15 @@ public class SyncOrchestrator {
 
                 int currentOffset = getSavedState(OFFSET_KEY);
                 int totalApi = getSavedState(TOTAL_KEY);
-                long totalLocal = interventionRepository.count();
 
                 if (totalApi > 0 && currentOffset >= totalApi) {
-                    log.info("🏁 100% ATTEINT ! L'Offset a parcouru toutes les données de Bouygues. ARRÊT AUTOMATIQUE.");
+                    log.info("🏁 100% ATTEINT !");
                     isRunning = false;
+                    currentEta = "Terminé ✓";
                     break;
                 }
 
+                // 2. DEMANDER L'BATCH JDDID MN BOUYGUES (AVEC DETAILS)
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
@@ -254,37 +257,54 @@ public class SyncOrchestrator {
 
                         if (importResp != null && importResp.isOk()) {
                             if (importResp.getBatchCount() == 0) {
-                                log.info("🏁 API BOUYGUES A RETOURNÉ 0 RÉSULTATS. ARRÊT AUTOMATIQUE.");
                                 isRunning = false;
+                                currentEta = "Terminé ✓";
                                 break;
                             }
 
                             saveState(OFFSET_KEY, importResp.getNextOffset());
                             saveState(TOTAL_KEY, importResp.getTotalApi());
 
-                            log.info("📥 Import BT : Offset {} -> {}. Total dispo : {}",
-                                    currentOffset, importResp.getNextOffset(), importResp.getTotalApi());
+                            // CALCUL DE L'ETA
+                            totalProcessedSinceStart += importResp.getBatchCount();
+                            long elapsedMillis = System.currentTimeMillis() - syncStartTime;
+                            if (totalProcessedSinceStart > 0) {
+                                long millisPerItem = elapsedMillis / totalProcessedSinceStart;
+                                int remainingItems = importResp.getTotalApi() - importResp.getNextOffset();
+                                long remainingMillis = remainingItems * millisPerItem;
+                                currentEta = formatDuration(remainingMillis);
+                            }
+
+                            log.info("📥 Import BT : Offset {} -> {}. ETA: {}",
+                                    currentOffset, importResp.getNextOffset(), currentEta);
 
                             importSuccess = true;
                             break;
                         }
                     } catch (Exception e) {
-                        log.warn("⚠️ Erreur Import BT (Tentative {}/3) : {}. Pause de 10s...", attempt, e.getMessage());
+                        log.warn("⚠️ Erreur Import BT (Tentative {}/3). Pause de 10s...", attempt);
                         Thread.sleep(10000);
                     }
                 }
 
                 if (!importSuccess && isRunning) {
-                    log.error("❌ Échec de l'import après 3 tentatives. Pause de 30s avant le prochain cycle...");
                     Thread.sleep(30000);
                 }
 
             } catch (Exception e) {
-                log.error("❌ Erreur générale dans la boucle : {}", e.getMessage());
                 try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
             }
         }
         log.info("⏹️ BOUCLE ARRÊTÉE.");
+    }
+
+    private String formatDuration(long millis) {
+        long seconds = millis / 1000;
+        if (seconds < 60) return seconds + "s";
+        long minutes = seconds / 60;
+        if (minutes < 60) return minutes + "m " + (seconds % 60) + "s";
+        long hours = minutes / 60;
+        return hours + "h " + (minutes % 60) + "m";
     }
 
     private int getSavedState(String key) {

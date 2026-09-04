@@ -52,7 +52,6 @@ export default function DashboardPage() {
   const totalLocal = stats?.total_interventions_local || 0;
   const progress = totalApi > 0 ? Math.min(100, Math.round((totalLocal / totalApi) * 100)) : 0;
 
-  // 🚀 NOUVEAU : Calcul de la progression de la réparation
   const healTotal = stats?.heal_total || 0;
   const healCurrent = stats?.heal_current || 0;
   const healProgress = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 0;
@@ -65,7 +64,6 @@ export default function DashboardPage() {
           <p className={styles.pageSubtitle}>Mode Turbo (Logique Java) 🚀</p>
         </div>
         <div className={styles.statusContainer}>
-          {/* 🚀 NOUVEAU : Affichage du statut HEALING */}
           <span className={stats?.is_healing ? styles.statusHealing : stats?.is_running ? styles.statusOnline : styles.statusOffline}>
             {stats?.is_healing ? '🛠️ RÉPARATION EN COURS' : stats?.is_running ? '🟢 EN COURS D\'ASPIRATION' : '🔴 À L\'ARRÊT'}
           </span>
@@ -74,28 +72,29 @@ export default function DashboardPage() {
 
       <main className={styles.main}>
         
-        {/* 🚀 NOUVEAU : Progress Bar de la Réparation (Visible uniquement si is_healing = true) */}
         {stats?.is_healing && (
-          <div className={styles.progressContainer} style={{ borderColor: '#059669', backgroundColor: '#ecfdf5' }}>
-            <div className={styles.progressHeader}>
-              <span className={styles.progressTitle} style={{ color: '#065f46' }}>Progression de la Réparation (Détails manquants)</span>
-              <span className={styles.progressText} style={{ color: '#047857' }}>{healCurrent.toLocaleString()} / {healTotal.toLocaleString()} ({healProgress}%)</span>
+          <div className={styles.progressContainer} style={{ borderColor: '#059669', backgroundColor: '#ecfdf5', marginBottom: '20px', padding: '15px', borderRadius: '8px' }}>
+            <div className={styles.progressHeader} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span className={styles.progressTitle} style={{ color: '#065f46', fontWeight: 'bold' }}>Progression de la Réparation (Détails manquants)</span>
+              <span className={styles.progressText} style={{ color: '#047857', fontWeight: 'bold' }}>{healCurrent.toLocaleString()} / {healTotal.toLocaleString()} ({healProgress}%)</span>
             </div>
-            <div className={styles.progressBarBg}>
-              <div className={styles.progressBarFill} style={{ width: `${healProgress}%`, background: 'linear-gradient(90deg, #10b981, #34d399)' }}></div>
+            <div className={styles.progressBarBg} style={{ width: '100%', height: '12px', backgroundColor: '#d1fae5', borderRadius: '6px', overflow: 'hidden' }}>
+              <div className={styles.progressBarFill} style={{ width: `${healProgress}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #34d399)', transition: 'width 0.5s ease' }}></div>
             </div>
           </div>
         )}
 
-        {/* Progress Bar Normale */}
         {!stats?.is_healing && (
-          <div className={styles.progressContainer}>
-            <div className={styles.progressHeader}>
-              <span className={styles.progressTitle}>Progression Réelle (EPS Uniques)</span>
-              <span className={styles.progressText}>{totalLocal.toLocaleString()} / {totalApi.toLocaleString()} ({progress}%)</span>
+          <div className={styles.progressContainer} style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'white', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+            <div className={styles.progressHeader} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span className={styles.progressTitle} style={{ fontWeight: 'bold', color: 'var(--kyntus-dark)' }}>Progression Réelle (EPS Uniques)</span>
+              <span className={styles.progressText} style={{ fontWeight: 'bold', color: 'var(--kyntus-blue)' }}>
+                {totalLocal.toLocaleString()} / {totalApi.toLocaleString()} ({progress}%)
+                {stats?.is_running && stats?.eta && <span style={{ marginLeft: '15px', color: '#f59e0b' }}>⏱️ Temps restant : {stats.eta}</span>}
+              </span>
             </div>
-            <div className={styles.progressBarBg}>
-              <div className={styles.progressBarFill} style={{ width: `${progress}%` }}></div>
+            <div className={styles.progressBarBg} style={{ width: '100%', height: '12px', backgroundColor: '#e5e7eb', borderRadius: '6px', overflow: 'hidden' }}>
+              <div className={styles.progressBarFill} style={{ width: `${progress}%`, height: '100%', backgroundColor: 'var(--kyntus-blue)', transition: 'width 0.5s ease' }}></div>
             </div>
           </div>
         )}
@@ -118,13 +117,13 @@ export default function DashboardPage() {
           
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '20px', flexWrap: 'wrap' }}>
             {!stats?.is_running && !stats?.is_healing ? (
-              <button className={styles.buttonStart} onClick={handleStart}>▶ DÉMARRER</button>
+              <button className={styles.buttonStart} onClick={handleStart} style={{ backgroundColor: 'var(--kyntus-blue)', color: 'white', padding: '12px 24px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>▶ DÉMARRER AVEC DÉTAILS</button>
             ) : (
-              <button className={styles.buttonStop} onClick={handleStop} disabled={stats?.is_healing}>
+              <button className={styles.buttonStop} onClick={handleStop} disabled={stats?.is_healing} style={{ backgroundColor: '#ef4444', color: 'white', padding: '12px 24px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: stats?.is_healing ? 'not-allowed' : 'pointer' }}>
                 {stats?.is_healing ? 'Veuillez patienter...' : '⏹ STOPPER'}
               </button>
             )}
-            <Link href="/interventions" className={styles.buttonLink}>Voir les données</Link>
+            <Link href="/interventions" className={styles.buttonLink} style={{ backgroundColor: '#f3f4f6', color: '#374151', padding: '12px 24px', border: '1px solid #d1d5db', borderRadius: '6px', fontWeight: 'bold', textDecoration: 'none' }}>Voir les données</Link>
           </div>
 
           <div style={{ marginTop: '20px' }}>

@@ -36,7 +36,9 @@ public class DashboardController {
         stats.put("total_api", totalApi);
         stats.put("is_running", syncOrchestrator.isRunning());
 
-        // 🚀 NOUVEAU : On envoie les stats de la réparation au Frontend
+        // 🚀 L'FIX HNA: On envoie l'ETA au Frontend
+        stats.put("eta", syncOrchestrator.getCurrentEta());
+
         stats.put("is_healing", syncOrchestrator.isHealing());
         stats.put("heal_total", syncOrchestrator.getHealTotal());
         stats.put("heal_current", syncOrchestrator.getHealCurrent());
