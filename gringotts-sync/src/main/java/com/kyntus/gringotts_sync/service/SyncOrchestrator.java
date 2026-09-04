@@ -43,7 +43,8 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    private static final int BATCH_SIZE = 100;
+    // 🚀 L'FIX HNA : 150 hiya le Max Safe Limit bach n-garantiw vitesse mzyana bla man-khen9o Bouygues
+    private static final int BATCH_SIZE = 150;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -57,7 +58,7 @@ public class SyncOrchestrator {
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
         currentEta = "Calcul en cours...";
-        log.info("🚀 DÉMARRAGE DU MODE TURBO ({} PAR BATCH - SAFE POUR BYTEL)", BATCH_SIZE);
+        log.info("🚀 DÉMARRAGE DU MODE TURBO ({} PAR BATCH - OPTIMISÉ POUR VITESSE/STABILITÉ)", BATCH_SIZE);
         new Thread(this::processLoop).start();
     }
 
@@ -116,7 +117,7 @@ public class SyncOrchestrator {
                 List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
 
                 boolean success = false;
-                for (int attempt = 1; attempt <= 5; attempt++) {
+                for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
                         Map<String, Object> response = phpApiClient.healData(idsToHeal);
 
@@ -142,7 +143,11 @@ public class SyncOrchestrator {
                             break;
                         }
                     } catch (RestClientResponseException e) {
-                        log.warn("⚠️ [HEAL] Erreur API PHP HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
+                        log.error("\n==================================================" +
+                                "\n🚨 [CRASH API PHP - HEAL] 🚨" +
+                                "\n🔌 HTTP CODE  : " + e.getStatusCode() +
+                                "\n📩 BODY REÇU  : " + e.getResponseBodyAsString() +
+                                "\n==================================================");
                         Thread.sleep(5000);
                     } catch (Exception e) {
                         log.warn("⚠️ [HEAL] Erreur Java/Réseau : {}", e.getMessage());
@@ -241,11 +246,21 @@ public class SyncOrchestrator {
                             bufferHasData = false;
                         }
                     } catch (RestClientResponseException e) {
-                        log.error("❌ [EXPORT] Erreur API PHP HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
+                        log.error("\n==================================================" +
+                                "\n🚨 [CRASH API PHP - EXPORT (Aspirateur)] 🚨" +
+                                "\n📌 OPÉRATION  : Vidage de la base IONOS vers Local" +
+                                "\n🔌 HTTP CODE  : " + e.getStatusCode() +
+                                "\n📩 BODY REÇU  : " + e.getResponseBodyAsString() +
+                                "\n==================================================");
                         bufferHasData = false;
+                        Thread.sleep(5000);
                     } catch (Exception e) {
-                        log.error("❌ [EXPORT] Erreur Interne/Réseau : {}", e.getMessage());
+                        log.error("\n==================================================" +
+                                "\n💥 [ERREUR JAVA/RÉSEAU - EXPORT] 💥" +
+                                "\n📌 DÉTAILS    : " + e.getMessage() +
+                                "\n==================================================");
                         bufferHasData = false;
+                        Thread.sleep(5000);
                     }
                 }
 
@@ -294,11 +309,20 @@ public class SyncOrchestrator {
                             break;
                         }
                     } catch (RestClientResponseException e) {
-                        // 🚀 SNIPER LOG : Hna ghadi nchoufo ach kaygoul l'PHP b ddebt!
-                        log.warn("⚠️ [IMPORT] Erreur API PHP HTTP {} (Tentative {}/3) : {}", e.getStatusCode(), attempt, e.getResponseBodyAsString());
+                        log.error("\n==================================================" +
+                                "\n🚨 [CRASH API PHP - IMPORT BYTEL] 🚨" +
+                                "\n📌 OPÉRATION  : Import depuis Bouygues (Tentative " + attempt + "/3)" +
+                                "\n🔌 HTTP CODE  : " + e.getStatusCode() +
+                                "\n📦 PARAMÈTRES : Offset=" + currentOffset + " | Limit=" + BATCH_SIZE +
+                                "\n📩 BODY REÇU  : " + e.getResponseBodyAsString() +
+                                "\n==================================================");
                         Thread.sleep(10000);
                     } catch (Exception e) {
-                        log.warn("⚠️ [IMPORT] Erreur Java/Réseau (Tentative {}/3) : {}", attempt, e.getMessage());
+                        log.warn("\n==================================================" +
+                                "\n💥 [ERREUR JAVA/RÉSEAU - IMPORT BYTEL] 💥" +
+                                "\n📌 TENTATIVE  : " + attempt + "/3" +
+                                "\n📌 DÉTAILS    : " + e.getMessage() +
+                                "\n==================================================");
                         Thread.sleep(10000);
                     }
                 }
