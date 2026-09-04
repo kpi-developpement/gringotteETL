@@ -44,6 +44,10 @@ public class DashboardController {
         stats.put("healer_status", syncOrchestrator.getHealerStatus());
         stats.put("alerts", syncOrchestrator.getRecentAlerts());
 
+        // 🚀 NOUVEAU: Données analytiques précises
+        stats.put("radar_processed_total", syncOrchestrator.getTotalRadarProcessed());
+        stats.put("healer_processed_total", syncOrchestrator.getTotalHealerProcessed());
+
         return ResponseEntity.ok(stats);
     }
 

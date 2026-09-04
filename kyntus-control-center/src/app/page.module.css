@@ -43,7 +43,8 @@
 /* 🚀 NOUVEAU: Les Diagrammes Live (Sparklines) */
 .diagramContainer { margin-top: auto; padding-top: 16px; }
 .diagramLabel { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.05em; display: block; margin-bottom: 8px; }
-.sparkline { display: flex; align-items: flex-end; gap: 4px; height: 35px; border-bottom: 1px solid #e2e8f0; }
+.speedLabel { font-size: 0.85rem; font-weight: 700; color: var(--kyntus-blue); }
+.sparkline { display: flex; align-items: flex-end; gap: 4px; height: 40px; border-bottom: 1px solid #e2e8f0; }
 .sparklineBar { flex: 1; background-color: var(--kyntus-blue); border-radius: 2px 2px 0 0; transition: height 0.3s ease; opacity: 0.8; }
 .sparklineBarHealer { background-color: #10b981; }
 

@@ -42,15 +42,17 @@ public class SyncOrchestrator {
     private volatile int totalProcessedSinceStart = 0;
     private volatile String currentEta = "En attente...";
 
-    // 🚀 CHAMPS POUR L'INTERFACE (Details & Alerts)
     private volatile String radarStatus = "En veille";
     private volatile String healerStatus = "En veille";
     private final List<String> recentAlerts = new CopyOnWriteArrayList<>();
 
+    // 🚀 NOUVEAU: Compteurs Absolus pour les Analytics (Calcul de la vitesse exacte)
+    private volatile long totalRadarProcessed = 0;
+    private volatile long totalHealerProcessed = 0;
+
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    // 🚀 L'FIX HNA : Radar à 200 pour une croisière ultra-stable
-    private static final int BATCH_SIZE = 200;
+    private static final int BATCH_SIZE = 300;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -60,6 +62,10 @@ public class SyncOrchestrator {
     public String getRadarStatus() { return radarStatus; }
     public String getHealerStatus() { return healerStatus; }
     public List<String> getRecentAlerts() { return recentAlerts; }
+
+    // 🚀 GETTERS POUR LES ANALYTICS
+    public long getTotalRadarProcessed() { return totalRadarProcessed; }
+    public long getTotalHealerProcessed() { return totalHealerProcessed; }
 
     private void addAlert(String message) {
         String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
@@ -78,6 +84,8 @@ public class SyncOrchestrator {
         radarStatus = "Démarrage en cours";
         healerStatus = "Démarrage en cours";
         recentAlerts.clear();
+        totalRadarProcessed = 0;
+        totalHealerProcessed = 0;
         addAlert("🚀 Démarrage du Daemon 24/7 (Radar & Healer)");
 
         new Thread(this::circularRadarLoop).start();
@@ -100,6 +108,8 @@ public class SyncOrchestrator {
         interventionRepository.deleteAll();
         saveState(OFFSET_KEY, 0);
         saveState(TOTAL_KEY, 0);
+        totalRadarProcessed = 0;
+        totalHealerProcessed = 0;
         addAlert("⚠️ Base de données IONOS et Locale réinitialisées");
         startSync();
     }
@@ -117,22 +127,16 @@ public class SyncOrchestrator {
         addAlert("✅ Smart Clean terminé. " + totalDeleted + " doublons supprimés.");
     }
 
-    // ==========================================
-    // THREAD 1 : LE RADAR CIRCULAIRE (FAST SYNC)
-    // ==========================================
     private void circularRadarLoop() {
         radarStatus = "En cours d'aspiration";
         while (isRunning) {
             try {
-                // 1. Vidage de IONOS vers PostgreSQL
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
                         ExportResponse exportResp = phpApiClient.export(BATCH_SIZE);
-
                         if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                             List<Intervention> incomingData = exportResp.getData();
-
                             List<Long> idsToAck = incomingData.stream()
                                     .map(Intervention::getId)
                                     .filter(id -> id != null && id > 0)
@@ -143,7 +147,6 @@ public class SyncOrchestrator {
                                         .map(Intervention::getIdIntervention)
                                         .filter(id -> id != null && !id.isEmpty())
                                         .toList();
-
                                 List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
                                 Map<String, Intervention> existingMap = existingData.stream()
                                         .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
@@ -221,6 +224,9 @@ public class SyncOrchestrator {
                             saveState(OFFSET_KEY, importResp.getNextOffset());
                             saveState(TOTAL_KEY, importResp.getTotalApi());
 
+                            // 🚀 NOUVEAU: Incrémentation du compteur absolu pour l'Analytics 10s
+                            totalRadarProcessed += importResp.getBatchCount();
+
                             totalProcessedSinceStart += importResp.getBatchCount();
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
                                 long elapsedMillis = System.currentTimeMillis() - syncStartTime;
@@ -264,9 +270,6 @@ public class SyncOrchestrator {
         radarStatus = "Arrêté";
     }
 
-    // ==========================================
-    // THREAD 2 : L'ENRICHISSEUR (BACKGROUND HEALER 24/7)
-    // ==========================================
     private void backgroundHealerLoop() {
         healerStatus = "En veille";
         while (isHealing) {
@@ -277,7 +280,7 @@ public class SyncOrchestrator {
                     healTotal = 0;
                     healCurrent = 0;
                     healerStatus = "Base de données 100% à jour (Veille)";
-                    sleep(30000);
+                    sleep(10000);
                     continue;
                 }
 
@@ -311,6 +314,10 @@ public class SyncOrchestrator {
 
                             interventionRepository.saveAll(chunk);
                             healCurrent += chunk.size();
+
+                            // 🚀 NOUVEAU: Incrémentation du compteur absolu pour l'Analytics 10s
+                            totalHealerProcessed += chunk.size();
+
                             success = true;
                             healerStatus = "Lot sauvegardé avec succès";
                             sleep(1000);

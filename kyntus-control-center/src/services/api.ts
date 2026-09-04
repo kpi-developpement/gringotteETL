@@ -12,6 +12,8 @@ export interface SyncStats {
   radar_status: string;
   healer_status: string;
   alerts: string[];
+  radar_processed_total: number;
+  healer_processed_total: number;
 }
 
 export interface Intervention {

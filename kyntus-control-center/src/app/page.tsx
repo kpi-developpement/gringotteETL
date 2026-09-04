@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { fetchStats, startSync, stopSync, resetSync, healData, SyncStats } from '../services/api';
 import StatCard from '../components/StatCard';
@@ -8,33 +8,48 @@ import styles from './page.module.css';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
-  const [prevStats, setPrevStats] = useState<SyncStats | null>(null);
   
-  // 🚀 NOUVEAU: Historique pour les Diagrammes (20 derniers ticks)
-  const [radarHistory, setRadarHistory] = useState<number[]>(Array(20).fill(0));
-  const [healerHistory, setHealerHistory] = useState<number[]>(Array(20).fill(0));
+  // Historique pour les Diagrammes (15 derniers ticks de 10s)
+  const [radarHistory, setRadarHistory] = useState<number[]>(Array(15).fill(0));
+  const [healerHistory, setHealerHistory] = useState<number[]>(Array(15).fill(0));
+  
+  // Vitesses actuelles (EPS/10s)
+  const [currentRadarSpeed, setCurrentRadarSpeed] = useState(0);
+  const [currentHealerSpeed, setCurrentHealerSpeed] = useState(0);
+
+  const tickCount = useRef(0);
+  const lastRadarTotal = useRef(0);
+  const lastHealerTotal = useRef(0);
 
   const loadStats = async () => {
     const data = await fetchStats();
     if (data) {
       setStats(data);
-      setPrevStats((old) => {
-        if (old) {
-          // Calculer le delta (vitesse par tick)
-          let rDelta = data.current_bt_offset - old.current_bt_offset;
-          let hDelta = data.heal_current - old.heal_current;
-          
-          // Ignorer les sauts bizarres (reset ou redémarrage)
-          if (rDelta < 0 || rDelta > 5000) rDelta = 0;
-          if (hDelta < 0 || hDelta > 5000) hDelta = 0;
+      
+      // Si redémarrage ou reset (les totaux baissent), on reset nos refs
+      if (data.radar_processed_total < lastRadarTotal.current) {
+        lastRadarTotal.current = data.radar_processed_total;
+        lastHealerTotal.current = data.healer_processed_total;
+      }
 
-          if (data.is_running || data.is_healing) {
-            setRadarHistory(prev => [...prev.slice(1), rDelta]);
-            setHealerHistory(prev => [...prev.slice(1), hDelta]);
-          }
-        }
-        return data;
-      });
+      // Incrémenter le compteur de ticks (on fetch toutes les 2s)
+      tickCount.current += 1;
+      
+      // Toutes les 10 secondes (5 ticks de 2s), on calcule la vitesse
+      if (tickCount.current >= 5) {
+        const rDelta = Math.max(0, data.radar_processed_total - lastRadarTotal.current);
+        const hDelta = Math.max(0, data.healer_processed_total - lastHealerTotal.current);
+
+        setCurrentRadarSpeed(rDelta);
+        setCurrentHealerSpeed(hDelta);
+
+        setRadarHistory(prev => [...prev.slice(1), rDelta]);
+        setHealerHistory(prev => [...prev.slice(1), hDelta]);
+
+        lastRadarTotal.current = data.radar_processed_total;
+        lastHealerTotal.current = data.healer_processed_total;
+        tickCount.current = 0;
+      }
     }
   };
 
@@ -50,8 +65,10 @@ export default function DashboardPage() {
   const handleReset = async () => {
     if (window.confirm("ATTENTION : Cela va effacer TOUTES les données sur IONOS et en Local. Êtes-vous sûr ?")) {
       await resetSync();
-      setRadarHistory(Array(20).fill(0));
-      setHealerHistory(Array(20).fill(0));
+      setRadarHistory(Array(15).fill(0));
+      setHealerHistory(Array(15).fill(0));
+      setCurrentRadarSpeed(0);
+      setCurrentHealerSpeed(0);
       loadStats();
     }
   };
@@ -64,7 +81,6 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 L'FIX HNA : Nettoyeur des Status Errors
   const formatStatus = (status: string | undefined) => {
     if (!status) return 'Inconnu';
     if (status.includes('500') || status.includes('INTERNAL_SERVER_ERROR')) return '⚠️ Serveur Bouygues Surchargé (HTTP 500)';
@@ -86,15 +102,18 @@ export default function DashboardPage() {
 
   const getRadarInsight = () => {
     if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
-    if (stats?.radar_status.includes("50")) return <span className={styles.highlightWarning}>API Bouygues lente. Retrys en cours.</span>;
-    if (stats?.radar_status.includes("Banni") || stats?.radar_status.includes("403")) return <span className={styles.highlightWarning}>Pare-feu Akamai actif. Esquive en cours.</span>;
-    return <span className={styles.highlightGood}>Navigation à vitesse de croisière.</span>;
+    if (stats?.radar_status.includes("50")) return <span className={styles.highlightWarning}>API Bouygues en Timeout. Esquive en cours.</span>;
+    if (stats?.radar_status.includes("Banni") || stats?.radar_status.includes("403")) return <span className={styles.highlightWarning}>Pare-feu Akamai actif. Le Radar esquive et patiente 15m.</span>;
+    return <span className={styles.highlightGood}>Le Radar est fluide. Vitesse Actuelle: {currentRadarSpeed} EPS/10s.</span>;
   };
 
   const getHealerInsight = () => {
     if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
+    if (stats?.radar_status.includes("50") && stats?.healer_status.includes("Lot sauvegardé")) {
+      return <span className={styles.highlightGood}>Twin-Turbo Actif: Le Radar bloque, l'Healer accélère le nettoyage.</span>;
+    }
     if (healTotal === 0) return <span className={styles.highlightGood}>Base de données 100% qualifiée.</span>;
-    return <span className={styles.highlightNeutral}>Enrichissement en tâche de fond (Pattern furtif).</span>;
+    return <span className={styles.highlightNeutral}>Enrichissement furtif en cours. Vitesse Actuelle: {currentHealerSpeed} EPS/10s.</span>;
   };
 
   return (
@@ -143,10 +162,14 @@ export default function DashboardPage() {
 
               {/* DIAGRAMME RADAR */}
               <div className={styles.diagramContainer}>
-                <span className={styles.diagramLabel}>Activité Radar (EPS)</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span className={styles.diagramLabel}>Activité Radar (EPS/10s)</span>
+                  <span className={styles.speedLabel}>{currentRadarSpeed} EPS</span>
+                </div>
                 <div className={styles.sparkline}>
                   {radarHistory.map((val, i) => (
-                    <div key={i} className={styles.sparklineBar} style={{ height: `${Math.max(2, (val / 300) * 100)}%` }} title={`${val} EPS`}></div>
+                    // Echelle Max: ~1500 EPS per 10s
+                    <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(2, (val / 1500) * 100))}%` }} title={`${val} EPS`}></div>
                   ))}
                 </div>
               </div>
@@ -175,10 +198,14 @@ export default function DashboardPage() {
 
               {/* DIAGRAMME HEALER */}
               <div className={styles.diagramContainer}>
-                <span className={styles.diagramLabel}>Activité Healer (EPS)</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span className={styles.diagramLabel}>Activité Healer (EPS/10s)</span>
+                  <span className={styles.speedLabel} style={{ color: '#10b981' }}>{currentHealerSpeed} EPS</span>
+                </div>
                 <div className={styles.sparkline}>
                   {healerHistory.map((val, i) => (
-                    <div key={i} className={`${styles.sparklineBar} ${styles.sparklineBarHealer}`} style={{ height: `${Math.max(2, (val / 20) * 100)}%` }} title={`${val} EPS`}></div>
+                    // Echelle Max: ~200 EPS per 10s
+                    <div key={i} className={`${styles.sparklineBar} ${styles.sparklineBarHealer}`} style={{ height: `${Math.min(100, Math.max(2, (val / 200) * 100))}%` }} title={`${val} EPS`}></div>
                   ))}
                 </div>
               </div>
@@ -227,7 +254,6 @@ export default function DashboardPage() {
             <div className={styles.alertsConsole}>
               {stats.alerts.map((alert, idx) => (
                 <div key={idx} className={styles.alertItem}>
-                  {/* Clean up logs in the console too */}
                   {alert.includes('500') || alert.includes('INTERNAL_SERVER') 
                     ? alert.replace(/HTTP 500.*/, '⚠️ API Surchargée (HTTP 500)')
                     : alert}
