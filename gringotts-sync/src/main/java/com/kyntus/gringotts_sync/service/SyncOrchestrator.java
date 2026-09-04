@@ -46,13 +46,14 @@ public class SyncOrchestrator {
     private volatile String healerStatus = "En veille";
     private final List<String> recentAlerts = new CopyOnWriteArrayList<>();
 
-    // 🚀 NOUVEAU: Compteurs Absolus pour les Analytics (Calcul de la vitesse exacte)
     private volatile long totalRadarProcessed = 0;
     private volatile long totalHealerProcessed = 0;
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    private static final int BATCH_SIZE = 300;
+
+    // 🚀 L'FIX HNA : 200 pour le Radar, c'est la limite de confort de Bouygues
+    private static final int BATCH_SIZE = 200;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -63,7 +64,6 @@ public class SyncOrchestrator {
     public String getHealerStatus() { return healerStatus; }
     public List<String> getRecentAlerts() { return recentAlerts; }
 
-    // 🚀 GETTERS POUR LES ANALYTICS
     public long getTotalRadarProcessed() { return totalRadarProcessed; }
     public long getTotalHealerProcessed() { return totalHealerProcessed; }
 
@@ -86,7 +86,7 @@ public class SyncOrchestrator {
         recentAlerts.clear();
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
-        addAlert("🚀 Démarrage du Daemon 24/7 (Radar & Healer)");
+        addAlert("🚀 Démarrage du Daemon 24/7 (Radar " + BATCH_SIZE + " & Healer 20)");
 
         new Thread(this::circularRadarLoop).start();
         new Thread(this::backgroundHealerLoop).start();
@@ -135,8 +135,10 @@ public class SyncOrchestrator {
                 while (bufferHasData && isRunning) {
                     try {
                         ExportResponse exportResp = phpApiClient.export(BATCH_SIZE);
+
                         if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
                             List<Intervention> incomingData = exportResp.getData();
+
                             List<Long> idsToAck = incomingData.stream()
                                     .map(Intervention::getId)
                                     .filter(id -> id != null && id > 0)
@@ -147,6 +149,7 @@ public class SyncOrchestrator {
                                         .map(Intervention::getIdIntervention)
                                         .filter(id -> id != null && !id.isEmpty())
                                         .toList();
+
                                 List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
                                 Map<String, Intervention> existingMap = existingData.stream()
                                         .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
@@ -224,10 +227,9 @@ public class SyncOrchestrator {
                             saveState(OFFSET_KEY, importResp.getNextOffset());
                             saveState(TOTAL_KEY, importResp.getTotalApi());
 
-                            // 🚀 NOUVEAU: Incrémentation du compteur absolu pour l'Analytics 10s
                             totalRadarProcessed += importResp.getBatchCount();
-
                             totalProcessedSinceStart += importResp.getBatchCount();
+
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
                                 long elapsedMillis = System.currentTimeMillis() - syncStartTime;
                                 long millisPerItem = elapsedMillis / totalProcessedSinceStart;
@@ -236,7 +238,9 @@ public class SyncOrchestrator {
                             }
                             importSuccess = true;
                             radarStatus = "Offset: " + importResp.getNextOffset() + " / " + importResp.getTotalApi();
-                            sleep(500);
+
+                            // 🚀 L'FIX HNA : Le Radar se repose 2 secondes au lieu de 0.5s pour laisser le temps à Bouygues de respirer
+                            sleep(2000);
                             break;
                         }
                     } catch (RestClientResponseException e) {
@@ -247,7 +251,7 @@ public class SyncOrchestrator {
                             currentEta = "Pause WAF";
                             sleep(15 * 60 * 1000);
                         } else {
-                            addAlert("⚠️ RADAR: Erreur API PHP (" + e.getStatusCode() + ")");
+                            addAlert("⚠️ RADAR: Serveur Bouygues Surchargé (" + e.getStatusCode() + ")");
                             radarStatus = "Erreur HTTP " + e.getStatusCode();
                             sleep(10000);
                         }
@@ -314,8 +318,6 @@ public class SyncOrchestrator {
 
                             interventionRepository.saveAll(chunk);
                             healCurrent += chunk.size();
-
-                            // 🚀 NOUVEAU: Incrémentation du compteur absolu pour l'Analytics 10s
                             totalHealerProcessed += chunk.size();
 
                             success = true;
