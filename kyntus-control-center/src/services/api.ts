@@ -5,7 +5,7 @@ export interface SyncStats {
   current_bt_offset: number;
   total_api: number;
   is_running: boolean;
-  eta: string; // 🚀 NOUVEAU: Champ ETA
+  eta: string;
   is_healing: boolean;
   heal_total: number;
   heal_current: number;
@@ -75,8 +75,8 @@ export const healData = async (): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/heal`, { method: 'POST' });
     const data = await res.json();
-    return data.message || "Réparation lancée.";
-  } catch (e) { return "Erreur lors du lancement de la réparation."; }
+    return data.message || "Opération lancée.";
+  } catch (e) { return "Erreur lors de l'appel."; }
 };
 
 export const fetchInterventions = async (search: string, page: number, size: number = 50): Promise<PageResponse | null> => {

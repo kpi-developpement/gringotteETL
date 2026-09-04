@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, stopSync, resetSync, setManualOffset, healData, SyncStats } from '../services/api';
+import { fetchStats, startSync, stopSync, resetSync, healData, SyncStats } from '../services/api';
 import StatCard from '../components/StatCard';
 import styles from './page.module.css';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
-  const [newOffset, setNewOffset] = useState<string>('');
 
   const loadStats = async () => {
     const data = await fetchStats();
@@ -31,138 +30,139 @@ export default function DashboardPage() {
     }
   };
 
-  const handleSetOffset = async () => {
-    const val = parseInt(newOffset);
-    if (!isNaN(val) && val >= 0) {
-      await setManualOffset(val);
-      setNewOffset('');
-      loadStats();
-      alert(`Offset mis à jour à ${val}. Cliquez sur Démarrer pour reprendre à partir d'ici.`);
-    }
-  };
-
-  const handleHeal = async () => {
-    if (window.confirm("Cela va nettoyer les doublons et re-télécharger les détails manquants. Continuer ?")) {
+  const handleSmartClean = async () => {
+    if (window.confirm("Cela va lancer un nettoyage des doublons dans la base de données. Continuer ?")) {
       await healData();
+      alert("Nettoyage lancé en arrière-plan.");
       loadStats();
     }
   };
 
+  // Calculs pour le Radar (Aspirateur)
   const totalApi = stats?.total_api || 0;
-  const totalLocal = stats?.total_interventions_local || 0;
-  const progress = totalApi > 0 ? Math.min(100, Math.round((totalLocal / totalApi) * 100)) : 0;
+  const currentOffset = stats?.current_bt_offset || 0;
+  const progressRadar = totalApi > 0 ? Math.min(100, Math.round((currentOffset / totalApi) * 100)) : 0;
 
+  // Calculs pour le Healer (Enrichisseur)
   const healTotal = stats?.heal_total || 0;
   const healCurrent = stats?.heal_current || 0;
-  const healProgress = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 0;
+  const progressHealer = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 100;
+
+  const isRunning = stats?.is_running || false;
+  const etaText = stats?.eta || "En attente...";
 
   return (
     <div className={styles.container}>
       <header className={styles.header}>
         <div>
-          <h1 className={styles.pageTitle}>Gringotts Sync</h1>
-          <p className={styles.pageSubtitle}>Mode Turbo (Logique Java) 🚀</p>
+          <h1 className={styles.pageTitle}>Gringotts Control Center</h1>
+          <p className={styles.pageSubtitle}>Gestionnaire de Synchronisation 24/7 (Daemon)</p>
         </div>
         <div className={styles.statusContainer}>
-          <span className={stats?.is_healing ? styles.statusHealing : stats?.is_running ? styles.statusOnline : styles.statusOffline}>
-            {stats?.is_healing ? '🛠️ RÉPARATION EN COURS' : stats?.is_running ? '🟢 EN COURS D\'ASPIRATION' : '🔴 À L\'ARRÊT'}
-          </span>
+          {isRunning ? (
+            <span className={styles.statusOnline}>
+              <span className={styles.pulse}></span> DAEMON ACTIF
+            </span>
+          ) : (
+            <span className={styles.statusOffline}>
+              DAEMON ARRÊTÉ
+            </span>
+          )}
         </div>
       </header>
 
-      <main className={styles.main}>
+      <div className={styles.dashboardGrid}>
         
-        {stats?.is_healing && (
-          <div className={styles.progressContainer} style={{ borderColor: '#059669', backgroundColor: '#ecfdf5', marginBottom: '20px', padding: '15px', borderRadius: '8px' }}>
-            <div className={styles.progressHeader} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <span className={styles.progressTitle} style={{ color: '#065f46', fontWeight: 'bold' }}>Progression de la Réparation (Détails manquants)</span>
-              <span className={styles.progressText} style={{ color: '#047857', fontWeight: 'bold' }}>{healCurrent.toLocaleString()} / {healTotal.toLocaleString()} ({healProgress}%)</span>
+        {/* PANNEAU DE SUPERVISION DES MOTEURS */}
+        <div className={styles.panel}>
+          <h2 className={styles.panelTitle}>Supervision des Moteurs</h2>
+          
+          <div className={styles.enginesContainer}>
+            
+            {/* MOTEUR 1 : RADAR */}
+            <div className={styles.engineBox} style={{ borderLeft: '4px solid var(--kyntus-blue)' }}>
+              <div className={styles.engineHeader}>
+                <span className={styles.engineName}>📡 Radar Circulaire (Aspirateur)</span>
+                <span className={`${styles.engineEta} ${isRunning ? styles.engineEtaActive : ''}`}>
+                  {isRunning ? `ETA: ${etaText}` : 'En veille'}
+                </span>
+              </div>
+              <div className={styles.progressStats}>
+                <span>Progression du scan API</span>
+                <span>{currentOffset.toLocaleString()} / {totalApi.toLocaleString()} ({progressRadar}%)</span>
+              </div>
+              <div className={styles.progressBarBg}>
+                <div className={styles.progressBarFill} style={{ width: `${progressRadar}%` }}></div>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px' }}>
+                Récupère les EPS et statuts par lots de 300. Tourne en boucle infinie.
+              </p>
             </div>
-            <div className={styles.progressBarBg} style={{ width: '100%', height: '12px', backgroundColor: '#d1fae5', borderRadius: '6px', overflow: 'hidden' }}>
-              <div className={styles.progressBarFill} style={{ width: `${healProgress}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #34d399)', transition: 'width 0.5s ease' }}></div>
-            </div>
-          </div>
-        )}
 
-        {!stats?.is_healing && (
-          <div className={styles.progressContainer} style={{ marginBottom: '20px', padding: '15px', backgroundColor: 'white', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-            <div className={styles.progressHeader} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <span className={styles.progressTitle} style={{ fontWeight: 'bold', color: 'var(--kyntus-dark)' }}>Progression Réelle (EPS Uniques)</span>
-              <span className={styles.progressText} style={{ fontWeight: 'bold', color: 'var(--kyntus-blue)' }}>
-                {totalLocal.toLocaleString()} / {totalApi.toLocaleString()} ({progress}%)
-                {stats?.is_running && stats?.eta && <span style={{ marginLeft: '15px', color: '#f59e0b' }}>⏱️ Temps restant : {stats.eta}</span>}
-              </span>
+            {/* MOTEUR 2 : HEALER */}
+            <div className={styles.engineBox} style={{ borderLeft: '4px solid #10b981' }}>
+              <div className={styles.engineHeader}>
+                <span className={styles.engineName}>🛠️ Background Healer (Enrichisseur)</span>
+                <span className={`${styles.engineEta} ${stats?.is_healing && healTotal > 0 ? styles.engineEtaActive : ''}`}>
+                  {stats?.is_healing && healTotal > 0 ? 'En cours...' : 'En veille (À jour)'}
+                </span>
+              </div>
+              <div className={styles.progressStats}>
+                <span>Détails récupérés (Lot en cours)</span>
+                <span>{healCurrent.toLocaleString()} / {healTotal.toLocaleString()} ({progressHealer}%)</span>
+              </div>
+              <div className={styles.progressBarBg}>
+                <div className={styles.progressBarFillHealer} style={{ width: `${progressHealer}%` }}></div>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '8px' }}>
+                Récupère les détails manquants (20 par 20) furtivement pour éviter Akamai WAF.
+              </p>
             </div>
-            <div className={styles.progressBarBg} style={{ width: '100%', height: '12px', backgroundColor: '#e5e7eb', borderRadius: '6px', overflow: 'hidden' }}>
-              <div className={styles.progressBarFill} style={{ width: `${progress}%`, height: '100%', backgroundColor: 'var(--kyntus-blue)', transition: 'width 0.5s ease' }}></div>
-            </div>
-          </div>
-        )}
 
-        <div className={styles.grid}>
-          <StatCard 
-            title="Interventions Uniques Sécurisées" 
-            value={stats ? stats.total_interventions_local.toLocaleString() : '---'} 
-            subtitle="Base de données locale (Postgres)"
-          />
-          <StatCard 
-            title="Offset API Bouygues" 
-            value={stats ? stats.current_bt_offset.toLocaleString() : '---'} 
-            subtitle="Curseur de lecture actuel"
-          />
+          </div>
+
+          <div className={styles.statsGrid}>
+            <StatCard 
+              title="Total Interventions (DW Local)" 
+              value={stats ? stats.total_interventions_local.toLocaleString() : '---'} 
+            />
+            <StatCard 
+              title="Détails Manquants" 
+              value={stats ? stats.heal_total.toLocaleString() : '---'} 
+            />
+          </div>
         </div>
 
-        <div className={styles.actionPanel}>
-          <h2 className={styles.panelTitle}>Contrôle du Moteur</h2>
+        {/* PANNEAU DE CONTRÔLE */}
+        <div className={styles.panel} style={{ display: 'flex', flexDirection: 'column' }}>
+          <h2 className={styles.panelTitle}>Commandes</h2>
           
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '20px', flexWrap: 'wrap' }}>
-            {!stats?.is_running && !stats?.is_healing ? (
-              <button className={styles.buttonStart} onClick={handleStart} style={{ backgroundColor: 'var(--kyntus-blue)', color: 'white', padding: '12px 24px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>▶ DÉMARRER AVEC DÉTAILS</button>
+          <div className={styles.controlsPanel}>
+            {!isRunning ? (
+              <button className={`${styles.mainButton} ${styles.btnStart}`} onClick={handleStart}>
+                ▶ DÉMARRER LE DAEMON
+              </button>
             ) : (
-              <button className={styles.buttonStop} onClick={handleStop} disabled={stats?.is_healing} style={{ backgroundColor: '#ef4444', color: 'white', padding: '12px 24px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: stats?.is_healing ? 'not-allowed' : 'pointer' }}>
-                {stats?.is_healing ? 'Veuillez patienter...' : '⏹ STOPPER'}
+              <button className={`${styles.mainButton} ${styles.btnStop}`} onClick={handleStop}>
+                ⏹ STOPPER LE DAEMON
               </button>
             )}
-            <Link href="/interventions" className={styles.buttonLink} style={{ backgroundColor: '#f3f4f6', color: '#374151', padding: '12px 24px', border: '1px solid #d1d5db', borderRadius: '6px', fontWeight: 'bold', textDecoration: 'none' }}>Voir les données</Link>
-          </div>
 
-          <div style={{ marginTop: '20px' }}>
-            <button 
-              onClick={handleHeal}
-              disabled={stats?.is_running || stats?.is_healing}
-              style={{ backgroundColor: (stats?.is_running || stats?.is_healing) ? '#9ca3af' : '#059669', color: 'white', border: 'none', padding: '12px 24px', fontSize: '1rem', fontWeight: 600, borderRadius: '6px', cursor: (stats?.is_running || stats?.is_healing) ? 'not-allowed' : 'pointer' }}
-            >
-              🛠️ RÉPARER LES DONNÉES (Smart Clean & Heal)
+            <Link href="/interventions" className={`${styles.mainButton} ${styles.btnExplore}`}>
+              🔍 Explorer les données
+            </Link>
+
+            <button className={styles.btnClean} onClick={handleSmartClean}>
+              🧹 Forcer un Smart Clean (Doublons)
             </button>
           </div>
 
-          <div style={{ marginTop: '30px', padding: '20px', backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-            <h3 style={{ fontSize: '1rem', marginBottom: '10px', color: 'var(--kyntus-dark)' }}>Modifier l'Offset Manuellement</h3>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <input 
-                type="number" 
-                value={newOffset} 
-                onChange={(e) => setNewOffset(e.target.value)} 
-                placeholder="Ex: 711003"
-                style={{ padding: '10px', borderRadius: '6px', border: '1px solid #ccc', width: '200px' }}
-              />
-              <button 
-                onClick={handleSetOffset}
-                disabled={stats?.is_running || stats?.is_healing}
-                style={{ backgroundColor: (stats?.is_running || stats?.is_healing) ? '#9ca3af' : 'var(--kyntus-blue)', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: (stats?.is_running || stats?.is_healing) ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
-              >
-                Valider l'Offset
-              </button>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
-            <button className={styles.buttonReset} onClick={handleReset} disabled={stats?.is_running || stats?.is_healing}>
-              ⚠️ RESET & RESTART FROM ZERO
-            </button>
-          </div>
+          <button className={styles.btnReset} onClick={handleReset}>
+            ⚠️ RESET TOTAL (DANGER)
+          </button>
         </div>
-      </main>
+
+      </div>
     </div>
   );
 }
