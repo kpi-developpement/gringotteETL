@@ -43,7 +43,7 @@ public class PhpApiClient {
     }
 
     public ImportResponse triggerImport(int offset, int limit) {
-        // 🚀 L'FIX BRILLANT: fetch_details = false. Java howa li ghay-tjellf b details asynchrone
+        // 🚀 L'FIX : fetch_details = false pour le Radar
         String jsonBody = String.format("{\"offset\":%d,\"limit\":%d,\"fetch_details\":false}", offset, limit);
 
         return restClient.post()

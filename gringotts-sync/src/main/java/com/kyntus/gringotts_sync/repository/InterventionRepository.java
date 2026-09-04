@@ -19,7 +19,6 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
 
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
 
-    // --- Fonctions pour le Dashboard (Boutons manuels) ---
     @Modifying
     @Transactional
     @Query(value = "DELETE FROM interventions a USING interventions b WHERE a.id > b.id AND a.id_intervention = b.id_intervention", nativeQuery = true)
@@ -30,7 +29,6 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id > (SELECT MAX(id) FROM (SELECT id FROM interventions ORDER BY id ASC LIMIT :keepCount) AS temp)", nativeQuery = true)
     int deleteExcessRecords(@Param("keepCount") int keepCount);
 
-    // --- Fonctions pour l'Healer (Réparation automatique) ---
     @Query(value = "SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY id_intervention ORDER BY CASE WHEN detail_intervention IS NOT NULL AND detail_intervention != '[]' THEN 1 ELSE 2 END, id ASC) as rn FROM interventions) t WHERE t.rn > 1 LIMIT 1000", nativeQuery = true)
     List<Long> findDuplicateIds();
 
@@ -44,6 +42,10 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
+    // 🚀 L'FIX HNA : L'Healer kay-jbed ghir 20 b 20 bach n-b9aw safe
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' LIMIT 20", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetails();
+
+    @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
+    long countInterventionsWithMissingDetails();
 }

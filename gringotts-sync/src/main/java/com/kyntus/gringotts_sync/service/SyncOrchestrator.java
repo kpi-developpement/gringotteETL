@@ -1,6 +1,5 @@
 package com.kyntus.gringotts_sync.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
@@ -36,13 +35,11 @@ public class SyncOrchestrator {
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
 
-    private volatile long syncStartTime = 0;
-    private volatile int totalProcessedSinceStart = 0;
-    private volatile String currentEta = "Calcul en cours...";
+    private volatile String currentEta = "En attente...";
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    private static final int BATCH_SIZE = 500;
+    private static final int BATCH_SIZE = 300;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -51,24 +48,28 @@ public class SyncOrchestrator {
     public String getCurrentEta() { return currentEta; }
 
     public void startSync() {
-        if (isRunning || isHealing) return;
+        if (isRunning) return;
         isRunning = true;
-        syncStartTime = System.currentTimeMillis();
-        totalProcessedSinceStart = 0;
-        currentEta = "Calcul en cours...";
-        log.info("🚀 DÉMARRAGE DU MODE TURBO ({} PAR BATCH - PHP MULTI-CURL)", BATCH_SIZE);
-        new Thread(this::processLoop).start();
+        isHealing = true; // Activer le Healer en parallèle
+        currentEta = "Initialisation du Radar...";
+
+        log.info("🚀 DÉMARRAGE DU DAEMON 24/7 (RADAR {}/BATCH + HEALER 20/BATCH)", BATCH_SIZE);
+
+        new Thread(this::circularRadarLoop).start();
+        new Thread(this::backgroundHealerLoop).start();
     }
 
     public void stopSync() {
         log.info("🛑 ARRÊT DEMANDÉ PAR L'UTILISATEUR");
         isRunning = false;
+        isHealing = false;
         currentEta = "Arrêté";
     }
 
     public void resetAndStartFromZero() {
         log.info("⚠️ RESET TOTAL DEMANDÉ...");
         stopSync();
+        sleep(2000); // Laisser le temps aux threads de mourir
         try { phpApiClient.resetIonos(); } catch (Exception e) {}
         interventionRepository.deleteAll();
         saveState(OFFSET_KEY, 0);
@@ -76,95 +77,27 @@ public class SyncOrchestrator {
         startSync();
     }
 
+    // Le bouton Heal Manuel devient "Smart Clean"
     public void healDatabase() {
-        if (isHealing) return;
-        isHealing = true;
-        healTotal = 0;
-        healCurrent = 0;
-        log.info("🛠️ DÉBUT DE LA RÉPARATION DES DONNÉES...");
-        stopSync();
-        try {
-            List<Intervention> brokenInterventions = interventionRepository.findInterventionsWithMissingDetails();
-            healTotal = brokenInterventions.size();
-            log.info("🔍 {} interventions trouvées sans détails. Début de la récupération...", healTotal);
-
-            if (healTotal == 0) {
-                isHealing = false;
-                return;
-            }
-
-            List<String> idsToHeal = brokenInterventions.stream().map(Intervention::getIdIntervention).toList();
-            Map<String, String> fetchedDetails = fetchDetailsSafely(idsToHeal, true);
-
-            for (Intervention inv : brokenInterventions) {
-                String d = fetchedDetails.get(inv.getIdIntervention());
-                if (d != null) inv.setDetailIntervention(d);
-            }
-            interventionRepository.saveAll(brokenInterventions);
-            log.info("🎉 RÉPARATION TERMINÉE !");
-
-        } catch (Exception e) {
-            log.error("❌ Erreur fatale pendant la réparation : ", e);
-        } finally {
-            isHealing = false;
+        log.info("🧹 Lancement du Smart Clean manuel...");
+        int totalDeleted = 0;
+        while (true) {
+            List<Long> duplicateIds = interventionRepository.findDuplicateIds();
+            if (duplicateIds.isEmpty()) break;
+            interventionRepository.deleteLogsByIds(duplicateIds);
+            int deleted = interventionRepository.deleteInterventionsByIds(duplicateIds);
+            totalDeleted += deleted;
         }
+        log.info("🧹 Smart Clean terminé ! Doublons supprimés : {}", totalDeleted);
     }
 
-    // 💡 L'FIX HNA : Séquentiel côté Java (par lots de 100) -> Parallèle contrôlé côté PHP
-    private Map<String, String> fetchDetailsSafely(List<String> ids, boolean isHealingMode) {
-        Map<String, String> results = new HashMap<>();
-        if (ids.isEmpty()) return results;
-
-        int chunkSize = 100; // Limite de sécurité pour la longueur de l'URL GET
-        int totalChunks = (int) Math.ceil((double) ids.size() / chunkSize);
-
-        for (int i = 0; i < ids.size(); i += chunkSize) {
-            if (!isRunning && !isHealing) break;
-
-            List<String> chunk = ids.subList(i, Math.min(i + chunkSize, ids.size()));
-            int chunkIndex = (i / chunkSize) + 1;
-
-            boolean success = false;
-            for (int attempt = 1; attempt <= 5; attempt++) {
-                try {
-                    Map<String, Object> response = phpApiClient.healData(chunk);
-                    if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
-                        Object rawData = response.get("data");
-                        if (rawData instanceof Map) {
-                            results.putAll((Map<String, String>) rawData);
-                        }
-                        success = true;
-                        if (isHealingMode) healCurrent += chunk.size();
-                        break;
-                    }
-                } catch (RestClientResponseException e) {
-                    if (e.getStatusCode().value() == 403) {
-                        log.warn("⚠️ [WAF AKAMAI] Blocage 403 sur lot {}/{}. Le Pare-feu est fâché. Pause 30s...", chunkIndex, totalChunks);
-                        sleep(30000);
-                    } else {
-                        log.warn("⚠️ [ERREUR PHP] HTTP {} sur lot {}/{} : {}", e.getStatusCode(), chunkIndex, totalChunks, e.getResponseBodyAsString());
-                        sleep(5000);
-                    }
-                } catch (Exception e) {
-                    sleep(5000);
-                }
-            }
-            if (!success) {
-                log.error("❌ Echec définitif pour le sous-lot {}/{} après 5 tentatives.", chunkIndex, totalChunks);
-                if (isHealingMode) healCurrent += chunk.size();
-            }
-        }
-        return results;
-    }
-
-    private void sleep(long millis) {
-        try { Thread.sleep(millis); } catch (InterruptedException ignored) {}
-    }
-
-    private void processLoop() {
+    // ==========================================
+    // THREAD 1 : LE RADAR CIRCULAIRE (FAST SYNC)
+    // ==========================================
+    private void circularRadarLoop() {
         while (isRunning) {
             try {
-                // 1. L'ASPIRATEUR & FETCH DES DÉTAILS
+                // 1. Vidage de IONOS vers PostgreSQL
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
@@ -177,22 +110,6 @@ public class SyncOrchestrator {
                                     .map(Intervention::getId)
                                     .filter(id -> id != null && id > 0)
                                     .collect(Collectors.toList());
-
-                            // 🚀 FETCH DETAILS ASYNCHRONE SÉQUENTIEL AVANT SAUVEGARDE
-                            List<String> idsNeedingDetails = incomingData.stream()
-                                    .filter(inv -> inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("null"))
-                                    .map(Intervention::getIdIntervention)
-                                    .toList();
-
-                            if (!idsNeedingDetails.isEmpty()) {
-                                Map<String, String> fetchedDetails = fetchDetailsSafely(idsNeedingDetails, false);
-                                for (Intervention inv : incomingData) {
-                                    String detail = fetchedDetails.get(inv.getIdIntervention());
-                                    if (detail != null) {
-                                        inv.setDetailIntervention(detail);
-                                    }
-                                }
-                            }
 
                             transactionTemplate.executeWithoutResult(status -> {
                                 List<String> incomingEpsIds = incomingData.stream()
@@ -246,12 +163,8 @@ public class SyncOrchestrator {
                         } else {
                             bufferHasData = false;
                         }
-                    } catch (RestClientResponseException e) {
-                        log.error("🚨 [CRASH API PHP - EXPORT] HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
-                        bufferHasData = false;
-                        sleep(5000);
                     } catch (Exception e) {
-                        log.error("❌ [ERREUR JAVA - EXPORT] : {}", e.getMessage());
+                        log.error("❌ [RADAR - IONOS EXPORT] Erreur : {}", e.getMessage());
                         bufferHasData = false;
                         sleep(5000);
                     }
@@ -262,14 +175,18 @@ public class SyncOrchestrator {
                 int currentOffset = getSavedState(OFFSET_KEY);
                 int totalApi = getSavedState(TOTAL_KEY);
 
+                // Si on a atteint la fin, le Radar redémarre à 0 pour chercher les mises à jour
                 if (totalApi > 0 && currentOffset >= totalApi) {
-                    log.info("🏁 100% ATTEINT !");
-                    isRunning = false;
-                    currentEta = "Terminé ✓";
-                    break;
+                    log.info("🔄 CYCLE RADAR TERMINÉ ! Retour à l'offset 0 pour chercher les nouveautés...");
+                    saveState(OFFSET_KEY, 0);
+                    currentOffset = 0;
+                    currentEta = "Nouveau Cycle (Update)";
+                    sleep(5000);
+                } else {
+                    currentEta = "Balayage Continu...";
                 }
 
-                // 2. IMPORT BT (SANS DÉTAILS - 1 SEULE REQUÊTE ULTRA RAPIDE)
+                // 2. Scan API BT (Liste uniquement - Très rapide)
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
@@ -277,33 +194,25 @@ public class SyncOrchestrator {
 
                         if (importResp != null && importResp.isOk()) {
                             if (importResp.getBatchCount() == 0) {
-                                isRunning = false;
-                                currentEta = "Terminé ✓";
+                                saveState(OFFSET_KEY, importResp.getTotalApi()); // Force le reset au prochain tour
                                 break;
                             }
 
                             saveState(OFFSET_KEY, importResp.getNextOffset());
                             saveState(TOTAL_KEY, importResp.getTotalApi());
 
-                            totalProcessedSinceStart += importResp.getBatchCount();
-                            long elapsedMillis = System.currentTimeMillis() - syncStartTime;
-                            if (totalProcessedSinceStart > 0) {
-                                long millisPerItem = elapsedMillis / totalProcessedSinceStart;
-                                int remainingItems = importResp.getTotalApi() - importResp.getNextOffset();
-                                long remainingMillis = remainingItems * millisPerItem;
-                                currentEta = formatDuration(remainingMillis);
-                            }
-
-                            log.info("📥 Liste BT : Offset {} -> {}. ETA: {}", currentOffset, importResp.getNextOffset(), currentEta);
+                            log.info("📡 RADAR : Offset {} -> {}. Total: {}", currentOffset, importResp.getNextOffset(), importResp.getTotalApi());
                             importSuccess = true;
+                            sleep(500); // 0.5s pause entre chaque scan
                             break;
                         }
                     } catch (RestClientResponseException e) {
                         if (e.getStatusCode().value() == 403) {
-                            log.warn("⚠️ [WAF AKAMAI] Blocage 403 sur la liste BT (Tentative {}/3). Pause 30s...", attempt);
-                            sleep(30000);
+                            log.error("🚨 [RADAR] AKAMAI WAF 403 ! Le Radar se met en pause pendant 15 MINUTES.");
+                            currentEta = "Pause WAF (15 min)";
+                            sleep(15 * 60 * 1000); // Dodo 15 minutes pour purger le ban IP
                         } else {
-                            log.error("🚨 [CRASH API PHP - IMPORT] HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
+                            log.warn("⚠️ [RADAR] API PHP HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
                             sleep(10000);
                         }
                     } catch (Exception e) {
@@ -311,24 +220,100 @@ public class SyncOrchestrator {
                     }
                 }
 
-                if (!importSuccess && isRunning) {
-                    sleep(30000);
-                }
+                if (!importSuccess && isRunning) sleep(30000);
 
             } catch (Exception e) {
                 sleep(5000);
             }
         }
-        log.info("⏹️ BOUCLE ARRÊTÉE.");
+        log.info("⏹️ RADAR ARRÊTÉ.");
     }
 
-    private String formatDuration(long millis) {
-        long seconds = millis / 1000;
-        if (seconds < 60) return seconds + "s";
-        long minutes = seconds / 60;
-        if (minutes < 60) return minutes + "m " + (seconds % 60) + "s";
-        long hours = minutes / 60;
-        return hours + "h " + (minutes % 60) + "m";
+    // ==========================================
+    // THREAD 2 : L'ENRICHISSEUR (BACKGROUND HEALER 24/7)
+    // ==========================================
+    private void backgroundHealerLoop() {
+        while (isHealing) {
+            try {
+                long missingCount = interventionRepository.countInterventionsWithMissingDetails();
+
+                if (missingCount == 0) {
+                    healTotal = 0;
+                    healCurrent = 0;
+                    sleep(30000); // Rien à faire, on dort 30 secondes
+                    continue;
+                }
+
+                healTotal = (int) missingCount;
+                healCurrent = 0;
+
+                // On récupère exactement 20 IDs
+                List<Intervention> chunk = interventionRepository.findInterventionsWithMissingDetails();
+                if (chunk.isEmpty()) {
+                    sleep(5000);
+                    continue;
+                }
+
+                List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
+
+                boolean success = false;
+                for (int attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        log.info("🛠️ HEALER : Récupération des détails pour 20 EPS...");
+                        Map<String, Object> response = phpApiClient.healData(idsToHeal);
+
+                        if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                            Object rawData = response.get("data");
+                            Map<String, String> healedData = new HashMap<>();
+
+                            if (rawData instanceof Map) {
+                                healedData = (Map<String, String>) rawData;
+                            }
+
+                            for (Intervention inv : chunk) {
+                                String detailStr = healedData.get(inv.getIdIntervention());
+                                if (detailStr != null) {
+                                    inv.setDetailIntervention(detailStr);
+                                } else {
+                                    // Si Bouygues ne retourne pas le détail, on met "{}" pour ne pas le re-fetcher à l'infini
+                                    inv.setDetailIntervention("{}");
+                                }
+                            }
+
+                            interventionRepository.saveAll(chunk);
+                            healCurrent += chunk.size();
+                            success = true;
+                            sleep(1000); // 🚀 L'FIX HNA : La pause de 1 seconde entre chaque requête
+                            break;
+                        }
+                    } catch (RestClientResponseException e) {
+                        if (e.getStatusCode().value() == 403) {
+                            log.error("🚨 [HEALER] AKAMAI WAF 403 ! Le Healer se met en pause pendant 15 MINUTES.");
+                            sleep(15 * 60 * 1000); // Dodo 15 minutes
+                        } else {
+                            log.warn("⚠️ [HEALER] HTTP {} : {}", e.getStatusCode(), e.getResponseBodyAsString());
+                            sleep(5000);
+                        }
+                    } catch (Exception e) {
+                        sleep(5000);
+                    }
+                }
+
+                if (!success && isHealing) {
+                    for (Intervention inv : chunk) inv.setDetailIntervention("{}");
+                    interventionRepository.saveAll(chunk);
+                }
+
+            } catch (Exception e) {
+                log.error("❌ [HEALER] Erreur : ", e);
+                sleep(10000);
+            }
+        }
+        log.info("⏹️ HEALER ARRÊTÉ.");
+    }
+
+    private void sleep(long millis) {
+        try { Thread.sleep(millis); } catch (InterruptedException ignored) {}
     }
 
     private int getSavedState(String key) {
