@@ -42,8 +42,8 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    // 🚀 BATCH_SIZE à 50 est OBLIGATOIRE avec fetch_details=true pour éviter les Timeout de Bouygues
-    private static final int BATCH_SIZE = 50;
+    // 🚀 L'FIX HNA : Batch Size wla 400 (Parfait pour le timeout de 3mins et le curl_multi de PHP)
+    private static final int BATCH_SIZE = 400;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -57,7 +57,7 @@ public class SyncOrchestrator {
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
         currentEta = "Calcul en cours...";
-        log.info("🚀 DÉMARRAGE DU MODE TURBO (LOGIQUE JAVA - FULL DETAILS)");
+        log.info("🚀 DÉMARRAGE DU MODE TURBO (400 PAR BATCH - FULL DETAILS)");
         new Thread(this::processLoop).start();
     }
 
@@ -162,7 +162,7 @@ public class SyncOrchestrator {
     private void processLoop() {
         while (isRunning) {
             try {
-                // 1. L'ASPIRATEUR : Ymessa7 Ionos kamel w y-sauvi 3ndna f DW b chkel safe
+                // 1. L'ASPIRATEUR (Vidage IONOS)
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     ExportResponse exportResp = phpApiClient.export(BATCH_SIZE);
@@ -249,7 +249,7 @@ public class SyncOrchestrator {
                     break;
                 }
 
-                // 2. DEMANDER L'BATCH JDDID MN BOUYGUES (AVEC DETAILS)
+                // 2. IMPORT BT (FULL DETAILS)
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {

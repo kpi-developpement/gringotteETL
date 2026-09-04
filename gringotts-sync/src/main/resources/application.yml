@@ -12,8 +12,13 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        # 🚀 L'FIX HNA : Bulk Inserts/Updates bach Postgres ykhdem b zerba khayaliya
+        jdbc.batch_size: 400
+        order_inserts: true
+        order_updates: true
+        jdbc.batch_versioned_data: true
   jackson:
     property-naming-strategy: SNAKE_CASE
 
@@ -21,6 +26,3 @@ kyntus:
   php-api:
     base-url: ${KYNTUS_PHP_API_BASE_URL:https://bytel.kyntus.fr}
     sync-key: ${KYNTUS_PHP_API_SYNC_KEY:KYNTUS_SUPER_SECRET_SYNC_KEY_2026_!@#}
-  sync:
-    cron: "*/15 * * * * *" # 🛡️ L'FIX HNA : Kol 15 seconde
-    batch-size: 500        # 🛡️ L'FIX HNA : 500 ligne f d9a

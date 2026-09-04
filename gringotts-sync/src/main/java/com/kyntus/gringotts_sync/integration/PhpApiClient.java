@@ -43,7 +43,7 @@ public class PhpApiClient {
     }
 
     public ImportResponse triggerImport(int offset, int limit) {
-        // 🚀 L'FIX HNA : fetch_details = true bach njibo détails f de99a we7da !
+        // 🚀 L'FIX HNA : fetch_details = true bach njibo détails f de99a we7da
         String jsonBody = String.format("{\"offset\":%d,\"limit\":%d,\"fetch_details\":true}", offset, limit);
 
         return restClient.post()
