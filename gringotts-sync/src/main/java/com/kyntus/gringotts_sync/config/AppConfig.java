@@ -19,10 +19,10 @@ public class AppConfig {
 
     @Bean
     public RestClient restClient() {
-        // 🚀 L'FIX HNA : N-kelliw Java ytsenna PHP bima jab l'details kamlin
+        // 🚀 L'FIX HNA : N-tal3o l'Timeout bach Java y-sber 3la PHP w Bouygues
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(15000); // 15 secondes bach y-connecta l Ionos
-        factory.setReadTimeout(180000);   // 3 minutes (180s) bach ytsenna l'execution dyal 400 details f PHP
+        factory.setConnectTimeout(30000); // 30 secondes bach y-connecta
+        factory.setReadTimeout(300000);   // 5 minutes bach ytsenna l'import yssali
 
         return RestClient.builder()
                 .requestFactory(factory)

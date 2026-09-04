@@ -42,8 +42,8 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    // 🚀 L'FIX HNA : Batch Size wla 400 (Parfait pour le timeout de 3mins et le curl_multi de PHP)
-    private static final int BATCH_SIZE = 400;
+    // 🚀 L'FIX HNA : Batch Size wla 100 (Safe limit pour Bouygues avec fetch_details=true)
+    private static final int BATCH_SIZE = 100;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -57,7 +57,7 @@ public class SyncOrchestrator {
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
         currentEta = "Calcul en cours...";
-        log.info("🚀 DÉMARRAGE DU MODE TURBO (400 PAR BATCH - FULL DETAILS)");
+        log.info("🚀 DÉMARRAGE DU MODE TURBO ({} PAR BATCH - SAFE POUR BYTEL)", BATCH_SIZE);
         new Thread(this::processLoop).start();
     }
 
@@ -283,11 +283,12 @@ public class SyncOrchestrator {
                         }
                     } catch (Exception e) {
                         log.warn("⚠️ Erreur Import BT (Tentative {}/3). Pause de 10s...", attempt);
-                        Thread.sleep(10000);
+                        Thread.sleep(10000); // 10s d'attente 9bel retry
                     }
                 }
 
                 if (!importSuccess && isRunning) {
+                    log.error("❌ Échec de l'import après 3 tentatives. On patiente 30s avant de reprendre...");
                     Thread.sleep(30000);
                 }
 
