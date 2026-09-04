@@ -35,13 +35,14 @@ public class DashboardController {
         stats.put("current_bt_offset", currentOffset);
         stats.put("total_api", totalApi);
         stats.put("is_running", syncOrchestrator.isRunning());
-
-        // 🚀 L'FIX HNA: On envoie l'ETA au Frontend
         stats.put("eta", syncOrchestrator.getCurrentEta());
-
         stats.put("is_healing", syncOrchestrator.isHealing());
         stats.put("heal_total", syncOrchestrator.getHealTotal());
         stats.put("heal_current", syncOrchestrator.getHealCurrent());
+
+        stats.put("radar_status", syncOrchestrator.getRadarStatus());
+        stats.put("healer_status", syncOrchestrator.getHealerStatus());
+        stats.put("alerts", syncOrchestrator.getRecentAlerts());
 
         return ResponseEntity.ok(stats);
     }

@@ -9,6 +9,9 @@ export interface SyncStats {
   is_healing: boolean;
   heal_total: number;
   heal_current: number;
+  radar_status: string;
+  healer_status: string;
+  alerts: string[];
 }
 
 export interface Intervention {

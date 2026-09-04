@@ -1,5 +1,5 @@
 .container {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 40px 20px;
 }
@@ -75,7 +75,7 @@
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 24px;
-  margin-bottom: 40px;
+  margin-bottom: 24px;
 }
 
 .panel {
@@ -97,8 +97,8 @@
 }
 
 .enginesContainer {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
 
@@ -107,6 +107,8 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .engineHeader {
@@ -137,6 +139,15 @@
   color: #b45309;
 }
 
+.engineStatusText {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
 .progressStats {
   display: flex;
   justify-content: space-between;
@@ -152,6 +163,7 @@
   background-color: #e2e8f0;
   border-radius: 999px;
   overflow: hidden;
+  margin-bottom: 12px;
 }
 
 .progressBarFill {
@@ -164,6 +176,85 @@
   height: 100%;
   background: linear-gradient(90deg, #10b981, #34d399);
   transition: width 0.5s ease;
+}
+
+/* 🚀 NOUVEAU: Espace Analytics */
+.analyticsPanel {
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+  border-radius: 12px;
+  padding: 24px;
+  color: #f8fafc;
+  grid-column: 1 / -1;
+  border: 1px solid #334155;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.analyticsTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #38bdf8;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insightCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.insightCard {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.insightHeader {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.insightValue {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.highlightWarning {
+  color: #fbbf24;
+}
+.highlightGood {
+  color: #34d399;
+}
+.highlightNeutral {
+  color: #e2e8f0;
+}
+
+.alertsConsole {
+  background-color: #020617;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 20px;
+  height: 180px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.8rem;
+  border: 1px solid #1e293b;
+}
+
+.alertItem {
+  color: #fca5a5;
+  padding: 6px 0;
+  border-bottom: 1px solid #1e293b;
+}
+.alertItem:last-child {
+  border-bottom: none;
 }
 
 .controlsPanel {
@@ -187,55 +278,15 @@
   gap: 10px;
 }
 
-.btnStart {
-  background-color: var(--kyntus-blue);
-  color: white;
-  box-shadow: 0 4px 6px rgba(30, 90, 153, 0.3);
-}
-
+.btnStart { background-color: var(--kyntus-blue); color: white; box-shadow: 0 4px 6px rgba(30, 90, 153, 0.3); }
 .btnStart:hover { background-color: var(--kyntus-dark); }
-
-.btnStop {
-  background-color: #ef4444;
-  color: white;
-  box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3);
-}
-
+.btnStop { background-color: #ef4444; color: white; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); }
 .btnStop:hover { background-color: #dc2626; }
-
-.btnExplore {
-  background-color: #f1f5f9;
-  color: #334155;
-  border: 1px solid #cbd5e1;
-}
-
+.btnExplore { background-color: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
 .btnExplore:hover { background-color: #e2e8f0; }
-
-.btnClean {
-  background-color: #ecfdf5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
-  padding: 12px;
-  font-weight: 600;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
+.btnClean { background-color: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: 0.2s; }
 .btnClean:hover { background-color: #d1fae5; }
-
-.btnReset {
-  background-color: #fef2f2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
-  padding: 12px;
-  font-weight: 600;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.2s;
-  margin-top: auto;
-}
-
+.btnReset { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; padding: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: 0.2s; margin-top: auto; }
 .btnReset:hover { background-color: #fee2e2; }
 
 .statsGrid {
