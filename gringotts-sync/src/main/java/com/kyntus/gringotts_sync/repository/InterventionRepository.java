@@ -10,12 +10,26 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    Page<Intervention> findByIdInterventionContainingIgnoreCaseOrderByCreatedAtDesc(String idIntervention, Pageable pageable);
+    // 🛡️ L'FIX HNA : Requête dynamique pour filtrer par Source, Recherche et Dates
+    @Query("SELECT i FROM Intervention i WHERE " +
+            "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
+            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source) AND " +
+            "(:startDate IS NULL OR i.dateModificationEtat >= :startDate) AND " +
+            "(:endDate IS NULL OR i.dateModificationEtat <= :endDate) " +
+            "ORDER BY i.createdAt DESC")
+    Page<Intervention> findFilteredInterventions(
+            @Param("search") String search,
+            @Param("source") String source,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable
+    );
 
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
 
@@ -42,7 +56,6 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    // 🚀 L'FIX HNA : L'Healer kay-jbed ghir 20 b 20 bach n-b9aw safe
     @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' LIMIT 20", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetails();
 

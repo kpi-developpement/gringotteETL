@@ -22,7 +22,6 @@ public class Intervention {
     @JsonProperty("id")
     private Long id;
 
-    // 🚀 L'FIX HNA : On accepte les deux noms de variables envoyés par Bouygues/PHP
     @JsonAlias({"id_intervention", "identifiant"})
     @Column(name = "id_intervention", nullable = false)
     private String idIntervention;
@@ -71,6 +70,11 @@ public class Intervention {
     @JsonProperty("detail_intervention")
     @Column(name = "detail_intervention", columnDefinition = "TEXT")
     private String detailIntervention;
+
+    // 🛡️ L'FIX HNA : Ajout de la source d'ingestion (RADAR ou TIME_MACHINE)
+    @JsonProperty("source_ingestion")
+    @Column(name = "source_ingestion")
+    private String sourceIngestion;
 
     @JsonProperty("actions_log")
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)

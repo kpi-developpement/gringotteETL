@@ -8,10 +8,10 @@ import com.kyntus.gringotts_sync.service.SyncOrchestrator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -55,6 +55,25 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
+    // 🛡️ L'FIX HNA : L'endpoint pour filtrer les interventions
+    @GetMapping("/interventions")
+    public ResponseEntity<Page<Intervention>> getInterventions(
+            @RequestParam(required = false, defaultValue = "") String search,
+            @RequestParam(required = false, defaultValue = "ALL") String source,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        LocalDateTime start = (startDate != null && !startDate.isEmpty()) ? LocalDateTime.parse(startDate + "T00:00:00") : null;
+        LocalDateTime end = (endDate != null && !endDate.isEmpty()) ? LocalDateTime.parse(endDate + "T23:59:59") : null;
+
+        Page<Intervention> result = interventionRepository.findFilteredInterventions(
+                search, source, start, end, PageRequest.of(page, size)
+        );
+        return ResponseEntity.ok(result);
+    }
+
     @PostMapping("/start")
     public ResponseEntity<Map<String, String>> startSync() {
         syncOrchestrator.startSync();
@@ -94,5 +113,12 @@ public class DashboardController {
     @PostMapping("/clean-duplicates")
     public ResponseEntity<Map<String, Object>> cleanDuplicates() {
         return ResponseEntity.ok(Map.of("ok", true, "message", interventionRepository.deleteDuplicates() + " doublons supprimés."));
+    }
+
+    // 🛡️ L'FIX HNA : L'endpoint Trim manquant
+    @PostMapping("/trim/{keepCount}")
+    public ResponseEntity<Map<String, Object>> trimDatabase(@PathVariable int keepCount) {
+        int deleted = interventionRepository.deleteExcessRecords(keepCount);
+        return ResponseEntity.ok(Map.of("ok", true, "message", deleted + " anciennes interventions supprimées."));
     }
 }

@@ -5,7 +5,6 @@ export interface SyncStats {
   current_bt_offset: number;
   total_api: number;
   
-  // 🚀 VARIABLES TIME MACHINE
   period_offset: number;
   period_total: number;
   period_processed_total: number;
@@ -31,6 +30,7 @@ export interface Intervention {
   type_intervention: string;
   date_modification_etat: string;
   detail_intervention: string; 
+  source_ingestion: string; // 🛡️ L'FIX HNA
 }
 
 export interface PageResponse {
@@ -52,7 +52,6 @@ export const startSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/start`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
-// 🚀 NOUVEL APPEL POST : TIME MACHINE
 export const startPeriodSync = async (periodsStr: string): Promise<boolean> => {
   try {
     const res = await fetch(`${API_URL}/start-periods`, {
@@ -103,9 +102,26 @@ export const healData = async (): Promise<string> => {
   } catch (e) { return "Erreur lors de l'appel."; }
 };
 
-export const fetchInterventions = async (search: string, page: number, size: number = 50): Promise<PageResponse | null> => {
+// 🛡️ L'FIX HNA : Ajout des paramètres de filtre
+export const fetchInterventions = async (
+  search: string, 
+  source: string, 
+  startDate: string, 
+  endDate: string, 
+  page: number, 
+  size: number = 50
+): Promise<PageResponse | null> => {
   try {
-    const res = await fetch(`${API_URL}/interventions?search=${search}&page=${page}&size=${size}`, { cache: 'no-store' });
+    const queryParams = new URLSearchParams({
+      search,
+      source,
+      page: page.toString(),
+      size: size.toString()
+    });
+    if (startDate) queryParams.append('startDate', startDate);
+    if (endDate) queryParams.append('endDate', endDate);
+
+    const res = await fetch(`${API_URL}/interventions?${queryParams.toString()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error('Erreur réseau');
     return await res.json();
   } catch (error) { return null; }

@@ -45,8 +45,6 @@ public class SyncOrchestrator {
 
     private volatile long totalRadarProcessed = 0;
     private volatile long totalHealerProcessed = 0;
-
-    // 🚀 L'FIX HNA : Séparation de la progression Time Machine
     private volatile long totalPeriodProcessed = 0;
 
     private static final String OFFSET_KEY = "bt_api_offset";
@@ -57,7 +55,6 @@ public class SyncOrchestrator {
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 100;
 
-    // 🚀 L'FIX HNA : Gestion de la file d'attente des mois
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
     private volatile String currentPeriod = null;
 
@@ -172,6 +169,9 @@ public class SyncOrchestrator {
 
         while (isRunning) {
             try {
+                // Capturer la période active pour la lambda
+                final String activePeriod = currentPeriod;
+
                 // 1. PHASE D'ASPIRATION DEPUIS IONOS VERS POSTGRES
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
@@ -193,6 +193,9 @@ public class SyncOrchestrator {
                                     if (existing == null) {
                                         existing = incoming;
                                         existing.setId(null);
+                                        // 🛡️ L'FIX HNA : On taggue la source d'ingestion
+                                        existing.setSourceIngestion(activePeriod != null ? "TIME_MACHINE" : "RADAR");
+
                                         if (existing.getActionsLog() != null) {
                                             for (ActionLog l : existing.getActionsLog()) l.setId(null);
                                         }
@@ -283,7 +286,6 @@ public class SyncOrchestrator {
 
                         if (importResp != null && importResp.isOk()) {
 
-                            // 🚀 L'FIX HNA : Gérer le cas où Bouygues retourne 0 (ex: 2026_M01 khawi)
                             if (importResp.getBatchCount() == 0) {
                                 log.warn("Bouygues a retourné 0 résultat. Avancement forcé de la zone.");
                                 if (currentPeriod != null) {
