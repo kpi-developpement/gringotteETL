@@ -55,7 +55,7 @@ public class SyncOrchestrator {
     private static final String PERIOD_TOTAL_KEY = "bt_total_api_period";
 
     private static final int IONOS_EXPORT_BATCH = 300;
-    private static final int RADAR_BATCH = 300;
+    private static final int RADAR_BATCH = 100;
 
     // 🚀 L'FIX HNA : Gestion de la file d'attente des mois
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
