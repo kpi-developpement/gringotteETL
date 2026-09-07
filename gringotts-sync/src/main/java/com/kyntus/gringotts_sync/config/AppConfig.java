@@ -14,7 +14,7 @@ public class AppConfig {
     public RestTemplate restTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(15000);
-        factory.setReadTimeout(180000); // 180s = 3 minutes d'attente max
+        factory.setReadTimeout(180000); // 180 secondes (3 minutes) d'attente
         return new RestTemplate(factory);
     }
 }

@@ -17,10 +17,12 @@ public class PhpApiClient {
 
     private final RestTemplate restTemplate;
 
-    @Value("${kyntus.php.api.url:http://host.docker.internal:8080/api/sync}")
+    // 🚀 L'FIX HNA : Rje3na s-smiya s7i7a dyal l'URL kima kant 3endek f lwel
+    @Value("${kyntus.php-api.base-url}")
     private String phpApiUrl;
 
-    @Value("${kyntus.php.api.key:KYNTUS_SUPER_SECRET_SYNC_KEY_2026_!@#}")
+    // 🚀 L'FIX HNA : Rje3na s-smiya s7i7a dyal l'Key
+    @Value("${kyntus.php-api.sync-key}")
     private String syncApiKey;
 
     public PhpApiClient(RestTemplate restTemplate) {
@@ -37,19 +39,21 @@ public class PhpApiClient {
     public ExportResponse export(int limit) {
         String url = phpApiUrl + "/export?limit=" + limit;
         HttpEntity<Void> entity = new HttpEntity<>(createHeaders());
-        return restTemplate.exchange(url, HttpMethod.GET, entity, ExportResponse.class).getBody();
+        ResponseEntity<ExportResponse> response = restTemplate.exchange(url, HttpMethod.GET, entity, ExportResponse.class);
+        return response.getBody();
     }
 
     public void acknowledge(List<Long> ids) {
         String url = phpApiUrl + "/ack";
         Map<String, Object> body = new HashMap<>();
         body.put("ids", ids);
+
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, createHeaders());
         restTemplate.exchange(url, HttpMethod.POST, entity, Void.class);
     }
 
+    // L'unique ajout hwa la Période hna
     public ImportResponse triggerImport(int offset, int limit, String periode) {
-        // Concaténation directe pour éviter l'erreur 404
         String url = phpApiUrl + "/import";
         Map<String, Object> body = new HashMap<>();
         body.put("offset", offset);
@@ -61,7 +65,8 @@ public class PhpApiClient {
         }
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, createHeaders());
-        return restTemplate.exchange(url, HttpMethod.POST, entity, ImportResponse.class).getBody();
+        ResponseEntity<ImportResponse> response = restTemplate.exchange(url, HttpMethod.POST, entity, ImportResponse.class);
+        return response.getBody();
     }
 
     public void resetIonos() {
@@ -73,7 +78,14 @@ public class PhpApiClient {
     public Map<String, Object> healData(List<String> idInterventions) {
         String ids = String.join(",", idInterventions);
         String url = phpApiUrl + "/heal?ids=" + ids;
+
         HttpEntity<Void> entity = new HttpEntity<>(createHeaders());
-        return restTemplate.exchange(url, HttpMethod.GET, entity, new ParameterizedTypeReference<Map<String, Object>>() {}).getBody();
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                new ParameterizedTypeReference<Map<String, Object>>() {}
+        );
+        return response.getBody();
     }
 }
