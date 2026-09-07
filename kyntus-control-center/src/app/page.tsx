@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, stopSync, resetSync, healData, SyncStats } from '../services/api';
+import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, healData, SyncStats } from '../services/api';
 import StatCard from '../components/StatCard';
 import styles from './page.module.css';
 
@@ -18,10 +18,14 @@ const IconClock = () => <svg width="18" height="18" fill="none" stroke="currentC
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
+  
   const [radarHistory, setRadarHistory] = useState<number[]>(Array(15).fill(0));
   const [healerHistory, setHealerHistory] = useState<number[]>(Array(15).fill(0));
+  
   const [currentRadarSpeed, setCurrentRadarSpeed] = useState(0);
   const [currentHealerSpeed, setCurrentHealerSpeed] = useState(0);
+
+  const [periodInput, setPeriodInput] = useState('2026_M01, 2026_M02, 2026_M03, 2026_M04, 2026_M05, 2026_M06, 2026_M07, 2026_M08, 2026_M09, 2026_M10, 2026_M11, 2026_M12');
 
   const tickCount = useRef(0);
   const lastRadarTotal = useRef(0);
@@ -31,18 +35,24 @@ export default function DashboardPage() {
     const data = await fetchStats();
     if (data) {
       setStats(data);
+      
       if (data.radar_processed_total < lastRadarTotal.current) {
         lastRadarTotal.current = data.radar_processed_total;
         lastHealerTotal.current = data.healer_processed_total;
       }
+
       tickCount.current += 1;
+      
       if (tickCount.current >= 5) {
         const rDelta = Math.max(0, data.radar_processed_total - lastRadarTotal.current);
         const hDelta = Math.max(0, data.healer_processed_total - lastHealerTotal.current);
+
         setCurrentRadarSpeed(rDelta);
         setCurrentHealerSpeed(hDelta);
+
         setRadarHistory(prev => [...prev.slice(1), rDelta]);
         setHealerHistory(prev => [...prev.slice(1), hDelta]);
+
         lastRadarTotal.current = data.radar_processed_total;
         lastHealerTotal.current = data.healer_processed_total;
         tickCount.current = 0;
@@ -57,6 +67,13 @@ export default function DashboardPage() {
   }, []);
 
   const handleStart = async () => { await startSync(); loadStats(); };
+  
+  const handleStartPeriods = async () => {
+    if (!periodInput.trim()) return alert('Veuillez entrer au moins une période.');
+    await startPeriodSync(periodInput);
+    loadStats();
+  };
+
   const handleStop = async () => { await stopSync(); loadStats(); };
   
   const handleReset = async () => {
@@ -80,6 +97,7 @@ export default function DashboardPage() {
 
   const formatStatus = (status: string | undefined) => {
     if (!status) return 'Inconnu';
+    if (status.includes('404')) return 'Erreur 404: Endpoint Introuvable';
     if (status.includes('500') || status.includes('INTERNAL_SERVER_ERROR')) return 'Serveur Bouygues Surchargé (HTTP 500)';
     if (status.includes('504')) return 'Timeout API Bouygues (HTTP 504)';
     if (status.includes('403') || status.includes('Banni')) return 'Bloqué par Akamai WAF (En pause)';
@@ -88,7 +106,7 @@ export default function DashboardPage() {
 
   const getStatusIcon = (status: string | undefined) => {
     if (!status) return null;
-    if (status.includes('50') || status.includes('Banni') || status.includes('Erreur')) {
+    if (status.includes('50') || status.includes('404') || status.includes('Banni') || status.includes('Erreur')) {
       return <span style={{color: '#ef4444'}}><IconAlert /></span>;
     }
     return <span style={{color: '#10b981'}}><IconPlay /></span>;
@@ -108,13 +126,18 @@ export default function DashboardPage() {
 
   const getRadarInsight = () => {
     if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
-    if (isTimeMachine) return <span className={styles.highlightGood}>Mode Time Machine Actif. Navigation sécurisée.</span>;
+    if (isTimeMachine) return <span className={styles.highlightGood}>Time Machine: Période {stats.current_period}. Requetes fluides.</span>;
+    if (stats?.radar_status.includes("404")) return <span className={styles.highlightWarning}>Configuration URL incorrecte (404).</span>;
     if (stats?.radar_status.includes("50")) return <span className={styles.highlightWarning}>API Bouygues en Timeout. Esquive en cours.</span>;
+    if (stats?.radar_status.includes("Banni") || stats?.radar_status.includes("403")) return <span className={styles.highlightWarning}>Pare-feu Akamai actif. Le Radar esquive et patiente 15m.</span>;
     return <span className={styles.highlightGood}>Le Radar est fluide. Vitesse Actuelle: {currentRadarSpeed} EPS/10s.</span>;
   };
 
   const getHealerInsight = () => {
     if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
+    if (stats?.radar_status.includes("50") && stats?.healer_status.includes("Lot sauvegardé")) {
+      return <span className={styles.highlightGood}>Twin-Turbo Actif: Le Radar bloque, l'Healer accélère le nettoyage.</span>;
+    }
     if (healTotal === 0) return <span className={styles.highlightGood}>Base de données 100% qualifiée.</span>;
     return <span className={styles.highlightNeutral}>Enrichissement furtif en cours. Vitesse Actuelle: {currentHealerSpeed} EPS/10s.</span>;
   };
@@ -151,14 +174,21 @@ export default function DashboardPage() {
                 </span>
               </div>
               
-              <span className={styles.engineStatusText} style={{ color: stats?.radar_status.includes('Erreur') || stats?.radar_status.includes('Banni') || stats?.radar_status.includes('50') ? '#ef4444' : '#1e293b' }}>
+              <span className={styles.engineStatusText} style={{ color: stats?.radar_status.includes('Erreur') || stats?.radar_status.includes('Banni') || stats?.radar_status.includes('50') || stats?.radar_status.includes('404') ? '#ef4444' : '#1e293b' }}>
                 {getStatusIcon(stats?.radar_status)} {formatStatus(stats?.radar_status)}
               </span>
 
-              <div className={styles.progressStats}>
-                <span>{isTimeMachine ? `Progression [${stats.current_period}]` : 'Progression Aspiration'}</span>
-                <span>{currentOffset.toLocaleString()} / {totalApi.toLocaleString()} ({progressRadar}%)</span>
+              {/* 🚀 L'FIX HNA : Plus de détails sur la progression */}
+              <div className={styles.progressStats} style={{ marginTop: '10px' }}>
+                <span style={{ fontWeight: 'bold' }}>{isTimeMachine ? `Aspiration Période [${stats.current_period}]` : 'Aspiration Globale'}</span>
+                <span style={{ fontWeight: 'bold', color: '#3b82f6' }}>{progressRadar}%</span>
               </div>
+              
+              <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Reçu: {currentOffset.toLocaleString()}</span>
+                <span>Cible: {totalApi.toLocaleString()}</span>
+              </div>
+
               <div className={styles.progressBarBg}>
                 <div className={styles.progressBarFill} style={{ width: `${progressRadar}%` }}></div>
               </div>
@@ -190,10 +220,16 @@ export default function DashboardPage() {
                  {getStatusIcon(stats?.healer_status)} {formatStatus(stats?.healer_status)}
               </span>
 
-              <div className={styles.progressStats}>
-                <span>Détails récupérés (Lot en cours)</span>
-                <span>{healCurrent.toLocaleString()} / {healTotal.toLocaleString()} ({progressHealer}%)</span>
+              <div className={styles.progressStats} style={{ marginTop: '10px' }}>
+                <span style={{ fontWeight: 'bold' }}>Détails manquants (Lot)</span>
+                <span style={{ fontWeight: 'bold', color: '#10b981' }}>{progressHealer}%</span>
               </div>
+              
+              <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Restauré: {healCurrent.toLocaleString()}</span>
+                <span>Cible: {healTotal.toLocaleString()}</span>
+              </div>
+
               <div className={styles.progressBarBg}>
                 <div className={styles.progressBarFillHealer} style={{ width: `${progressHealer}%` }}></div>
               </div>
@@ -215,27 +251,45 @@ export default function DashboardPage() {
 
           <div className={styles.statsGrid}>
             <StatCard title="Total Interventions (DW Local)" value={stats ? stats.total_interventions_local.toLocaleString() : '---'} />
-            <StatCard title="Détails Manquants" value={stats ? stats.heal_total.toLocaleString() : '---'} />
+            <StatCard title="Total Exploré (Global)" value={stats ? stats.radar_processed_total.toLocaleString() : '---'} />
           </div>
         </div>
 
         <div className={styles.panel} style={{ display: 'flex', flexDirection: 'column' }}>
-          <h2 className={styles.panelTitle}>Commandes</h2>
+          <h2 className={styles.panelTitle}>Commandes & Time Machine</h2>
           <div className={styles.controlsPanel}>
             
-            {!isRunning ? (
-              <button className={`${styles.mainButton} ${styles.btnStart}`} onClick={handleStart}>
-                <IconPlay /> Mode Standard (Offset Continu)
-              </button>
-            ) : (
-              <button className={`${styles.mainButton} ${styles.btnStop}`} onClick={handleStop}>
-                <IconStop /> STOPPER LE DAEMON
-              </button>
-            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+                {!isRunning ? (
+                  <button className={`${styles.mainButton} ${styles.btnStart}`} style={{ flex: 1 }} onClick={handleStart}>
+                    <IconPlay /> Mode Standard
+                  </button>
+                ) : (
+                  <button className={`${styles.mainButton} ${styles.btnStop}`} style={{ flex: 1 }} onClick={handleStop}>
+                    <IconStop /> STOPPER LE DAEMON
+                  </button>
+                )}
+            </div>
 
-            <Link href="/time-machine" className={`${styles.mainButton}`} style={{ backgroundColor: '#8b5cf6', color: 'white', border: 'none', boxShadow: '0 4px 6px -1px rgba(139, 92, 246, 0.2)' }}>
-              <IconClock /> Ouvrir la Time Machine (Périodes)
-            </Link>
+            {/* 🚀 L'ESPACE TIME MACHINE UI */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <IconClock /> Aspiration par Périodes
+                </h3>
+                <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '12px' }}>
+                    Aspirer les données de Bouygues mois par mois.
+                </p>
+                
+                <Link href="/time-machine" style={{ display: 'block', textAlign: 'center', width: '100%', padding: '12px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', textDecoration: 'none', boxShadow: '0 4px 6px rgba(139,92,246,0.2)' }}>
+                    Ouvrir le Panneau Time Machine
+                </Link>
+                
+                {stats?.current_period && (
+                    <div style={{ marginTop: '12px', padding: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', fontSize: '0.8rem', color: '#047857', fontWeight: 'bold', textAlign: 'center' }}>
+                        📅 En cours : {stats.current_period}
+                    </div>
+                )}
+            </div>
 
             <Link href="/interventions" className={`${styles.mainButton} ${styles.btnExplore}`}>
               <IconExplore /> Explorer les données
@@ -270,12 +324,9 @@ export default function DashboardPage() {
             <div className={styles.alertsConsole}>
               {stats.alerts.map((alert, idx) => {
                 let cleanAlert = alert;
-                if (cleanAlert.includes('500') || cleanAlert.includes('INTERNAL_SERVER')) {
-                  cleanAlert = cleanAlert.replace(/HTTP 500.*/, 'Serveur API Surchargé (HTTP 500)');
-                }
-                if (cleanAlert.includes('504') || cleanAlert.includes('GatewayTimeout')) {
-                  cleanAlert = cleanAlert.replace(/HTTP 504.*/, 'Timeout Serveur Bouygues (HTTP 504)');
-                }
+                if (cleanAlert.includes('404')) cleanAlert = cleanAlert.replace(/HTTP 404.*/, 'Endpoint PHP Introuvable (HTTP 404)');
+                if (cleanAlert.includes('500') || cleanAlert.includes('INTERNAL_SERVER')) cleanAlert = cleanAlert.replace(/HTTP 500.*/, 'Serveur API Surchargé (HTTP 500)');
+                if (cleanAlert.includes('504') || cleanAlert.includes('GatewayTimeout')) cleanAlert = cleanAlert.replace(/HTTP 504.*/, 'Timeout Serveur Bouygues (HTTP 504)');
                 
                 const timeMatch = cleanAlert.match(/^\[(.*?)\]/);
                 const timeStr = timeMatch ? timeMatch[0] : '';
