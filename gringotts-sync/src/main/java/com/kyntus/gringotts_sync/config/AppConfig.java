@@ -13,8 +13,8 @@ public class AppConfig {
     @Bean
     public RestTemplate restTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(15000); // 15s pour connecter
-        factory.setReadTimeout(180000);   // 180s (3 minutes) pour attendre Bouygues
+        factory.setConnectTimeout(15000);
+        factory.setReadTimeout(180000); // 180s = 3 minutes d'attente max
         return new RestTemplate(factory);
     }
 }

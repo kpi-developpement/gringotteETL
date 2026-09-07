@@ -4,6 +4,13 @@ export interface SyncStats {
   total_interventions_local: number;
   current_bt_offset: number;
   total_api: number;
+  
+  // 🚀 VARIABLES TIME MACHINE
+  period_offset: number;
+  period_total: number;
+  period_processed_total: number;
+  current_period: string | null;
+
   is_running: boolean;
   eta: string;
   is_healing: boolean;
@@ -14,8 +21,6 @@ export interface SyncStats {
   alerts: string[];
   radar_processed_total: number;
   healer_processed_total: number;
-  // 🚀 L'FIX HNA
-  current_period: string | null;
 }
 
 export interface Intervention {
@@ -47,7 +52,7 @@ export const startSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/start`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
-// 🚀 L'FIX HNA : Le nouvel appel POST
+// 🚀 NOUVEL APPEL POST : TIME MACHINE
 export const startPeriodSync = async (periodsStr: string): Promise<boolean> => {
   try {
     const res = await fetch(`${API_URL}/start-periods`, {

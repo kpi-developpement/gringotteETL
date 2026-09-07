@@ -48,8 +48,8 @@ public class PhpApiClient {
         restTemplate.exchange(url, HttpMethod.POST, entity, Void.class);
     }
 
-    // 🚀 La Time Machine est passée ici de manière sécurisée
     public ImportResponse triggerImport(int offset, int limit, String periode) {
+        // Concaténation directe pour éviter l'erreur 404
         String url = phpApiUrl + "/import";
         Map<String, Object> body = new HashMap<>();
         body.put("offset", offset);

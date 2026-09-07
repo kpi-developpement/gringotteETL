@@ -45,11 +45,10 @@ public class SyncOrchestrator {
 
     private volatile long totalRadarProcessed = 0;
     private volatile long totalHealerProcessed = 0;
+    private volatile long totalPeriodProcessed = 0;
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-
-    // 🚀 NOUVEAU : Clés séparées pour la Time Machine
     private static final String PERIOD_OFFSET_KEY = "bt_api_offset_period";
     private static final String PERIOD_TOTAL_KEY = "bt_total_api_period";
 
@@ -69,6 +68,7 @@ public class SyncOrchestrator {
     public List<String> getRecentAlerts() { return recentAlerts; }
     public long getTotalRadarProcessed() { return totalRadarProcessed; }
     public long getTotalHealerProcessed() { return totalHealerProcessed; }
+    public long getTotalPeriodProcessed() { return totalPeriodProcessed; }
     public String getCurrentPeriod() { return currentPeriod; }
 
     private void addAlert(String message) {
@@ -77,7 +77,7 @@ public class SyncOrchestrator {
         if (recentAlerts.size() > 20) {
             recentAlerts.remove(recentAlerts.size() - 1);
         }
-        log.warn("ALERTE INTERFACE: {}", message);
+        log.warn("ALERTE: {}", message);
     }
 
     public void startPeriodSync(List<String> periods) {
@@ -88,6 +88,7 @@ public class SyncOrchestrator {
 
         saveState(PERIOD_OFFSET_KEY, 0);
         saveState(PERIOD_TOTAL_KEY, 0);
+        totalPeriodProcessed = 0;
 
         addAlert("[TIME MACHINE] Démarrage avec " + periods.size() + " périodes.");
         if (currentPeriod != null) {
@@ -100,7 +101,7 @@ public class SyncOrchestrator {
         if (isRunning) return;
         currentPeriod = null;
         periodQueue.clear();
-        addAlert("[SYSTEM] Démarrage Standard (Offset Global)");
+        addAlert("[SYSTEM] Démarrage Standard (Radar Global)");
         startSyncInternal();
     }
 
@@ -110,8 +111,6 @@ public class SyncOrchestrator {
         currentEta = "Initialisation...";
         radarStatus = "Démarrage en cours";
         healerStatus = "Démarrage en cours";
-        totalRadarProcessed = 0;
-        totalHealerProcessed = 0;
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
 
@@ -125,7 +124,7 @@ public class SyncOrchestrator {
         currentEta = "Arrêté";
         radarStatus = "Arrêt demandé";
         healerStatus = "Arrêt demandé";
-        addAlert("[SYSTEM] Arrêt du système demandé par l'utilisateur");
+        addAlert("[SYSTEM] Arrêt du système demandé");
     }
 
     public void resetAndStartFromZero() {
@@ -139,14 +138,15 @@ public class SyncOrchestrator {
         saveState(PERIOD_TOTAL_KEY, 0);
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
+        totalPeriodProcessed = 0;
         currentPeriod = null;
         periodQueue.clear();
-        addAlert("[MAINTENANCE] Base de données IONOS et Locale réinitialisées");
+        addAlert("[MAINTENANCE] Base de données réinitialisée");
         startSync();
     }
 
     public void healDatabase() {
-        addAlert("[MAINTENANCE] Smart Clean (Nettoyage doublons) lancé");
+        addAlert("[MAINTENANCE] Smart Clean lancé");
         int totalDeleted = 0;
         while (true) {
             List<Long> duplicateIds = interventionRepository.findDuplicateIds();
@@ -221,28 +221,29 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
-                // 🚀 L'FIX HNA : On lit le bon offset selon le mode
                 int currentOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
                 int totalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
 
+                // Vérification de fin de cycle
                 if (totalApi > 0 && currentOffset >= totalApi) {
                     if (currentPeriod != null) {
-                        addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée à 100%.");
+                        addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
                         currentPeriod = periodQueue.poll();
 
                         if (currentPeriod == null) {
-                            addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées ! Arrêt du Radar.");
+                            addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées !");
                             saveState(PERIOD_OFFSET_KEY, 0);
                             saveState(PERIOD_TOTAL_KEY, 0);
                             stopSync();
                             break;
                         } else {
-                            addAlert("📅 [TIME MACHINE] Passage à la période suivante : " + currentPeriod);
+                            addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
                             saveState(PERIOD_OFFSET_KEY, 0);
+                            saveState(PERIOD_TOTAL_KEY, 0);
                             currentOffset = 0;
                             totalProcessedSinceStart = 0;
                             syncStartTime = System.currentTimeMillis();
-                            sleep(5000);
+                            sleep(2000);
                         }
                     } else {
                         saveState(OFFSET_KEY, 0);
@@ -263,24 +264,30 @@ public class SyncOrchestrator {
                         ImportResponse importResp = phpApiClient.triggerImport(currentOffset, RADAR_BATCH, currentPeriod);
 
                         if (importResp != null && importResp.isOk()) {
+                            // 🚀 FIX: Gestion des 0 résultats (ex: 2026_M01)
                             if (importResp.getBatchCount() == 0) {
-                                if (currentPeriod != null) saveState(PERIOD_OFFSET_KEY, importResp.getTotalApi());
-                                else saveState(OFFSET_KEY, importResp.getTotalApi());
+                                if (currentPeriod != null) {
+                                    // Forcer la fin de la période pour passer à la suivante
+                                    saveState(PERIOD_OFFSET_KEY, 1);
+                                    saveState(PERIOD_TOTAL_KEY, 1);
+                                } else {
+                                    saveState(OFFSET_KEY, importResp.getTotalApi());
+                                }
+                                importSuccess = true;
                                 break;
                             }
 
-                            // 🚀 L'FIX HNA : On sauvegarde dans la bonne clé
                             if (currentPeriod != null) {
                                 saveState(PERIOD_OFFSET_KEY, importResp.getNextOffset());
                                 saveState(PERIOD_TOTAL_KEY, importResp.getTotalApi());
+                                totalPeriodProcessed += importResp.getBatchCount();
                             } else {
                                 saveState(OFFSET_KEY, importResp.getNextOffset());
                                 saveState(TOTAL_KEY, importResp.getTotalApi());
+                                totalRadarProcessed += importResp.getBatchCount();
                             }
 
-                            totalRadarProcessed += importResp.getBatchCount();
                             totalProcessedSinceStart += importResp.getBatchCount();
-
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
                                 long elapsedMillis = System.currentTimeMillis() - syncStartTime;
                                 long millisPerItem = elapsedMillis / totalProcessedSinceStart;
@@ -289,25 +296,17 @@ public class SyncOrchestrator {
                             }
                             importSuccess = true;
                             radarStatus = "Vitesse: " + RADAR_BATCH + " EPS (Offset: " + importResp.getNextOffset() + ")";
-                            sleep(2000);
+                            sleep(1000);
                             break;
                         }
                     } catch (RestClientResponseException e) {
                         String body = e.getResponseBodyAsString();
-                        if (e.getStatusCode().value() == 403 || body.contains("Access Denied") || body.contains("403")) {
+                        if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
                             addAlert("[RADAR] Bloqué par le Pare-feu Bouygues (Akamai). Veille 15m.");
                             radarStatus = "Banni (Pause 15 min)";
-                            currentEta = "Pause WAF";
                             sleep(15 * 60 * 1000);
-                        }
-                        else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504 || body.contains("GatewayTimeout")) {
-                            addAlert("[RADAR] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ") - Retry...");
+                        } else {
                             radarStatus = "Erreur HTTP " + e.getStatusCode() + " - Retry...";
-                            sleep(15000);
-                        }
-                        else {
-                            addAlert("[RADAR] Erreur Inconnue (HTTP " + e.getStatusCode() + ")");
-                            radarStatus = "Erreur HTTP " + e.getStatusCode();
                             sleep(10000);
                         }
                     } catch (Exception e) {
@@ -334,32 +333,25 @@ public class SyncOrchestrator {
         while (isHealing) {
             try {
                 long missingCount = interventionRepository.countInterventionsWithMissingDetails();
-
                 if (missingCount == 0) {
                     healTotal = 0;
                     healCurrent = 0;
-                    healerStatus = "Base 100% à jour (Veille)";
+                    healerStatus = "Base 100% à jour";
                     sleep(10000);
                     continue;
                 }
 
                 healTotal = (int) missingCount;
                 healCurrent = 0;
-
                 List<Intervention> chunk = interventionRepository.findInterventionsWithMissingDetails();
-                if (chunk.isEmpty()) {
-                    sleep(5000);
-                    continue;
-                }
+                if (chunk.isEmpty()) { sleep(5000); continue; }
 
                 List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
-
                 boolean success = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
                         healerStatus = "Récupération détails (" + idsToHeal.size() + " EPS)";
                         Map<String, Object> response = phpApiClient.healData(idsToHeal);
-
                         if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
                             Object rawData = response.get("data");
                             Map<String, String> healedData = new HashMap<>();
@@ -370,25 +362,13 @@ public class SyncOrchestrator {
                                 if (detailStr != null) inv.setDetailIntervention(detailStr);
                                 else inv.setDetailIntervention("{}");
                             }
-
                             interventionRepository.saveAll(chunk);
                             healCurrent += chunk.size();
                             totalHealerProcessed += chunk.size();
-
                             success = true;
                             healerStatus = "Lot sauvegardé avec succès";
                             sleep(1000);
                             break;
-                        }
-                    } catch (RestClientResponseException e) {
-                        String body = e.getResponseBodyAsString();
-                        if (e.getStatusCode().value() == 403 || body.contains("Access Denied") || body.contains("403")) {
-                            addAlert("[HEALER] Pare-feu Bouygues déclenché. Veille 15m.");
-                            healerStatus = "Banni (Pause 15 min)";
-                            sleep(15 * 60 * 1000);
-                        } else {
-                            healerStatus = "Erreur HTTP " + e.getStatusCode();
-                            sleep(5000);
                         }
                     } catch (Exception e) {
                         healerStatus = "Erreur Connexion";
@@ -400,7 +380,6 @@ public class SyncOrchestrator {
                     for (Intervention inv : chunk) inv.setDetailIntervention("{}");
                     interventionRepository.saveAll(chunk);
                 }
-
             } catch (Exception e) {
                 healerStatus = "Erreur Critique";
                 sleep(10000);
@@ -409,10 +388,7 @@ public class SyncOrchestrator {
         healerStatus = "Arrêté";
     }
 
-    private void sleep(long millis) {
-        try { Thread.sleep(millis); } catch (InterruptedException ignored) {}
-    }
-
+    private void sleep(long millis) { try { Thread.sleep(millis); } catch (InterruptedException ignored) {} }
     private String formatDuration(long millis) {
         long seconds = millis / 1000;
         if (seconds < 60) return seconds + "s";
@@ -421,12 +397,6 @@ public class SyncOrchestrator {
         long hours = minutes / 60;
         return hours + "h " + (minutes % 60) + "m";
     }
-
-    private int getSavedState(String key) {
-        return syncStateRepository.findById(key).map(SyncState::getStateValue).orElse(0);
-    }
-
-    private void saveState(String key, int value) {
-        syncStateRepository.save(new SyncState(key, value));
-    }
+    private int getSavedState(String key) { return syncStateRepository.findById(key).map(SyncState::getStateValue).orElse(0); }
+    private void saveState(String key, int value) { syncStateRepository.save(new SyncState(key, value)); }
 }

@@ -28,29 +28,29 @@ public class DashboardController {
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
-        long totalInterventions = interventionRepository.count();
-        int currentOffset = syncStateRepository.findById("bt_api_offset").map(SyncState::getStateValue).orElse(0);
-        int totalApi = syncStateRepository.findById("bt_total_api").map(SyncState::getStateValue).orElse(0);
-
         Map<String, Object> stats = new HashMap<>();
-        stats.put("total_interventions_local", totalInterventions);
-        stats.put("current_bt_offset", currentOffset);
-        stats.put("total_api", totalApi);
+        stats.put("total_interventions_local", interventionRepository.count());
+
+        // Mode Standard
+        stats.put("current_bt_offset", syncStateRepository.findById("bt_api_offset").map(SyncState::getStateValue).orElse(0));
+        stats.put("total_api", syncStateRepository.findById("bt_total_api").map(SyncState::getStateValue).orElse(0));
+
+        // Mode Time Machine
+        stats.put("period_offset", syncStateRepository.findById("bt_api_offset_period").map(SyncState::getStateValue).orElse(0));
+        stats.put("period_total", syncStateRepository.findById("bt_total_api_period").map(SyncState::getStateValue).orElse(0));
+        stats.put("period_processed_total", syncOrchestrator.getTotalPeriodProcessed());
+        stats.put("current_period", syncOrchestrator.getCurrentPeriod());
+
         stats.put("is_running", syncOrchestrator.isRunning());
         stats.put("eta", syncOrchestrator.getCurrentEta());
         stats.put("is_healing", syncOrchestrator.isHealing());
         stats.put("heal_total", syncOrchestrator.getHealTotal());
         stats.put("heal_current", syncOrchestrator.getHealCurrent());
-
         stats.put("radar_status", syncOrchestrator.getRadarStatus());
         stats.put("healer_status", syncOrchestrator.getHealerStatus());
         stats.put("alerts", syncOrchestrator.getRecentAlerts());
-
         stats.put("radar_processed_total", syncOrchestrator.getTotalRadarProcessed());
         stats.put("healer_processed_total", syncOrchestrator.getTotalHealerProcessed());
-
-        // 🚀 L'FIX HNA : On renvoie la période en cours au Dashboard UI
-        stats.put("current_period", syncOrchestrator.getCurrentPeriod());
 
         return ResponseEntity.ok(stats);
     }
@@ -61,21 +61,16 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Démarré."));
     }
 
-    // 🚀 L'FIX HNA : Le nouvel endpoint pour démarrer la Time Machine
     @PostMapping("/start-periods")
     public ResponseEntity<Map<String, String>> startPeriods(@RequestBody Map<String, String> body) {
         String periodsStr = body.get("periods");
         if (periodsStr == null || periodsStr.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Aucune période fournie."));
+            return ResponseEntity.badRequest().body(Map.of("error", "Aucune période."));
         }
-
         List<String> periods = Arrays.stream(periodsStr.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
-
+                .map(String::trim).filter(s -> !s.isEmpty()).toList();
         syncOrchestrator.startPeriodSync(periods);
-        return ResponseEntity.ok(Map.of("message", "Sync par période démarrée avec " + periods.size() + " périodes."));
+        return ResponseEntity.ok(Map.of("message", "Sync par période démarrée"));
     }
 
     @PostMapping("/stop")
@@ -90,45 +85,14 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Reset en cours..."));
     }
 
-    @PostMapping("/offset/{value}")
-    public ResponseEntity<Map<String, String>> setOffset(@PathVariable int value) {
-        syncStateRepository.save(new SyncState("bt_api_offset", value));
-        return ResponseEntity.ok(Map.of("message", "Offset mis à jour à " + value));
+    @PostMapping("/heal")
+    public ResponseEntity<Map<String, String>> healData() {
+        new Thread(syncOrchestrator::healDatabase).start();
+        return ResponseEntity.ok(Map.of("message", "Processus lancé."));
     }
 
     @PostMapping("/clean-duplicates")
     public ResponseEntity<Map<String, Object>> cleanDuplicates() {
-        int deletedCount = interventionRepository.deleteDuplicates();
-        return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " doublons supprimés avec succès."));
-    }
-
-    @PostMapping("/trim/{keepCount}")
-    public ResponseEntity<Map<String, Object>> trimDatabase(@PathVariable int keepCount) {
-        int deletedCount = interventionRepository.deleteExcessRecords(keepCount);
-        return ResponseEntity.ok(Map.of("ok", true, "message", deletedCount + " enregistrements excédentaires supprimés."));
-    }
-
-    @PostMapping("/heal")
-    public ResponseEntity<Map<String, String>> healData() {
-        new Thread(syncOrchestrator::healDatabase).start();
-        return ResponseEntity.ok(Map.of("message", "Processus de réparation lancé en arrière-plan..."));
-    }
-
-    @GetMapping("/interventions")
-    public ResponseEntity<Map<String, Object>> getInterventions(
-            @RequestParam(defaultValue = "") String search,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
-
-        Pageable pageable = PageRequest.of(page, size);
-        Page<Intervention> result = interventionRepository.findByIdInterventionContainingIgnoreCaseOrderByCreatedAtDesc(search, pageable);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("content", result.getContent());
-        response.put("totalPages", result.getTotalPages());
-        response.put("totalElements", result.getTotalElements());
-        response.put("number", result.getNumber());
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(Map.of("ok", true, "message", interventionRepository.deleteDuplicates() + " doublons supprimés."));
     }
 }
