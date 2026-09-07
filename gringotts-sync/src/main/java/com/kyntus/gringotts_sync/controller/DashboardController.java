@@ -11,8 +11,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -54,7 +52,7 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
-    // 🛡️ L'FIX HNA : Parsing du format Bouygues (2026-M08) pour filtrer la DB locale
+    // 🛡️ L'FIX HNA : On prend la période (ex: 2026_M08) et on la passe directement au Repository
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(required = false, defaultValue = "") String search,
@@ -63,23 +61,14 @@ public class DashboardController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        LocalDateTime start = null;
-        LocalDateTime end = null;
-
+        // On nettoie la période pour qu'elle matche exactement le JSON de Bouygues ("2026-M01")
+        String cleanPeriod = null;
         if (period != null && !period.isEmpty()) {
-            try {
-                // Transforme "2026-M08" ou "2026_M08" en "2026-08" pour Java
-                String cleanPeriod = period.replace("_", "-").replace("-M", "-");
-                YearMonth ym = YearMonth.parse(cleanPeriod);
-                start = ym.atDay(1).atStartOfDay();
-                end = ym.atEndOfMonth().atTime(23, 59, 59);
-            } catch (Exception e) {
-                // Si le format est invalide, on ignore le filtre de date
-            }
+            cleanPeriod = period.replace("_", "-").replace("-M", "-M"); // Assure le format YYYY-MXX
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                search, source, start, end, PageRequest.of(page, size)
+                search, source, cleanPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }

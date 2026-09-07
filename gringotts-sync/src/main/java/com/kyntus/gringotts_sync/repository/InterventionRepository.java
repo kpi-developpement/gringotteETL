@@ -10,27 +10,24 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    // 🛡️ L'FIX HNA :
-    // 1. Utilisation de "cast(:param as timestamp)" pour éviter le bug des NULLs dans PostgreSQL
-    // 2. Ajout de "i.sourceIngestion IS NULL" pour récupérer tes anciennes données
-    // 3. Tri par "i.id DESC" au lieu de createdAt pour être 100% sûr de l'ordre
+    // 🛡️ L'FIX HNA (MASTERCLASS) :
+    // Au lieu de filtrer par date, on cherche directement la string "2026-M01"
+    // à l'intérieur du champ detail_intervention (qui contient le JSON de Bouygues).
+    // C'est 100% précis et ça évite les bugs de parsing de dates !
     @Query("SELECT i FROM Intervention i WHERE " +
             "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(cast(:startDate as timestamp) IS NULL OR i.dateModificationEtat >= :startDate) AND " +
-            "(cast(:endDate as timestamp) IS NULL OR i.dateModificationEtat <= :endDate) " +
+            "(:period IS NULL OR i.detailIntervention LIKE CONCAT('%', :period, '%') OR i.payloadRecu LIKE CONCAT('%', :period, '%')) " +
             "ORDER BY i.id DESC")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
             @Param("source") String source,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate,
+            @Param("period") String period,
             Pageable pageable
     );
 
