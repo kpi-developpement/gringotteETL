@@ -3,31 +3,36 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, healData, cleanDuplicates, SyncStats } from '../services/api';
-import StatCard from '../components/StatCard';
 import styles from './page.module.css';
 
-const IconRadar = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8.28 15.28a6 6 0 017.44 0M5.45 12.45a10 10 0 0113.1 0M2.62 9.62a14 14 0 0118.76 0M12 19a1 1 0 100-2 1 1 0 000 2z"/></svg>;
-const IconHealer = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>;
-const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
-const IconStop = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
-const IconExplore = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>;
-const IconClean = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>;
-const IconAlert = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>;
-const IconInsights = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>;
+// ==========================================
+// 🚀 ICONS (ZÉRO EMOJI)
+// ==========================================
+const IconActivity = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>;
+const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
+const IconHealer = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>;
+const IconPlay = () => <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
+const IconStop = () => <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
+const IconTrash = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+const IconCheckCircle = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>;
+const IconAlert = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
+const IconDatabase = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
+const IconTerminal = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
   
-  const [radarHistory, setRadarHistory] = useState<number[]>(Array(15).fill(0));
-  const [healerHistory, setHealerHistory] = useState<number[]>(Array(15).fill(0));
-  const [periodHistory, setPeriodHistory] = useState<number[]>(Array(15).fill(0));
+  // Onglets (Tabs)
+  const [activeTab, setActiveTab] = useState<'standard' | 'timemachine'>('standard');
+
+  // Historique pour Sparklines
+  const [radarHistory, setRadarHistory] = useState<number[]>(Array(12).fill(0));
+  const [periodHistory, setPeriodHistory] = useState<number[]>(Array(12).fill(0));
   
   const [currentRadarSpeed, setCurrentRadarSpeed] = useState(0);
-  const [currentHealerSpeed, setCurrentHealerSpeed] = useState(0);
   const [currentPeriodSpeed, setCurrentPeriodSpeed] = useState(0);
 
-  // 🚀 STATE DROPDOWN TIME MACHINE
+  // Sélecteur Time Machine
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
   const availableYears = ['2026', '2025', '2024'];
@@ -35,7 +40,6 @@ export default function DashboardPage() {
 
   const tickCount = useRef(0);
   const lastRadarTotal = useRef(0);
-  const lastHealerTotal = useRef(0);
   const lastPeriodTotal = useRef(0);
 
   const loadStats = async () => {
@@ -43,27 +47,29 @@ export default function DashboardPage() {
     if (data) {
       setStats(data);
       
+      // Auto-switch Tab si Time Machine est actif
+      if (data.is_running && data.current_period !== null) {
+        setActiveTab('timemachine');
+      } else if (data.is_running && data.current_period === null) {
+        setActiveTab('standard');
+      }
+      
       if (data.radar_processed_total < lastRadarTotal.current) lastRadarTotal.current = data.radar_processed_total;
-      if (data.healer_processed_total < lastHealerTotal.current) lastHealerTotal.current = data.healer_processed_total;
       if (data.period_processed_total < lastPeriodTotal.current) lastPeriodTotal.current = data.period_processed_total;
 
       tickCount.current += 1;
       
-      if (tickCount.current >= 5) {
+      if (tickCount.current >= 4) {
         const rDelta = Math.max(0, data.radar_processed_total - lastRadarTotal.current);
-        const hDelta = Math.max(0, data.healer_processed_total - lastHealerTotal.current);
         const pDelta = Math.max(0, data.period_processed_total - lastPeriodTotal.current);
 
         setCurrentRadarSpeed(rDelta);
-        setCurrentHealerSpeed(hDelta);
         setCurrentPeriodSpeed(pDelta);
 
         setRadarHistory(prev => [...prev.slice(1), rDelta]);
-        setHealerHistory(prev => [...prev.slice(1), hDelta]);
         setPeriodHistory(prev => [...prev.slice(1), pDelta]);
 
         lastRadarTotal.current = data.radar_processed_total;
-        lastHealerTotal.current = data.healer_processed_total;
         lastPeriodTotal.current = data.period_processed_total;
         tickCount.current = 0;
       }
@@ -76,35 +82,20 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const addPeriod = () => {
-    if (!selectedPeriods.includes(currentSelection)) {
-      setSelectedPeriods([...selectedPeriods, currentSelection]);
-    }
-  };
-
-  const removePeriod = (p: string) => {
-    setSelectedPeriods(selectedPeriods.filter(item => item !== p));
-  };
-
-  const handleStart = async () => { await startSync(); loadStats(); };
+  const handleStartStandard = async () => { await startSync(); loadStats(); };
   const handleStop = async () => { await stopSync(); loadStats(); };
   
-  const handleStartPeriods = async () => {
-    if (selectedPeriods.length === 0) return alert('Veuillez ajouter au moins une période.');
-    const periodsStr = selectedPeriods.join(',');
-    await startPeriodSync(periodsStr);
+  const handleStartTimeMachine = async () => {
+    if (selectedPeriods.length === 0) return alert('Veuillez ajouter au moins une période à la liste.');
+    await startPeriodSync(selectedPeriods.join(','));
     loadStats();
   };
 
   const handleReset = async () => {
-    if (window.confirm("ATTENTION : Cela va effacer TOUTES les données sur IONOS et en Local. Êtes-vous sûr ?")) {
+    if (window.confirm("ATTENTION : Purge Totale de la base de données. Confirmer ?")) {
       await resetSync();
-      setRadarHistory(Array(15).fill(0));
-      setHealerHistory(Array(15).fill(0));
-      setPeriodHistory(Array(15).fill(0));
-      setCurrentRadarSpeed(0);
-      setCurrentHealerSpeed(0);
-      setCurrentPeriodSpeed(0);
+      setRadarHistory(Array(12).fill(0));
+      setPeriodHistory(Array(12).fill(0));
       loadStats();
     }
   };
@@ -112,317 +103,309 @@ export default function DashboardPage() {
   const handleSmartClean = async () => {
     if (window.confirm("Lancer un nettoyage des doublons ?")) {
       await cleanDuplicates();
-      alert("Nettoyage lancé.");
       loadStats();
     }
   };
 
-  const formatStatus = (status: string | undefined) => {
-    if (!status) return 'Inconnu';
-    if (status.includes('404')) return 'Erreur 404: Endpoint Introuvable';
-    if (status.includes('500') || status.includes('INTERNAL_SERVER_ERROR')) return 'Serveur Bouygues Surchargé (HTTP 500)';
-    if (status.includes('504')) return 'Timeout API Bouygues (HTTP 504)';
-    if (status.includes('403') || status.includes('Banni')) return 'Bloqué par Akamai WAF';
-    return status;
-  };
-
-  const getStatusIcon = (status: string | undefined) => {
-    if (!status) return null;
-    if (status.includes('50') || status.includes('404') || status.includes('Banni') || status.includes('Erreur')) {
-      return <span style={{color: '#ef4444'}}><IconAlert /></span>;
-    }
-    return <span style={{color: '#10b981'}}><IconPlay /></span>;
-  };
+  // Helper CSS & Status
+  const isRunning = stats?.is_running || false;
+  const isTimeMachine = stats?.current_period != null;
 
   const totalApi = stats?.total_api || 0;
   const currentOffset = stats?.current_bt_offset || 0;
   const progressRadar = totalApi > 0 ? Math.min(100, Math.round((currentOffset / totalApi) * 100)) : 0;
 
-  const healTotal = stats?.heal_total || 0;
-  const healCurrent = stats?.heal_current || 0;
-  const progressHealer = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 100;
-
   const periodTotal = stats?.period_total || 0;
   const periodOffset = stats?.period_offset || 0;
   const progressPeriod = periodTotal > 0 ? Math.min(100, Math.round((periodOffset / periodTotal) * 100)) : 0;
 
-  const isRunning = stats?.is_running || false;
-  const isTimeMachine = stats?.current_period != null;
-  const etaText = stats?.eta || "En attente...";
+  const healTotal = stats?.heal_total || 0;
+  const healCurrent = stats?.heal_current || 0;
+  const progressHealer = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 100;
 
-  const getRadarInsight = () => {
-    if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
-    if (isTimeMachine) return <span className={styles.highlightGood}>Time Machine: Période {stats.current_period}. Navigation Sécurisée.</span>;
-    if (stats?.radar_status.includes("404")) return <span className={styles.highlightWarning}>Configuration URL incorrecte (404).</span>;
-    if (stats?.radar_status.includes("50")) return <span className={styles.highlightWarning}>API Bouygues en Timeout. Esquive en cours.</span>;
-    return <span className={styles.highlightGood}>Le Radar est fluide. Vitesse Actuelle: {currentRadarSpeed} EPS/10s.</span>;
+  const getStatusInfo = (status: string | undefined) => {
+    if (!status) return { text: 'Inconnu', css: styles.statusWarn, icon: <IconAlert /> };
+    if (status.includes('404')) return { text: 'Erreur 404 (URL PHP)', css: styles.statusError, icon: <IconAlert /> };
+    if (status.includes('500') || status.includes('504') || status.includes('Timeout')) return { text: 'Surcharge / Timeout Bouygues', css: styles.statusError, icon: <IconAlert /> };
+    if (status.includes('403') || status.includes('Banni')) return { text: 'Bloqué par Akamai WAF', css: styles.statusError, icon: <IconAlert /> };
+    if (status.includes('Arrêt')) return { text: status, css: styles.statusWarn, icon: <IconStop /> };
+    return { text: status, css: styles.statusGood, icon: <IconCheckCircle /> };
   };
 
-  const getHealerInsight = () => {
-    if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
-    if (healTotal === 0) return <span className={styles.highlightGood}>Base de données 100% qualifiée.</span>;
-    return <span className={styles.highlightNeutral}>Enrichissement furtif en cours. Vitesse Actuelle: {currentHealerSpeed} EPS/10s.</span>;
-  };
+  const rStatus = getStatusInfo(stats?.radar_status);
+  const hStatus = getStatusInfo(stats?.healer_status);
 
   return (
-    <div className={styles.container}>
-      <header className={styles.header}>
-        <div>
-          <h1 className={styles.pageTitle}>Gringotts Control Center</h1>
-          <p className={styles.pageSubtitle}>Gestionnaire de Synchronisation 24/7 (Daemon)</p>
-        </div>
-        <div className={styles.statusContainer}>
-          {isRunning ? (
-            <span className={styles.statusOnline}><span className={styles.pulse}></span> DAEMON ACTIF</span>
-          ) : (
-            <span className={styles.statusOffline}>DAEMON ARRÊTÉ</span>
-          )}
-        </div>
-      </header>
-
-      <div className={styles.dashboardGrid}>
+    <div className={styles.pageWrapper}>
+      <div className={styles.container}>
         
-        <div className={styles.panel} style={{ gridColumn: '1 / -1' }}>
-          <h2 className={styles.panelTitle}>Supervision des Moteurs</h2>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-            
-            {/* 1. RADAR GLOBAL */}
-            <div className={styles.engineBox} style={{ borderTop: '4px solid #3b82f6', opacity: isTimeMachine ? 0.5 : 1 }}>
-              <div className={styles.engineHeader}>
-                <span className={styles.engineName}><IconRadar /> Radar Global</span>
-                <span className={`${styles.engineEta} ${isRunning && !isTimeMachine ? styles.engineEtaActive : ''}`}>
-                  {isRunning && !isTimeMachine ? `Actif` : 'En veille'}
-                </span>
-              </div>
-              
-              <span className={styles.engineStatusText} style={{ color: stats?.radar_status.includes('Erreur') || stats?.radar_status.includes('50') || stats?.radar_status.includes('404') ? '#ef4444' : '#1e293b' }}>
-                {!isTimeMachine ? <>{getStatusIcon(stats?.radar_status)} {formatStatus(stats?.radar_status)}</> : 'Mode Période actif'}
-              </span>
-
-              <div className={styles.progressStats} style={{ marginTop: '10px' }}>
-                <span style={{ fontWeight: 'bold' }}>Aspiration Globale</span>
-                <span style={{ fontWeight: 'bold', color: '#3b82f6' }}>{progressRadar}%</span>
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Reçu: {currentOffset.toLocaleString()}</span>
-                <span>Cible: {totalApi.toLocaleString()}</span>
-              </div>
-              <div className={styles.progressBarBg}>
-                <div className={styles.progressBarFill} style={{ width: `${progressRadar}%` }}></div>
-              </div>
-
-              <div className={styles.diagramContainer}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span className={styles.diagramLabel}>Activité (EPS/10s)</span>
-                  <span className={styles.speedLabel}>{currentRadarSpeed} EPS</span>
-                </div>
-                <div className={styles.sparkline}>
-                  {radarHistory.map((val, i) => (
-                    <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(2, (val / 500) * 100))}%` }}></div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 2. TIME MACHINE (PÉRIODES) */}
-            <div className={styles.engineBox} style={{ borderTop: '4px solid #8b5cf6', opacity: isRunning && !isTimeMachine ? 0.5 : 1 }}>
-              <div className={styles.engineHeader}>
-                <span className={styles.engineName} style={{ color: '#6d28d9' }}><IconClock /> Time Machine</span>
-                <span className={`${styles.engineEta} ${isTimeMachine ? styles.engineEtaActive : ''}`} style={{ backgroundColor: isTimeMachine ? '#ede9fe' : '#f1f5f9', color: isTimeMachine ? '#6d28d9' : '#64748b' }}>
-                  {isTimeMachine ? `Mois : ${stats?.current_period}` : 'En veille'}
-                </span>
-              </div>
-              
-              <span className={styles.engineStatusText} style={{ color: stats?.radar_status.includes('Erreur') || stats?.radar_status.includes('50') || stats?.radar_status.includes('404') ? '#ef4444' : '#1e293b' }}>
-                {isTimeMachine ? <>{getStatusIcon(stats?.radar_status)} {formatStatus(stats?.radar_status)}</> : 'Aucune période programmée'}
-              </span>
-
-              <div className={styles.progressStats} style={{ marginTop: '10px' }}>
-                <span style={{ fontWeight: 'bold' }}>Mois en cours</span>
-                <span style={{ fontWeight: 'bold', color: '#8b5cf6' }}>{progressPeriod}%</span>
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Reçu: {periodOffset.toLocaleString()}</span>
-                <span>Cible: {periodTotal.toLocaleString()}</span>
-              </div>
-              <div className={styles.progressBarBg}>
-                <div className={styles.progressBarFill} style={{ width: `${progressPeriod}%`, backgroundColor: '#8b5cf6' }}></div>
-              </div>
-
-              <div className={styles.diagramContainer}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span className={styles.diagramLabel}>Activité (EPS/10s)</span>
-                  <span className={styles.speedLabel} style={{ color: '#8b5cf6' }}>{currentPeriodSpeed} EPS</span>
-                </div>
-                <div className={styles.sparkline}>
-                  {periodHistory.map((val, i) => (
-                    <div key={i} className={styles.sparklineBar} style={{ backgroundColor: '#a78bfa', height: `${Math.min(100, Math.max(2, (val / 500) * 100))}%` }}></div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 3. HEALER */}
-            <div className={styles.engineBox} style={{ borderTop: '4px solid #10b981' }}>
-              <div className={styles.engineHeader}>
-                <span className={styles.engineName}><IconHealer /> Background Healer</span>
-                <span className={`${styles.engineEta} ${stats?.is_healing && healTotal > 0 ? styles.engineEtaActive : ''}`}>
-                  {stats?.is_healing && healTotal > 0 ? 'En cours' : 'En veille'}
-                </span>
-              </div>
-              
-              <span className={styles.engineStatusText} style={{ color: stats?.healer_status.includes('Erreur') || stats?.healer_status.includes('50') ? '#ef4444' : '#1e293b' }}>
-                 {getStatusIcon(stats?.healer_status)} {formatStatus(stats?.healer_status)}
-              </span>
-
-              <div className={styles.progressStats} style={{ marginTop: '10px' }}>
-                <span style={{ fontWeight: 'bold' }}>Détails manquants</span>
-                <span style={{ fontWeight: 'bold', color: '#10b981' }}>{progressHealer}%</span>
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Restauré: {healCurrent.toLocaleString()}</span>
-                <span>Cible: {healTotal.toLocaleString()}</span>
-              </div>
-              <div className={styles.progressBarBg}>
-                <div className={styles.progressBarFillHealer} style={{ width: `${progressHealer}%` }}></div>
-              </div>
-
-              <div className={styles.diagramContainer}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span className={styles.diagramLabel}>Activité (EPS/10s)</span>
-                  <span className={styles.speedLabel} style={{ color: '#10b981' }}>{currentHealerSpeed} EPS</span>
-                </div>
-                <div className={styles.sparkline}>
-                  {healerHistory.map((val, i) => (
-                    <div key={i} className={`${styles.sparklineBar} ${styles.sparklineBarHealer}`} style={{ height: `${Math.min(100, Math.max(2, (val / 100) * 100))}%` }}></div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
+        <header className={styles.header}>
+          <div>
+            <h1 className={styles.pageTitle}>Gringotts Control Center</h1>
+            <p className={styles.pageSubtitle}>Supervision et Orchestration API</p>
           </div>
-        </div>
-
-        <div className={styles.panel} style={{ display: 'flex', flexDirection: 'column' }}>
-          <h2 className={styles.panelTitle}>Commandes & Actions</h2>
-          <div className={styles.controlsPanel}>
-            
-            <div style={{ display: 'flex', gap: '10px' }}>
-                {!isRunning ? (
-                  <button className={`${styles.mainButton} ${styles.btnStart}`} style={{ flex: 1 }} onClick={handleStart}>
-                    <IconPlay /> Mode Standard (Global)
-                  </button>
-                ) : (
-                  <button className={`${styles.mainButton} ${styles.btnStop}`} style={{ flex: 1 }} onClick={handleStop}>
-                    <IconStop /> STOPPER LE DAEMON
-                  </button>
-                )}
-            </div>
-
-            {/* 🚀 L'ESPACE TIME MACHINE UI AVEC DROPDOWN */}
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <IconClock /> Mode Time Machine
-                </h3>
-                <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '12px' }}>
-                    Sélectionnez et ajoutez les mois à aspirer.
-                </p>
-                
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                  <select 
-                    value={currentSelection} 
-                    onChange={e => setCurrentSelection(e.target.value)}
-                    style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.85rem' }}
-                    disabled={isRunning}
-                  >
-                    {availableYears.map(year => (
-                      <optgroup key={year} label={`Année ${year}`}>
-                        {availableMonths.map(month => (
-                          <option key={`${year}_${month}`} value={`${year}_${month}`}>
-                            {year} — Mois {month.replace('M', '')}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <button onClick={addPeriod} disabled={isRunning} style={{ padding: '0 12px', background: isRunning ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isRunning ? 'not-allowed' : 'pointer', fontSize: '0.8rem' }}>
-                    + Ajouter
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px', minHeight: '30px' }}>
-                  {selectedPeriods.length === 0 && <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Aucune période...</span>}
-                  {selectedPeriods.map(p => (
-                    <div key={p} style={{ background: '#e0e7ff', color: '#047857', padding: '4px 8px', borderRadius: '99px', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #a7f3d0' }}>
-                      {p}
-                      {!isRunning && <button onClick={() => removePeriod(p)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}>✕</button>}
-                    </div>
-                  ))}
-                </div>
-                
-                <button 
-                    onClick={handleStartPeriods} 
-                    disabled={isRunning || selectedPeriods.length === 0}
-                    style={{ width: '100%', padding: '12px', background: isRunning || selectedPeriods.length === 0 ? '#cbd5e1' : '#8b5cf6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isRunning || selectedPeriods.length === 0 ? 'not-allowed' : 'pointer', transition: '0.2s', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
-                >
-                    <IconPlay /> Démarrer la Time Machine
-                </button>
-            </div>
-
-            <Link href="/interventions" className={`${styles.mainButton} ${styles.btnExplore}`}>
-              <IconExplore /> Explorer les données
-            </Link>
-            <button className={styles.btnClean} onClick={handleSmartClean}>
-              <IconClean /> Nettoyer les doublons
-            </button>
+          <div className={`${styles.statusBadge} ${isRunning ? styles.statusOnline : styles.statusOffline}`}>
+            {isRunning && <span className={styles.pulse}></span>}
+            {isRunning ? 'DAEMON ACTIF' : 'DAEMON ARRÊTÉ'}
           </div>
-          <button className={styles.btnReset} onClick={handleReset}>
-             <IconAlert /> RESET TOTAL
+        </header>
+
+        {/* TABS SWITCHER */}
+        <div className={styles.tabContainer}>
+          <button 
+            className={`${styles.tabBtn} ${activeTab === 'standard' ? styles.tabActiveStandard : ''}`}
+            onClick={() => setActiveTab('standard')}
+          >
+            <IconActivity /> Mode Standard (Global)
+          </button>
+          <button 
+            className={`${styles.tabBtn} ${activeTab === 'timemachine' ? styles.tabActiveTimeMachine : ''}`}
+            onClick={() => setActiveTab('timemachine')}
+          >
+            <IconClock /> Mode Time Machine (Périodes)
           </button>
         </div>
 
-        <div className={styles.analyticsPanel}>
-          <h2 className={styles.analyticsTitle}>
-            <IconInsights /> Console & Alertes
-          </h2>
+        <div className={styles.mainGrid}>
           
-          <div className={styles.insightCards}>
-            <div className={styles.insightCard}>
-              <div className={styles.insightHeader}><IconRadar /> Analyse Comportement Radar</div>
-              <div className={styles.insightValue}>{getRadarInsight()}</div>
+          {/* =========================================================
+              COLONNE DE GAUCHE : MOTEUR ACTIF
+              ========================================================= */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+            
+            {/* VUE STANDARD */}
+            {activeTab === 'standard' && (
+              <div className={styles.glassCard}>
+                <div className={styles.cardHeader}>
+                  <h2 className={styles.cardTitle}>
+                    <div className={`${styles.iconBox} ${styles.iconStandard}`}><IconActivity /></div>
+                    Radar d'Aspiration (Global)
+                  </h2>
+                  <span className={`${styles.statusText} ${rStatus.css}`}>{rStatus.icon} {rStatus.text}</span>
+                </div>
+
+                <div className={styles.metricsGrid}>
+                  <div className={styles.metricBox}>
+                    <span className={styles.metricLabel}>Cible API Bouygues</span>
+                    <span className={styles.metricValue}>{totalApi.toLocaleString()}</span>
+                  </div>
+                  <div className={styles.metricBox}>
+                    <span className={styles.metricLabel}>Dossiers Téléchargés</span>
+                    <span className={styles.metricValue}>{currentOffset.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className={styles.progressSection}>
+                  <div className={styles.progressHeader}>
+                    <span>Progression du Scan</span>
+                    <span>{progressRadar}%</span>
+                  </div>
+                  <div className={styles.progressTrack}>
+                    <div className={styles.progressFillStandard} style={{ width: `${progressRadar}%` }}></div>
+                  </div>
+                  <div className={styles.progressFooter}>
+                    <span>Vitesse: {currentRadarSpeed} EPS</span>
+                    <span>ETA: {stats?.eta || '---'}</span>
+                  </div>
+                </div>
+
+                <div className={styles.sparkline}>
+                  {radarHistory.map((val, i) => (
+                    <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(5, (val / 300) * 100))}%`, background: '#3b82f6' }}></div>
+                  ))}
+                </div>
+
+                <div className={styles.controlsGroup}>
+                  {!isRunning ? (
+                    <button className={`${styles.btnPrimary} ${styles.bgBlue}`} onClick={handleStartStandard}>
+                      <IconPlay /> Lancer le Radar Standard
+                    </button>
+                  ) : (
+                    <button className={`${styles.btnPrimary} ${styles.bgRed}`} onClick={handleStop}>
+                      <IconStop /> Stopper le Processus
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VUE TIME MACHINE */}
+            {activeTab === 'timemachine' && (
+              <div className={styles.glassCard}>
+                <div className={styles.cardHeader}>
+                  <h2 className={styles.cardTitle}>
+                    <div className={`${styles.iconBox} ${styles.iconTime}`}><IconClock /></div>
+                    Time Machine (Mensuel)
+                  </h2>
+                  <span className={`${styles.statusText} ${rStatus.css}`}>{rStatus.icon} {rStatus.text}</span>
+                </div>
+
+                {/* SÉLECTEUR DE MOIS */}
+                {!isRunning && (
+                  <div className={styles.controlsGroup}>
+                    <div className={styles.tmSelector}>
+                      <select className={styles.tmSelect} value={currentSelection} onChange={e => setCurrentSelection(e.target.value)}>
+                        {availableYears.map(year => (
+                          <optgroup key={year} label={`Année ${year}`}>
+                            {availableMonths.map(month => (
+                              <option key={`${year}_${month}`} value={`${year}_${month}`}>
+                                {year} - Mois {month.replace('M', '')}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <button className={styles.btnSecondary} style={{ width: 'auto' }} onClick={addPeriod}>Ajouter</button>
+                    </div>
+                    
+                    <div className={styles.tmList}>
+                      {selectedPeriods.length === 0 && <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto' }}>Aucune période sélectionnée</span>}
+                      {selectedPeriods.map(p => (
+                        <div key={p} className={styles.tmTag}>
+                          {p}
+                          <button onClick={() => removePeriod(p)}><IconTrash /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className={styles.metricsGrid}>
+                  <div className={styles.metricBox}>
+                    <span className={styles.metricLabel}>Période Active</span>
+                    <span className={styles.metricValue}>{stats?.current_period || '---'}</span>
+                  </div>
+                  <div className={styles.metricBox}>
+                    <span className={styles.metricLabel}>Téléchargés (Ce mois)</span>
+                    <span className={styles.metricValue}>{periodOffset.toLocaleString()} / {periodTotal.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className={styles.progressSection}>
+                  <div className={styles.progressHeader}>
+                    <span>Progression du Mois</span>
+                    <span>{progressPeriod}%</span>
+                  </div>
+                  <div className={styles.progressTrack}>
+                    <div className={styles.progressFillTime} style={{ width: `${progressPeriod}%` }}></div>
+                  </div>
+                  <div className={styles.progressFooter}>
+                    <span>Vitesse: {currentPeriodSpeed} EPS</span>
+                  </div>
+                </div>
+
+                <div className={styles.sparkline}>
+                  {periodHistory.map((val, i) => (
+                    <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(5, (val / 300) * 100))}%`, background: '#8b5cf6' }}></div>
+                  ))}
+                </div>
+
+                <div className={styles.controlsGroup}>
+                  {!isRunning ? (
+                    <button className={`${styles.btnPrimary} ${styles.bgPurple}`} onClick={handleStartTimeMachine} disabled={selectedPeriods.length === 0}>
+                      <IconPlay /> Démarrer la Time Machine
+                    </button>
+                  ) : (
+                    <button className={`${styles.btnPrimary} ${styles.bgRed}`} onClick={handleStop}>
+                      <IconStop /> Stopper la Time Machine
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* HEALER (GLOBAL - TOUJOURS VISIBLE) */}
+            <div className={styles.glassCard}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>
+                  <div className={`${styles.iconBox} ${styles.iconHealer}`}><IconHealer /></div>
+                  Background Healer
+                </h2>
+                <span className={`${styles.statusText} ${hStatus.css}`}>{hStatus.icon} {hStatus.text}</span>
+              </div>
+              
+              <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                Le Healer détecte automatiquement les interventions sans détails (importées par le Radar ou la Time Machine) et les enrichit en tâche de fond.
+              </p>
+
+              <div className={styles.metricsGrid}>
+                <div className={styles.metricBox}>
+                  <span className={styles.metricLabel}>Détails à restaurer</span>
+                  <span className={styles.metricValue}>{healTotal.toLocaleString()}</span>
+                </div>
+                <div className={styles.metricBox}>
+                  <span className={styles.metricLabel}>Restaurés (Lot actuel)</span>
+                  <span className={styles.metricValue}>{healCurrent.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className={styles.progressSection}>
+                <div className={styles.progressHeader}>
+                  <span>Progression de l'Enrichissement</span>
+                  <span>{progressHealer}%</span>
+                </div>
+                <div className={styles.progressTrack}>
+                  <div className={styles.progressFillHealer} style={{ width: `${progressHealer}%` }}></div>
+                </div>
+              </div>
             </div>
-            <div className={styles.insightCard}>
-              <div className={styles.insightHeader}><IconHealer /> Analyse Comportement Healer</div>
-              <div className={styles.insightValue}>{getHealerInsight()}</div>
-            </div>
+
           </div>
 
-          {stats?.alerts && stats.alerts.length > 0 ? (
-            <div className={styles.alertsConsole}>
-              {stats.alerts.map((alert, idx) => {
-                let cleanAlert = alert;
-                if (cleanAlert.includes('404')) cleanAlert = cleanAlert.replace(/HTTP 404.*/, 'Endpoint PHP Introuvable (HTTP 404)');
-                if (cleanAlert.includes('500') || cleanAlert.includes('INTERNAL_SERVER')) cleanAlert = cleanAlert.replace(/HTTP 500.*/, 'Serveur API Surchargé (HTTP 500)');
-                if (cleanAlert.includes('504') || cleanAlert.includes('GatewayTimeout')) cleanAlert = cleanAlert.replace(/HTTP 504.*/, 'Timeout Serveur Bouygues (HTTP 504)');
-                
-                const timeMatch = cleanAlert.match(/^\[(.*?)\]/);
-                const timeStr = timeMatch ? timeMatch[0] : '';
-                const msgStr = cleanAlert.replace(/^\[.*?\]\s*/, '');
-
-                return (
-                  <div key={idx} className={styles.alertItem}>
-                    <span className={styles.alertTime}>{timeStr}</span>
-                    <span>{msgStr}</span>
-                  </div>
-                );
-              })}
+          {/* =========================================================
+              COLONNE DE DROITE : OUTILS ET CONSOLE
+              ========================================================= */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+            
+            <div className={styles.glassCard}>
+              <h2 className={styles.cardTitle} style={{ marginBottom: '15px' }}><IconDatabase /> Outils Système</h2>
+              <div className={styles.controlsGroup}>
+                <button className={styles.btnSecondary} onClick={handleSmartClean}>
+                  Nettoyer les doublons
+                </button>
+                <Link href="/interventions" style={{ textDecoration: 'none' }}>
+                  <button className={styles.btnSecondary}>
+                     Explorer les données brutes
+                  </button>
+                </Link>
+                <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca' }} onClick={handleReset}>
+                  Reset & Purge Totale
+                </button>
+              </div>
             </div>
-          ) : (
-            <div style={{ padding: '20px', color: '#64748b', fontSize: '0.9rem', textAlign: 'center' }}>Aucune alerte récente.</div>
-          )}
-        </div>
 
+            <div className={styles.consoleWrapper}>
+              <div className={styles.consoleHeader}>
+                <IconTerminal /> Console d'Alertes Live
+              </div>
+              {stats?.alerts && stats.alerts.length > 0 ? (
+                <div>
+                  {stats.alerts.map((alert, idx) => {
+                    // Nettoyage du texte (suppression des codes d'erreur bruts)
+                    let cleanAlert = alert;
+                    if (cleanAlert.includes('404')) cleanAlert = cleanAlert.replace(/HTTP 404.*/, 'Endpoint PHP Introuvable (URL Invalide)');
+                    if (cleanAlert.includes('500') || cleanAlert.includes('504')) cleanAlert = cleanAlert.replace(/HTTP 50.*/, 'Serveur Bouygues Surchargé (Attente...)');
+                    
+                    const timeMatch = cleanAlert.match(/^\[(.*?)\]/);
+                    const timeStr = timeMatch ? timeMatch[0] : '';
+                    const msgStr = cleanAlert.replace(/^\[.*?\]\s*/, '');
+
+                    return (
+                      <div key={idx} className={styles.alertItem}>
+                        <span className={styles.alertTime}>{timeStr}</span>
+                        <span className={styles.alertText}>{msgStr}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ padding: '20px', color: '#475569', fontSize: '0.85rem', textAlign: 'center' }}>Aucun événement enregistré.</div>
+              )}
+            </div>
+
+          </div>
+
+        </div>
       </div>
     </div>
   );
