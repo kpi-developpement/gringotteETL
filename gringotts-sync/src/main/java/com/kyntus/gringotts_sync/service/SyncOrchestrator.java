@@ -48,10 +48,14 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
+
+    // 🚀 NOUVEAU : Clés séparées pour la Time Machine
+    private static final String PERIOD_OFFSET_KEY = "bt_api_offset_period";
+    private static final String PERIOD_TOTAL_KEY = "bt_total_api_period";
+
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 300;
 
-    // 🚀 L'FIX HNA : Gestion de la Time Machine (Les périodes)
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
     private volatile String currentPeriod = null;
 
@@ -82,14 +86,13 @@ public class SyncOrchestrator {
         periodQueue.addAll(periods);
         currentPeriod = periodQueue.poll();
 
-        saveState(OFFSET_KEY, 0);
-        saveState(TOTAL_KEY, 0);
+        saveState(PERIOD_OFFSET_KEY, 0);
+        saveState(PERIOD_TOTAL_KEY, 0);
 
-        addAlert("[SYSTEM] Démarrage Time Machine : " + periods.size() + " périodes chargées.");
+        addAlert("[TIME MACHINE] Démarrage avec " + periods.size() + " périodes.");
         if (currentPeriod != null) {
-            addAlert("[TIME MACHINE] Traitement en cours : Période " + currentPeriod);
+            addAlert("[TIME MACHINE] Traitement en cours : " + currentPeriod);
         }
-
         startSyncInternal();
     }
 
@@ -97,7 +100,7 @@ public class SyncOrchestrator {
         if (isRunning) return;
         currentPeriod = null;
         periodQueue.clear();
-        addAlert("[SYSTEM] Démarrage Standard (Boucle infinie sans période)");
+        addAlert("[SYSTEM] Démarrage Standard (Offset Global)");
         startSyncInternal();
     }
 
@@ -132,6 +135,8 @@ public class SyncOrchestrator {
         interventionRepository.deleteAll();
         saveState(OFFSET_KEY, 0);
         saveState(TOTAL_KEY, 0);
+        saveState(PERIOD_OFFSET_KEY, 0);
+        saveState(PERIOD_TOTAL_KEY, 0);
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
         currentPeriod = null;
@@ -216,28 +221,28 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
-                int currentOffset = getSavedState(OFFSET_KEY);
-                int totalApi = getSavedState(TOTAL_KEY);
+                // 🚀 L'FIX HNA : On lit le bon offset selon le mode
+                int currentOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
+                int totalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
 
                 if (totalApi > 0 && currentOffset >= totalApi) {
-                    // 🚀 L'FIX HNA : Le basculement vers le mois suivant
                     if (currentPeriod != null) {
                         addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée à 100%.");
                         currentPeriod = periodQueue.poll();
 
                         if (currentPeriod == null) {
                             addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées ! Arrêt du Radar.");
-                            saveState(OFFSET_KEY, 0);
-                            saveState(TOTAL_KEY, 0);
+                            saveState(PERIOD_OFFSET_KEY, 0);
+                            saveState(PERIOD_TOTAL_KEY, 0);
                             stopSync();
                             break;
                         } else {
                             addAlert("📅 [TIME MACHINE] Passage à la période suivante : " + currentPeriod);
-                            saveState(OFFSET_KEY, 0);
+                            saveState(PERIOD_OFFSET_KEY, 0);
                             currentOffset = 0;
                             totalProcessedSinceStart = 0;
                             syncStartTime = System.currentTimeMillis();
-                            sleep(5000); // Pause pour laisser souffler Bouygues entre 2 mois
+                            sleep(5000);
                         }
                     } else {
                         saveState(OFFSET_KEY, 0);
@@ -255,16 +260,23 @@ public class SyncOrchestrator {
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
-                        // 🚀 On envoie la période à PHP !
                         ImportResponse importResp = phpApiClient.triggerImport(currentOffset, RADAR_BATCH, currentPeriod);
 
                         if (importResp != null && importResp.isOk()) {
                             if (importResp.getBatchCount() == 0) {
-                                saveState(OFFSET_KEY, importResp.getTotalApi());
+                                if (currentPeriod != null) saveState(PERIOD_OFFSET_KEY, importResp.getTotalApi());
+                                else saveState(OFFSET_KEY, importResp.getTotalApi());
                                 break;
                             }
-                            saveState(OFFSET_KEY, importResp.getNextOffset());
-                            saveState(TOTAL_KEY, importResp.getTotalApi());
+
+                            // 🚀 L'FIX HNA : On sauvegarde dans la bonne clé
+                            if (currentPeriod != null) {
+                                saveState(PERIOD_OFFSET_KEY, importResp.getNextOffset());
+                                saveState(PERIOD_TOTAL_KEY, importResp.getTotalApi());
+                            } else {
+                                saveState(OFFSET_KEY, importResp.getNextOffset());
+                                saveState(TOTAL_KEY, importResp.getTotalApi());
+                            }
 
                             totalRadarProcessed += importResp.getBatchCount();
                             totalProcessedSinceStart += importResp.getBatchCount();

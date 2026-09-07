@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, healData, SyncStats } from '../services/api';
+import { fetchStats, startSync, stopSync, resetSync, healData, SyncStats } from '../services/api';
 import StatCard from '../components/StatCard';
 import styles from './page.module.css';
 
@@ -14,18 +14,14 @@ const IconExplore = () => <svg width="18" height="18" fill="none" stroke="curren
 const IconClean = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>;
 const IconAlert = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>;
 const IconInsights = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>;
+const IconClock = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
-  
   const [radarHistory, setRadarHistory] = useState<number[]>(Array(15).fill(0));
   const [healerHistory, setHealerHistory] = useState<number[]>(Array(15).fill(0));
-  
   const [currentRadarSpeed, setCurrentRadarSpeed] = useState(0);
   const [currentHealerSpeed, setCurrentHealerSpeed] = useState(0);
-
-  // 🚀 L'FIX HNA : Le state de l'input Période
-  const [periodInput, setPeriodInput] = useState('2026_M01, 2026_M02, 2026_M03, 2026_M04, 2026_M05, 2026_M06, 2026_M07, 2026_M08, 2026_M09, 2026_M10, 2026_M11, 2026_M12');
 
   const tickCount = useRef(0);
   const lastRadarTotal = useRef(0);
@@ -35,24 +31,18 @@ export default function DashboardPage() {
     const data = await fetchStats();
     if (data) {
       setStats(data);
-      
       if (data.radar_processed_total < lastRadarTotal.current) {
         lastRadarTotal.current = data.radar_processed_total;
         lastHealerTotal.current = data.healer_processed_total;
       }
-
       tickCount.current += 1;
-      
       if (tickCount.current >= 5) {
         const rDelta = Math.max(0, data.radar_processed_total - lastRadarTotal.current);
         const hDelta = Math.max(0, data.healer_processed_total - lastHealerTotal.current);
-
         setCurrentRadarSpeed(rDelta);
         setCurrentHealerSpeed(hDelta);
-
         setRadarHistory(prev => [...prev.slice(1), rDelta]);
         setHealerHistory(prev => [...prev.slice(1), hDelta]);
-
         lastRadarTotal.current = data.radar_processed_total;
         lastHealerTotal.current = data.healer_processed_total;
         tickCount.current = 0;
@@ -67,14 +57,6 @@ export default function DashboardPage() {
   }, []);
 
   const handleStart = async () => { await startSync(); loadStats(); };
-  
-  // 🚀 L'FIX HNA : Action pour démarrer avec les périodes
-  const handleStartPeriods = async () => {
-    if (!periodInput.trim()) return alert('Veuillez entrer au moins une période.');
-    await startPeriodSync(periodInput);
-    loadStats();
-  };
-
   const handleStop = async () => { await stopSync(); loadStats(); };
   
   const handleReset = async () => {
@@ -121,21 +103,18 @@ export default function DashboardPage() {
   const progressHealer = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 100;
 
   const isRunning = stats?.is_running || false;
+  const isTimeMachine = stats?.current_period != null;
   const etaText = stats?.eta || "En attente...";
 
   const getRadarInsight = () => {
     if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
-    if (stats?.current_period) return <span className={styles.highlightGood}>Time Machine Actif. Navigation sécurisée sur le mois : {stats.current_period}.</span>;
+    if (isTimeMachine) return <span className={styles.highlightGood}>Mode Time Machine Actif. Navigation sécurisée.</span>;
     if (stats?.radar_status.includes("50")) return <span className={styles.highlightWarning}>API Bouygues en Timeout. Esquive en cours.</span>;
-    if (stats?.radar_status.includes("Banni") || stats?.radar_status.includes("403")) return <span className={styles.highlightWarning}>Pare-feu Akamai actif. Le Radar esquive et patiente 15m.</span>;
     return <span className={styles.highlightGood}>Le Radar est fluide. Vitesse Actuelle: {currentRadarSpeed} EPS/10s.</span>;
   };
 
   const getHealerInsight = () => {
     if (!isRunning) return <span className={styles.highlightNeutral}>Daemon en pause.</span>;
-    if (stats?.radar_status.includes("50") && stats?.healer_status.includes("Lot sauvegardé")) {
-      return <span className={styles.highlightGood}>Twin-Turbo Actif: Le Radar bloque, l'Healer accélère le nettoyage.</span>;
-    }
     if (healTotal === 0) return <span className={styles.highlightGood}>Base de données 100% qualifiée.</span>;
     return <span className={styles.highlightNeutral}>Enrichissement furtif en cours. Vitesse Actuelle: {currentHealerSpeed} EPS/10s.</span>;
   };
@@ -177,7 +156,7 @@ export default function DashboardPage() {
               </span>
 
               <div className={styles.progressStats}>
-                <span>{stats?.current_period ? `Progression ${stats.current_period}` : 'Progression Aspiration'}</span>
+                <span>{isTimeMachine ? `Progression [${stats.current_period}]` : 'Progression Aspiration'}</span>
                 <span>{currentOffset.toLocaleString()} / {totalApi.toLocaleString()} ({progressRadar}%)</span>
               </div>
               <div className={styles.progressBarBg}>
@@ -241,50 +220,22 @@ export default function DashboardPage() {
         </div>
 
         <div className={styles.panel} style={{ display: 'flex', flexDirection: 'column' }}>
-          <h2 className={styles.panelTitle}>Commandes & Time Machine</h2>
+          <h2 className={styles.panelTitle}>Commandes</h2>
           <div className={styles.controlsPanel}>
             
-            <div style={{ display: 'flex', gap: '10px' }}>
-                {!isRunning ? (
-                  <button className={`${styles.mainButton} ${styles.btnStart}`} style={{ flex: 1 }} onClick={handleStart}>
-                    <IconPlay /> Mode Standard
-                  </button>
-                ) : (
-                  <button className={`${styles.mainButton} ${styles.btnStop}`} style={{ flex: 1 }} onClick={handleStop}>
-                    <IconStop /> STOPPER LE DAEMON
-                  </button>
-                )}
-            </div>
+            {!isRunning ? (
+              <button className={`${styles.mainButton} ${styles.btnStart}`} onClick={handleStart}>
+                <IconPlay /> Mode Standard (Offset Continu)
+              </button>
+            ) : (
+              <button className={`${styles.mainButton} ${styles.btnStop}`} onClick={handleStop}>
+                <IconStop /> STOPPER LE DAEMON
+              </button>
+            )}
 
-            {/* 🚀 L'ESPACE TIME MACHINE UI */}
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    ⏳ Aspiration par Périodes (Time Machine)
-                </h3>
-                <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '12px' }}>
-                    Contourne le blocage de Bouygues en limitant l'Offset à un mois.
-                </p>
-                <input 
-                    type="text" 
-                    value={periodInput} 
-                    onChange={e => setPeriodInput(e.target.value)}
-                    placeholder="Ex: 2026_M01, 2026_M02"
-                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', marginBottom: '12px', outline: 'none' }}
-                />
-                <button 
-                    onClick={handleStartPeriods} 
-                    disabled={isRunning}
-                    style={{ width: '100%', padding: '12px', background: isRunning ? '#cbd5e1' : '#8b5cf6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isRunning ? 'not-allowed' : 'pointer', transition: '0.2s' }}
-                >
-                    🚀 Démarrer la Time Machine
-                </button>
-                
-                {stats?.current_period && (
-                    <div style={{ marginTop: '12px', padding: '8px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', fontSize: '0.8rem', color: '#047857', fontWeight: 'bold', textAlign: 'center' }}>
-                        📅 En cours : {stats.current_period}
-                    </div>
-                )}
-            </div>
+            <Link href="/time-machine" className={`${styles.mainButton}`} style={{ backgroundColor: '#8b5cf6', color: 'white', border: 'none', boxShadow: '0 4px 6px -1px rgba(139, 92, 246, 0.2)' }}>
+              <IconClock /> Ouvrir la Time Machine (Périodes)
+            </Link>
 
             <Link href="/interventions" className={`${styles.mainButton} ${styles.btnExplore}`}>
               <IconExplore /> Explorer les données
