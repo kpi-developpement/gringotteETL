@@ -2,77 +2,88 @@ package com.kyntus.gringotts_sync.integration;
 
 import com.kyntus.gringotts_sync.dto.ExportResponse;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.*;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class PhpApiClient {
 
-    private final RestClient restClient;
+    private final RestTemplate restTemplate;
+
+    @Value("${kyntus.php.api.url}")
+    private String phpApiUrl;
+
+    @Value("${kyntus.php.api.key}")
+    private String syncApiKey;
+
+    public PhpApiClient(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
+
+    private HttpHeaders createHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-SYNC-KEY", syncApiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return headers;
+    }
 
     public ExportResponse export(int limit) {
-        return restClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/api/sync/export").queryParam("limit", limit).build())
-                .retrieve()
-                .body(ExportResponse.class);
+        String url = phpApiUrl + "/export?limit=" + limit;
+        HttpEntity<Void> entity = new HttpEntity<>(createHeaders());
+        ResponseEntity<ExportResponse> response = restTemplate.exchange(url, HttpMethod.GET, entity, ExportResponse.class);
+        return response.getBody();
     }
 
     public void acknowledge(List<Long> ids) {
-        String jsonIds = ids.stream()
-                .map(String::valueOf)
-                .collect(Collectors.joining(","));
+        String url = phpApiUrl + "/ack";
+        Map<String, Object> body = new HashMap<>();
+        body.put("ids", ids);
 
-        String jsonBody = "{\"ids\":[" + jsonIds + "]}";
-
-        restClient.post()
-                .uri("/api/sync/ack")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(jsonBody)
-                .retrieve()
-                .toBodilessEntity();
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, createHeaders());
+        restTemplate.exchange(url, HttpMethod.POST, entity, Void.class);
     }
 
-    public ImportResponse triggerImport(int offset, int limit) {
-        // 🚀 L'FIX : fetch_details = false pour le Radar
-        String jsonBody = String.format("{\"offset\":%d,\"limit\":%d,\"fetch_details\":false}", offset, limit);
+    // 🚀 L'FIX HNA : Ajout du paramètre "periode"
+    public ImportResponse triggerImport(int offset, int limit, String periode) {
+        String url = phpApiUrl + "/import";
+        Map<String, Object> body = new HashMap<>();
+        body.put("offset", offset);
+        body.put("limit", limit);
+        body.put("fetch_details", true);
 
-        return restClient.post()
-                .uri("/api/sync/import")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(jsonBody)
-                .retrieve()
-                .body(ImportResponse.class);
+        if (periode != null && !periode.isEmpty()) {
+            body.put("periode", periode);
+        }
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, createHeaders());
+        ResponseEntity<ImportResponse> response = restTemplate.exchange(url, HttpMethod.POST, entity, ImportResponse.class);
+        return response.getBody();
     }
 
     public void resetIonos() {
-        log.info("Appel POST /api/sync/reset pour vider IONOS");
-        restClient.post()
-                .uri("/api/sync/reset")
-                .contentType(MediaType.APPLICATION_JSON)
-                .retrieve()
-                .toBodilessEntity();
+        String url = phpApiUrl + "/reset";
+        HttpEntity<Void> entity = new HttpEntity<>(createHeaders());
+        restTemplate.exchange(url, HttpMethod.POST, entity, Void.class);
     }
 
-    public Map<String, Object> healData(List<String> ids) {
-        List<String> cleanIds = ids.stream()
-                .filter(Objects::nonNull)
-                .filter(id -> !id.trim().isEmpty())
-                .toList();
+    public Map<String, Object> healData(List<String> idInterventions) {
+        String ids = String.join(",", idInterventions);
+        String url = phpApiUrl + "/heal?ids=" + ids;
 
-        String idsString = String.join(",", cleanIds);
-        return restClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/api/sync/heal").queryParam("ids", idsString).build())
-                .retrieve()
-                .body(Map.class);
+        HttpEntity<Void> entity = new HttpEntity<>(createHeaders());
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                new ParameterizedTypeReference<Map<String, Object>>() {}
+        );
+        return response.getBody();
     }
 }

@@ -16,10 +16,8 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -37,7 +35,6 @@ public class SyncOrchestrator {
     private volatile boolean isHealing = false;
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
-
     private volatile long syncStartTime = 0;
     private volatile int totalProcessedSinceStart = 0;
     private volatile String currentEta = "En attente...";
@@ -51,10 +48,12 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-
-    // 🚀 L'FIX HNA : Retour à 300 Fixe. L'Auto-scaling a été retiré.
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 300;
+
+    // 🚀 L'FIX HNA : Gestion de la Time Machine (Les périodes)
+    private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
+    private volatile String currentPeriod = null;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -64,9 +63,9 @@ public class SyncOrchestrator {
     public String getRadarStatus() { return radarStatus; }
     public String getHealerStatus() { return healerStatus; }
     public List<String> getRecentAlerts() { return recentAlerts; }
-
     public long getTotalRadarProcessed() { return totalRadarProcessed; }
     public long getTotalHealerProcessed() { return totalHealerProcessed; }
+    public String getCurrentPeriod() { return currentPeriod; }
 
     private void addAlert(String message) {
         String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
@@ -77,18 +76,41 @@ public class SyncOrchestrator {
         log.warn("ALERTE INTERFACE: {}", message);
     }
 
+    public void startPeriodSync(List<String> periods) {
+        if (isRunning) return;
+        periodQueue.clear();
+        periodQueue.addAll(periods);
+        currentPeriod = periodQueue.poll();
+
+        saveState(OFFSET_KEY, 0);
+        saveState(TOTAL_KEY, 0);
+
+        addAlert("[SYSTEM] Démarrage Time Machine : " + periods.size() + " périodes chargées.");
+        if (currentPeriod != null) {
+            addAlert("[TIME MACHINE] Traitement en cours : Période " + currentPeriod);
+        }
+
+        startSyncInternal();
+    }
+
     public void startSync() {
         if (isRunning) return;
+        currentPeriod = null;
+        periodQueue.clear();
+        addAlert("[SYSTEM] Démarrage Standard (Boucle infinie sans période)");
+        startSyncInternal();
+    }
+
+    private void startSyncInternal() {
         isRunning = true;
         isHealing = true;
         currentEta = "Initialisation...";
         radarStatus = "Démarrage en cours";
         healerStatus = "Démarrage en cours";
-        recentAlerts.clear();
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
-
-        addAlert("[SYSTEM] Démarrage du Daemon 24/7 (Radar à 300 Fixe)");
+        syncStartTime = System.currentTimeMillis();
+        totalProcessedSinceStart = 0;
 
         new Thread(this::circularRadarLoop).start();
         new Thread(this::backgroundHealerLoop).start();
@@ -112,7 +134,9 @@ public class SyncOrchestrator {
         saveState(TOTAL_KEY, 0);
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
-        addAlert("[SYSTEM] Base de données IONOS et Locale réinitialisées");
+        currentPeriod = null;
+        periodQueue.clear();
+        addAlert("[MAINTENANCE] Base de données IONOS et Locale réinitialisées");
         startSync();
     }
 
@@ -149,7 +173,6 @@ public class SyncOrchestrator {
                                 for (Intervention incoming : incomingData) {
                                     if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
                                     Intervention existing = existingMap.get(incoming.getIdIntervention());
-
                                     if (existing == null) {
                                         existing = incoming;
                                         existing.setId(null);
@@ -197,20 +220,43 @@ public class SyncOrchestrator {
                 int totalApi = getSavedState(TOTAL_KEY);
 
                 if (totalApi > 0 && currentOffset >= totalApi) {
-                    saveState(OFFSET_KEY, 0);
-                    currentOffset = 0;
-                    currentEta = "Nouveau Cycle";
-                    radarStatus = "Cycle 100% terminé. Pause 30s.";
-                    sleep(30000);
+                    // 🚀 L'FIX HNA : Le basculement vers le mois suivant
+                    if (currentPeriod != null) {
+                        addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée à 100%.");
+                        currentPeriod = periodQueue.poll();
+
+                        if (currentPeriod == null) {
+                            addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées ! Arrêt du Radar.");
+                            saveState(OFFSET_KEY, 0);
+                            saveState(TOTAL_KEY, 0);
+                            stopSync();
+                            break;
+                        } else {
+                            addAlert("📅 [TIME MACHINE] Passage à la période suivante : " + currentPeriod);
+                            saveState(OFFSET_KEY, 0);
+                            currentOffset = 0;
+                            totalProcessedSinceStart = 0;
+                            syncStartTime = System.currentTimeMillis();
+                            sleep(5000); // Pause pour laisser souffler Bouygues entre 2 mois
+                        }
+                    } else {
+                        saveState(OFFSET_KEY, 0);
+                        currentOffset = 0;
+                        currentEta = "Nouveau Cycle";
+                        radarStatus = "Cycle 100% terminé. Pause 30s.";
+                        sleep(30000);
+                    }
                 } else {
-                    radarStatus = "Scan Bouygues en cours...";
+                    radarStatus = currentPeriod != null
+                            ? "Scan [" + currentPeriod + "] en cours..."
+                            : "Scan Bouygues en cours...";
                 }
 
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
-                        // 🚀 On utilise le RADAR_BATCH fixe à 300
-                        ImportResponse importResp = phpApiClient.triggerImport(currentOffset, RADAR_BATCH);
+                        // 🚀 On envoie la période à PHP !
+                        ImportResponse importResp = phpApiClient.triggerImport(currentOffset, RADAR_BATCH, currentPeriod);
 
                         if (importResp != null && importResp.isOk()) {
                             if (importResp.getBatchCount() == 0) {
@@ -245,7 +291,7 @@ public class SyncOrchestrator {
                         else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504 || body.contains("GatewayTimeout")) {
                             addAlert("[RADAR] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ") - Retry...");
                             radarStatus = "Erreur HTTP " + e.getStatusCode() + " - Retry...";
-                            sleep(15000); // Pause prolongée de 15s pour laisser Bouygues digérer le gros Offset
+                            sleep(15000);
                         }
                         else {
                             addAlert("[RADAR] Erreur Inconnue (HTTP " + e.getStatusCode() + ")");

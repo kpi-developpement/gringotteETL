@@ -12,7 +12,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -44,9 +46,11 @@ public class DashboardController {
         stats.put("healer_status", syncOrchestrator.getHealerStatus());
         stats.put("alerts", syncOrchestrator.getRecentAlerts());
 
-        // 🚀 NOUVEAU: Données analytiques précises
         stats.put("radar_processed_total", syncOrchestrator.getTotalRadarProcessed());
         stats.put("healer_processed_total", syncOrchestrator.getTotalHealerProcessed());
+
+        // 🚀 L'FIX HNA : On renvoie la période en cours au Dashboard UI
+        stats.put("current_period", syncOrchestrator.getCurrentPeriod());
 
         return ResponseEntity.ok(stats);
     }
@@ -55,6 +59,23 @@ public class DashboardController {
     public ResponseEntity<Map<String, String>> startSync() {
         syncOrchestrator.startSync();
         return ResponseEntity.ok(Map.of("message", "Démarré."));
+    }
+
+    // 🚀 L'FIX HNA : Le nouvel endpoint pour démarrer la Time Machine
+    @PostMapping("/start-periods")
+    public ResponseEntity<Map<String, String>> startPeriods(@RequestBody Map<String, String> body) {
+        String periodsStr = body.get("periods");
+        if (periodsStr == null || periodsStr.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Aucune période fournie."));
+        }
+
+        List<String> periods = Arrays.stream(periodsStr.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+
+        syncOrchestrator.startPeriodSync(periods);
+        return ResponseEntity.ok(Map.of("message", "Sync par période démarrée avec " + periods.size() + " périodes."));
     }
 
     @PostMapping("/stop")
@@ -109,27 +130,5 @@ public class DashboardController {
         response.put("number", result.getNumber());
 
         return ResponseEntity.ok(response);
-    }
-    @GetMapping("/lab/test-endpoint")
-    public ResponseEntity<Map<String, Object>> testBouyguesEndpoint(@RequestParam int type) {
-        String queryParam = "";
-        if (type == 1) {
-            queryParam = "periode=2025-M09";
-        } else if (type == 2) {
-            queryParam = "dateIntervention_gte=2025-09-01&dateIntervention_lte=2025-09-30";
-        } else if (type == 3) {
-            queryParam = "dateOuverture=2025-09";
-        }
-
-        try {
-            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
-            // ⚠️ Bdel l'URL b l'IP dyal serveur IONOS dyalek
-            String phpUrl = "https://kyntus.fr/bytel/prod/test-api.php?query=" + queryParam;
-
-            Map<String, Object> response = restTemplate.getForObject(phpUrl, Map.class);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
-        }
     }
 }

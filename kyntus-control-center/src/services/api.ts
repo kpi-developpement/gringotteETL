@@ -14,6 +14,8 @@ export interface SyncStats {
   alerts: string[];
   radar_processed_total: number;
   healer_processed_total: number;
+  // 🚀 L'FIX HNA
+  current_period: string | null;
 }
 
 export interface Intervention {
@@ -43,6 +45,18 @@ export const fetchStats = async (): Promise<SyncStats | null> => {
 
 export const startSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/start`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
+};
+
+// 🚀 L'FIX HNA : Le nouvel appel POST
+export const startPeriodSync = async (periodsStr: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_URL}/start-periods`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ periods: periodsStr })
+    });
+    return res.ok;
+  } catch (e) { return false; }
 };
 
 export const stopSync = async (): Promise<boolean> => {
