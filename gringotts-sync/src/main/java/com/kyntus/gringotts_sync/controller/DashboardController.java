@@ -110,4 +110,26 @@ public class DashboardController {
 
         return ResponseEntity.ok(response);
     }
+    @GetMapping("/lab/test-endpoint")
+    public ResponseEntity<Map<String, Object>> testBouyguesEndpoint(@RequestParam int type) {
+        String queryParam = "";
+        if (type == 1) {
+            queryParam = "periode=2025-M09";
+        } else if (type == 2) {
+            queryParam = "dateIntervention_gte=2025-09-01&dateIntervention_lte=2025-09-30";
+        } else if (type == 3) {
+            queryParam = "dateOuverture=2025-09";
+        }
+
+        try {
+            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+            // ⚠️ Bdel l'URL b l'IP dyal serveur IONOS dyalek
+            String phpUrl = "https://kyntus.fr/bytel/prod/test-api.php?query=" + queryParam;
+
+            Map<String, Object> response = restTemplate.getForObject(phpUrl, Map.class);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
 }
