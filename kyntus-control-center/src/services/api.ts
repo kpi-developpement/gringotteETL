@@ -30,7 +30,7 @@ export interface Intervention {
   type_intervention: string;
   date_modification_etat: string;
   detail_intervention: string; 
-  source_ingestion: string; // 🛡️ L'FIX HNA
+  source_ingestion: string;
 }
 
 export interface PageResponse {
@@ -102,12 +102,11 @@ export const healData = async (): Promise<string> => {
   } catch (e) { return "Erreur lors de l'appel."; }
 };
 
-// 🛡️ L'FIX HNA : Ajout des paramètres de filtre
+// 🛡️ L'FIX HNA : On envoie "period" au lieu de startDate/endDate
 export const fetchInterventions = async (
   search: string, 
   source: string, 
-  startDate: string, 
-  endDate: string, 
+  period: string, 
   page: number, 
   size: number = 50
 ): Promise<PageResponse | null> => {
@@ -118,8 +117,7 @@ export const fetchInterventions = async (
       page: page.toString(),
       size: size.toString()
     });
-    if (startDate) queryParams.append('startDate', startDate);
-    if (endDate) queryParams.append('endDate', endDate);
+    if (period) queryParams.append('period', period);
 
     const res = await fetch(`${API_URL}/interventions?${queryParams.toString()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error('Erreur réseau');

@@ -13,8 +13,8 @@ export default function InterventionsPage() {
   // 🚀 STATES DES FILTRES
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('ALL');
-  const [dateDebut, setDateDebut] = useState('');
-  const [dateFin, setDateFin] = useState('');
+  // 🛡️ L'FIX HNA : Un seul champ pour le mois et l'année
+  const [period, setPeriod] = useState(''); 
   
   // State pour le Modal
   const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
@@ -22,7 +22,7 @@ export default function InterventionsPage() {
 
   const loadData = async () => {
     setLoading(true);
-    const result = await fetchInterventions(search, sourceFilter, dateDebut, dateFin, page);
+    const result = await fetchInterventions(search, sourceFilter, period, page);
     setData(result);
     setLoading(false);
   };
@@ -121,23 +121,14 @@ export default function InterventionsPage() {
           </select>
         </div>
 
+        {/* 🛡️ L'FIX HNA : Input type="month" */}
         <div className={styles.filterGroup}>
-          <label>Date de Début</label>
+          <label>Période (Mois/Année)</label>
           <input 
-            type="date" 
+            type="month" 
             className={styles.dateInput} 
-            value={dateDebut}
-            onChange={(e) => setDateDebut(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.filterGroup}>
-          <label>Date de Fin</label>
-          <input 
-            type="date" 
-            className={styles.dateInput} 
-            value={dateFin}
-            onChange={(e) => setDateFin(e.target.value)}
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
           />
         </div>
 
@@ -182,7 +173,7 @@ export default function InterventionsPage() {
                           {inv.source_ingestion.replace('_', ' ')}
                         </span>
                       ) : (
-                        <span style={{ color: '#94a3b8', fontSize: '12px' }}>Inconnue</span>
+                        <span style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 'bold' }}>INCONNUE</span>
                       )}
                     </td>
                     <td>

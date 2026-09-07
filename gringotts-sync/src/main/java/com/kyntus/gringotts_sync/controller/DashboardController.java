@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -55,18 +56,27 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
-    // 🛡️ L'FIX HNA : L'endpoint pour filtrer les interventions
+    // 🛡️ L'FIX HNA : On reçoit "period" (ex: 2026-01) et on calcule le début et la fin du mois
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(required = false, defaultValue = "") String search,
             @RequestParam(required = false, defaultValue = "ALL") String source,
-            @RequestParam(required = false) String startDate,
-            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false, defaultValue = "") String period,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        LocalDateTime start = (startDate != null && !startDate.isEmpty()) ? LocalDateTime.parse(startDate + "T00:00:00") : null;
-        LocalDateTime end = (endDate != null && !endDate.isEmpty()) ? LocalDateTime.parse(endDate + "T23:59:59") : null;
+        LocalDateTime start = null;
+        LocalDateTime end = null;
+
+        if (period != null && !period.isEmpty()) {
+            try {
+                YearMonth ym = YearMonth.parse(period);
+                start = ym.atDay(1).atStartOfDay();
+                end = ym.atEndOfMonth().atTime(23, 59, 59);
+            } catch (Exception e) {
+                // Si le format est invalide, on ignore le filtre de date
+            }
+        }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
                 search, source, start, end, PageRequest.of(page, size)
@@ -115,7 +125,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", interventionRepository.deleteDuplicates() + " doublons supprimés."));
     }
 
-    // 🛡️ L'FIX HNA : L'endpoint Trim manquant
     @PostMapping("/trim/{keepCount}")
     public ResponseEntity<Map<String, Object>> trimDatabase(@PathVariable int keepCount) {
         int deleted = interventionRepository.deleteExcessRecords(keepCount);

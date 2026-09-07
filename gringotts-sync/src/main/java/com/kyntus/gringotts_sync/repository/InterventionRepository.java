@@ -16,13 +16,13 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    // 🛡️ L'FIX HNA : Requête dynamique pour filtrer par Source, Recherche et Dates
+    // 🛡️ L'FIX HNA : On trie par "i.id DESC" au lieu de "createdAt" pour éviter les bugs de NULL
     @Query("SELECT i FROM Intervention i WHERE " +
             "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
             "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source) AND " +
             "(:startDate IS NULL OR i.dateModificationEtat >= :startDate) AND " +
             "(:endDate IS NULL OR i.dateModificationEtat <= :endDate) " +
-            "ORDER BY i.createdAt DESC")
+            "ORDER BY i.id DESC")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
             @Param("source") String source,
