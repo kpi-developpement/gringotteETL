@@ -6,7 +6,7 @@ import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, healData, 
 import styles from './page.module.css';
 
 // ==========================================
-// 🚀 ICONS (ZÉRO EMOJI)
+// 🚀 ICONS
 // ==========================================
 const IconActivity = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>;
 const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
@@ -82,6 +82,18 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // 🚀 LES FONCTIONS MANQUANTES DU DROPDOWN TIME MACHINE
+  const addPeriod = () => {
+    if (!selectedPeriods.includes(currentSelection)) {
+      setSelectedPeriods([...selectedPeriods, currentSelection]);
+    }
+  };
+
+  const removePeriod = (p: string) => {
+    setSelectedPeriods(selectedPeriods.filter(item => item !== p));
+  };
+
+  // 🚀 ACTIONS DU MOTEUR
   const handleStartStandard = async () => { await startSync(); loadStats(); };
   const handleStop = async () => { await stopSync(); loadStats(); };
   
@@ -124,16 +136,24 @@ export default function DashboardPage() {
   const progressHealer = healTotal > 0 ? Math.min(100, Math.round((healCurrent / healTotal) * 100)) : 100;
 
   const getStatusInfo = (status: string | undefined) => {
-    if (!status) return { text: 'Inconnu', css: styles.statusWarn, icon: <IconAlert /> };
-    if (status.includes('404')) return { text: 'Erreur 404 (URL PHP)', css: styles.statusError, icon: <IconAlert /> };
-    if (status.includes('500') || status.includes('504') || status.includes('Timeout')) return { text: 'Surcharge / Timeout Bouygues', css: styles.statusError, icon: <IconAlert /> };
-    if (status.includes('403') || status.includes('Banni')) return { text: 'Bloqué par Akamai WAF', css: styles.statusError, icon: <IconAlert /> };
-    if (status.includes('Arrêt')) return { text: status, css: styles.statusWarn, icon: <IconStop /> };
-    return { text: status, css: styles.statusGood, icon: <IconCheckCircle /> };
+    if (!status) return { text: 'Inconnu', css: '', icon: <IconAlert /> };
+    if (status.includes('404')) return { text: 'Erreur 404 (URL PHP)', css: 'statusError', icon: <IconAlert /> };
+    if (status.includes('500') || status.includes('504') || status.includes('Timeout')) return { text: 'Surcharge / Timeout Bouygues', css: 'statusError', icon: <IconAlert /> };
+    if (status.includes('403') || status.includes('Banni')) return { text: 'Bloqué par Akamai WAF', css: 'statusError', icon: <IconAlert /> };
+    if (status.includes('Arrêt')) return { text: status, css: 'statusWarn', icon: <IconStop /> };
+    return { text: status, css: 'statusGood', icon: <IconCheckCircle /> };
   };
 
   const rStatus = getStatusInfo(stats?.radar_status);
   const hStatus = getStatusInfo(stats?.healer_status);
+
+  // Fonction pour récupérer la classe CSS correctement depuis l'objet module
+  const getStatusCssClass = (type: string) => {
+    if (type === 'statusError') return styles.statusError;
+    if (type === 'statusWarn') return styles.statusWarn;
+    if (type === 'statusGood') return styles.statusGood;
+    return '';
+  };
 
   return (
     <div className={styles.pageWrapper}>
@@ -181,7 +201,7 @@ export default function DashboardPage() {
                     <div className={`${styles.iconBox} ${styles.iconStandard}`}><IconActivity /></div>
                     Radar d'Aspiration (Global)
                   </h2>
-                  <span className={`${styles.statusText} ${rStatus.css}`}>{rStatus.icon} {rStatus.text}</span>
+                  <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>{rStatus.icon} {rStatus.text}</span>
                 </div>
 
                 <div className={styles.metricsGrid}>
@@ -237,7 +257,7 @@ export default function DashboardPage() {
                     <div className={`${styles.iconBox} ${styles.iconTime}`}><IconClock /></div>
                     Time Machine (Mensuel)
                   </h2>
-                  <span className={`${styles.statusText} ${rStatus.css}`}>{rStatus.icon} {rStatus.text}</span>
+                  <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>{rStatus.icon} {rStatus.text}</span>
                 </div>
 
                 {/* SÉLECTEUR DE MOIS */}
@@ -321,7 +341,7 @@ export default function DashboardPage() {
                   <div className={`${styles.iconBox} ${styles.iconHealer}`}><IconHealer /></div>
                   Background Healer
                 </h2>
-                <span className={`${styles.statusText} ${hStatus.css}`}>{hStatus.icon} {hStatus.text}</span>
+                <span className={`${styles.statusText} ${getStatusCssClass(hStatus.css)}`}>{hStatus.icon} {hStatus.text}</span>
               </div>
               
               <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
@@ -381,7 +401,6 @@ export default function DashboardPage() {
               {stats?.alerts && stats.alerts.length > 0 ? (
                 <div>
                   {stats.alerts.map((alert, idx) => {
-                    // Nettoyage du texte (suppression des codes d'erreur bruts)
                     let cleanAlert = alert;
                     if (cleanAlert.includes('404')) cleanAlert = cleanAlert.replace(/HTTP 404.*/, 'Endpoint PHP Introuvable (URL Invalide)');
                     if (cleanAlert.includes('500') || cleanAlert.includes('504')) cleanAlert = cleanAlert.replace(/HTTP 50.*/, 'Serveur Bouygues Surchargé (Attente...)');
