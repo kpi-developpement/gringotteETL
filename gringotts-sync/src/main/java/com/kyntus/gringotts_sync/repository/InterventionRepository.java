@@ -16,12 +16,15 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    // 🛡️ L'FIX HNA : On trie par "i.id DESC" au lieu de "createdAt" pour éviter les bugs de NULL
+    // 🛡️ L'FIX HNA :
+    // 1. Utilisation de "cast(:param as timestamp)" pour éviter le bug des NULLs dans PostgreSQL
+    // 2. Ajout de "i.sourceIngestion IS NULL" pour récupérer tes anciennes données
+    // 3. Tri par "i.id DESC" au lieu de createdAt pour être 100% sûr de l'ordre
     @Query("SELECT i FROM Intervention i WHERE " +
-            "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
-            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source) AND " +
-            "(:startDate IS NULL OR i.dateModificationEtat >= :startDate) AND " +
-            "(:endDate IS NULL OR i.dateModificationEtat <= :endDate) " +
+            "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
+            "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
+            "(cast(:startDate as timestamp) IS NULL OR i.dateModificationEtat >= :startDate) AND " +
+            "(cast(:endDate as timestamp) IS NULL OR i.dateModificationEtat <= :endDate) " +
             "ORDER BY i.id DESC")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,

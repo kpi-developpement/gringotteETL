@@ -32,11 +32,9 @@ public class DashboardController {
         Map<String, Object> stats = new HashMap<>();
         stats.put("total_interventions_local", interventionRepository.count());
 
-        // Mode Standard
         stats.put("current_bt_offset", syncStateRepository.findById("bt_api_offset").map(SyncState::getStateValue).orElse(0));
         stats.put("total_api", syncStateRepository.findById("bt_total_api").map(SyncState::getStateValue).orElse(0));
 
-        // Mode Time Machine
         stats.put("period_offset", syncStateRepository.findById("bt_api_offset_period").map(SyncState::getStateValue).orElse(0));
         stats.put("period_total", syncStateRepository.findById("bt_total_api_period").map(SyncState::getStateValue).orElse(0));
         stats.put("period_processed_total", syncOrchestrator.getTotalPeriodProcessed());
@@ -56,7 +54,7 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
-    // 🛡️ L'FIX HNA : On reçoit "period" (ex: 2026-01) et on calcule le début et la fin du mois
+    // 🛡️ L'FIX HNA : Parsing du format Bouygues (2026-M08) pour filtrer la DB locale
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(required = false, defaultValue = "") String search,
@@ -70,7 +68,9 @@ public class DashboardController {
 
         if (period != null && !period.isEmpty()) {
             try {
-                YearMonth ym = YearMonth.parse(period);
+                // Transforme "2026-M08" ou "2026_M08" en "2026-08" pour Java
+                String cleanPeriod = period.replace("_", "-").replace("-M", "-");
+                YearMonth ym = YearMonth.parse(cleanPeriod);
                 start = ym.atDay(1).atStartOfDay();
                 end = ym.atEndOfMonth().atTime(23, 59, 59);
             } catch (Exception e) {

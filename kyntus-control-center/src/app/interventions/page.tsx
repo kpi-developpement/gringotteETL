@@ -13,12 +13,15 @@ export default function InterventionsPage() {
   // 🚀 STATES DES FILTRES
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('ALL');
-  // 🛡️ L'FIX HNA : Un seul champ pour le mois et l'année
   const [period, setPeriod] = useState(''); 
   
   // State pour le Modal
   const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
   const [trimCount, setTrimCount] = useState<string>('711003');
+
+  // Options pour le dropdown Période (Format Bouygues)
+  const availableYears = ['2026', '2025', '2024'];
+  const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
 
   const loadData = async () => {
     setLoading(true);
@@ -118,18 +121,29 @@ export default function InterventionsPage() {
             <option value="ALL">Toutes les sources</option>
             <option value="RADAR">RADAR (Flux Continu)</option>
             <option value="TIME_MACHINE">TIME MACHINE (Historique)</option>
+            <option value="INCONNUE">INCONNUE (Anciennes données)</option>
           </select>
         </div>
 
-        {/* 🛡️ L'FIX HNA : Input type="month" */}
+        {/* 🛡️ L'FIX HNA : Dropdown au format Bouygues */}
         <div className={styles.filterGroup}>
           <label>Période (Mois/Année)</label>
-          <input 
-            type="month" 
-            className={styles.dateInput} 
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-          />
+          <select 
+            value={period} 
+            onChange={(e) => setPeriod(e.target.value)} 
+            className={styles.selectInput}
+          >
+            <option value="">Toutes les périodes</option>
+            {availableYears.map(year => (
+              <optgroup key={year} label={`Année ${year}`}>
+                {availableMonths.map(month => (
+                  <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                    {year} — {month}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
         </div>
 
         <button type="submit" className={styles.btnFilter}>
