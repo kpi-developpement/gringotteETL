@@ -45,6 +45,8 @@ public class SyncOrchestrator {
 
     private volatile long totalRadarProcessed = 0;
     private volatile long totalHealerProcessed = 0;
+
+    // 🚀 L'FIX HNA : Séparation de la progression Time Machine
     private volatile long totalPeriodProcessed = 0;
 
     private static final String OFFSET_KEY = "bt_api_offset";
@@ -55,6 +57,7 @@ public class SyncOrchestrator {
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 300;
 
+    // 🚀 L'FIX HNA : Gestion de la file d'attente des mois
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
     private volatile String currentPeriod = null;
 
@@ -77,7 +80,7 @@ public class SyncOrchestrator {
         if (recentAlerts.size() > 20) {
             recentAlerts.remove(recentAlerts.size() - 1);
         }
-        log.warn("ALERTE: {}", message);
+        log.warn("INTERFACE_ALERT: {}", message);
     }
 
     public void startPeriodSync(List<String> periods) {
@@ -90,10 +93,10 @@ public class SyncOrchestrator {
         saveState(PERIOD_TOTAL_KEY, 0);
         totalPeriodProcessed = 0;
 
+        log.info("Démarrage TIME MACHINE avec {} périodes. Première période: {}", periods.size(), currentPeriod);
         addAlert("[TIME MACHINE] Démarrage avec " + periods.size() + " périodes.");
-        if (currentPeriod != null) {
-            addAlert("[TIME MACHINE] Traitement en cours : " + currentPeriod);
-        }
+        if (currentPeriod != null) addAlert("[TIME MACHINE] Traitement : " + currentPeriod);
+
         startSyncInternal();
     }
 
@@ -101,6 +104,7 @@ public class SyncOrchestrator {
         if (isRunning) return;
         currentPeriod = null;
         periodQueue.clear();
+        log.info("Démarrage STANDARD (Offset Global).");
         addAlert("[SYSTEM] Démarrage Standard (Radar Global)");
         startSyncInternal();
     }
@@ -124,13 +128,14 @@ public class SyncOrchestrator {
         currentEta = "Arrêté";
         radarStatus = "Arrêt demandé";
         healerStatus = "Arrêt demandé";
+        log.info("Arrêt du Daemon demandé.");
         addAlert("[SYSTEM] Arrêt du système demandé");
     }
 
     public void resetAndStartFromZero() {
         stopSync();
         sleep(2000);
-        try { phpApiClient.resetIonos(); } catch (Exception e) {}
+        try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
         interventionRepository.deleteAll();
         saveState(OFFSET_KEY, 0);
         saveState(TOTAL_KEY, 0);
@@ -141,11 +146,13 @@ public class SyncOrchestrator {
         totalPeriodProcessed = 0;
         currentPeriod = null;
         periodQueue.clear();
+        log.warn("RESET TOTAL effectué.");
         addAlert("[MAINTENANCE] Base de données réinitialisée");
         startSync();
     }
 
     public void healDatabase() {
+        log.info("Smart Clean (Dédoublonnage) démarré.");
         addAlert("[MAINTENANCE] Smart Clean lancé");
         int totalDeleted = 0;
         while (true) {
@@ -155,13 +162,17 @@ public class SyncOrchestrator {
             int deleted = interventionRepository.deleteInterventionsByIds(duplicateIds);
             totalDeleted += deleted;
         }
-        addAlert("[MAINTENANCE] Smart Clean terminé. " + totalDeleted + " doublons supprimés.");
+        log.info("Smart Clean terminé : {} doublons supprimés.", totalDeleted);
+        addAlert("[MAINTENANCE] Smart Clean terminé. " + totalDeleted + " doublons.");
     }
 
     private void circularRadarLoop() {
         radarStatus = "En cours d'aspiration";
+        log.info("Thread Radar Circulaire Démarré.");
+
         while (isRunning) {
             try {
+                // 1. PHASE D'ASPIRATION DEPUIS IONOS VERS POSTGRES
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
@@ -178,11 +189,12 @@ public class SyncOrchestrator {
                                 for (Intervention incoming : incomingData) {
                                     if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
                                     Intervention existing = existingMap.get(incoming.getIdIntervention());
+
                                     if (existing == null) {
                                         existing = incoming;
                                         existing.setId(null);
                                         if (existing.getActionsLog() != null) {
-                                            for (ActionLog log : existing.getActionsLog()) log.setId(null);
+                                            for (ActionLog l : existing.getActionsLog()) l.setId(null);
                                         }
                                         existingMap.put(existing.getIdIntervention(), existing);
                                     } else {
@@ -214,6 +226,7 @@ public class SyncOrchestrator {
                         }
                     } catch (Exception e) {
                         radarStatus = "Erreur Vidage IONOS";
+                        log.error("Erreur lors du vidage IONOS", e);
                         bufferHasData = false;
                         sleep(5000);
                     }
@@ -221,22 +234,25 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
+                // 2. PHASE DE COMMANDE VERS BOUYGUES VIA PHP
                 int currentOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
                 int totalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
 
-                // Vérification de fin de cycle
                 if (totalApi > 0 && currentOffset >= totalApi) {
                     if (currentPeriod != null) {
+                        log.info("Période {} terminée à 100%.", currentPeriod);
                         addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
                         currentPeriod = periodQueue.poll();
 
                         if (currentPeriod == null) {
+                            log.info("Toutes les périodes ont été traitées. Arrêt.");
                             addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées !");
                             saveState(PERIOD_OFFSET_KEY, 0);
                             saveState(PERIOD_TOTAL_KEY, 0);
                             stopSync();
                             break;
                         } else {
+                            log.info("Passage à la période suivante: {}", currentPeriod);
                             addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
                             saveState(PERIOD_OFFSET_KEY, 0);
                             saveState(PERIOD_TOTAL_KEY, 0);
@@ -246,6 +262,7 @@ public class SyncOrchestrator {
                             sleep(2000);
                         }
                     } else {
+                        log.info("Cycle Standard terminé. Retour à l'offset 0.");
                         saveState(OFFSET_KEY, 0);
                         currentOffset = 0;
                         currentEta = "Nouveau Cycle";
@@ -261,17 +278,19 @@ public class SyncOrchestrator {
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
+                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", currentOffset, RADAR_BATCH, currentPeriod);
                         ImportResponse importResp = phpApiClient.triggerImport(currentOffset, RADAR_BATCH, currentPeriod);
 
                         if (importResp != null && importResp.isOk()) {
-                            // 🚀 FIX: Gestion des 0 résultats (ex: 2026_M01)
+
+                            // 🚀 L'FIX HNA : Gérer le cas où Bouygues retourne 0 (ex: 2026_M01 khawi)
                             if (importResp.getBatchCount() == 0) {
+                                log.warn("Bouygues a retourné 0 résultat. Avancement forcé de la zone.");
                                 if (currentPeriod != null) {
-                                    // Forcer la fin de la période pour passer à la suivante
                                     saveState(PERIOD_OFFSET_KEY, 1);
                                     saveState(PERIOD_TOTAL_KEY, 1);
                                 } else {
-                                    saveState(OFFSET_KEY, importResp.getTotalApi());
+                                    saveState(OFFSET_KEY, importResp.getTotalApi() > 0 ? importResp.getTotalApi() : 1);
                                 }
                                 importSuccess = true;
                                 break;
@@ -288,6 +307,7 @@ public class SyncOrchestrator {
                             }
 
                             totalProcessedSinceStart += importResp.getBatchCount();
+
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
                                 long elapsedMillis = System.currentTimeMillis() - syncStartTime;
                                 long millisPerItem = elapsedMillis / totalProcessedSinceStart;
@@ -301,15 +321,30 @@ public class SyncOrchestrator {
                         }
                     } catch (RestClientResponseException e) {
                         String body = e.getResponseBodyAsString();
-                        if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
+                        log.error("Erreur API PHP (HTTP {}): {}", e.getStatusCode(), body);
+
+                        if (e.getStatusCode().value() == 404) {
+                            addAlert("[RADAR] Erreur 404 (URL introuvable) - Vérifiez AppConfig");
+                            radarStatus = "Erreur HTTP 404 (URL introuvable)";
+                            sleep(15000);
+                        }
+                        else if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
                             addAlert("[RADAR] Bloqué par le Pare-feu Bouygues (Akamai). Veille 15m.");
                             radarStatus = "Banni (Pause 15 min)";
                             sleep(15 * 60 * 1000);
-                        } else {
+                        }
+                        else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504 || body.contains("Timeout")) {
+                            addAlert("[RADAR] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ")");
                             radarStatus = "Erreur HTTP " + e.getStatusCode() + " - Retry...";
+                            sleep(15000);
+                        }
+                        else {
+                            addAlert("[RADAR] Erreur HTTP " + e.getStatusCode());
+                            radarStatus = "Erreur HTTP " + e.getStatusCode();
                             sleep(10000);
                         }
                     } catch (Exception e) {
+                        log.error("Erreur de connexion inattendue", e);
                         radarStatus = "Erreur Connexion";
                         sleep(10000);
                     }
@@ -321,15 +356,19 @@ public class SyncOrchestrator {
                 }
 
             } catch (Exception e) {
+                log.error("Exception critique dans la boucle Radar", e);
                 radarStatus = "Erreur Critique";
                 sleep(5000);
             }
         }
+        log.info("Thread Radar Circulaire Arrêté.");
         radarStatus = "Arrêté";
     }
 
     private void backgroundHealerLoop() {
         healerStatus = "En veille";
+        log.info("Thread Background Healer Démarré.");
+
         while (isHealing) {
             try {
                 long missingCount = interventionRepository.countInterventionsWithMissingDetails();
@@ -343,15 +382,18 @@ public class SyncOrchestrator {
 
                 healTotal = (int) missingCount;
                 healCurrent = 0;
+
                 List<Intervention> chunk = interventionRepository.findInterventionsWithMissingDetails();
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
                 List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
                 boolean success = false;
+
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
                         healerStatus = "Récupération détails (" + idsToHeal.size() + " EPS)";
                         Map<String, Object> response = phpApiClient.healData(idsToHeal);
+
                         if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
                             Object rawData = response.get("data");
                             Map<String, String> healedData = new HashMap<>();
@@ -362,6 +404,7 @@ public class SyncOrchestrator {
                                 if (detailStr != null) inv.setDetailIntervention(detailStr);
                                 else inv.setDetailIntervention("{}");
                             }
+
                             interventionRepository.saveAll(chunk);
                             healCurrent += chunk.size();
                             totalHealerProcessed += chunk.size();
@@ -370,7 +413,20 @@ public class SyncOrchestrator {
                             sleep(1000);
                             break;
                         }
+                    } catch (RestClientResponseException e) {
+                        String body = e.getResponseBodyAsString();
+                        log.error("Erreur Healer HTTP {} : {}", e.getStatusCode(), body);
+
+                        if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
+                            addAlert("[HEALER] Pare-feu Bouygues déclenché. Veille 15m.");
+                            healerStatus = "Banni (Pause 15 min)";
+                            sleep(15 * 60 * 1000);
+                        } else {
+                            healerStatus = "Erreur HTTP " + e.getStatusCode();
+                            sleep(5000);
+                        }
                     } catch (Exception e) {
+                        log.error("Erreur connexion Healer", e);
                         healerStatus = "Erreur Connexion";
                         sleep(5000);
                     }
@@ -380,15 +436,21 @@ public class SyncOrchestrator {
                     for (Intervention inv : chunk) inv.setDetailIntervention("{}");
                     interventionRepository.saveAll(chunk);
                 }
+
             } catch (Exception e) {
+                log.error("Exception critique Healer", e);
                 healerStatus = "Erreur Critique";
                 sleep(10000);
             }
         }
+        log.info("Thread Background Healer Arrêté.");
         healerStatus = "Arrêté";
     }
 
-    private void sleep(long millis) { try { Thread.sleep(millis); } catch (InterruptedException ignored) {} }
+    private void sleep(long millis) {
+        try { Thread.sleep(millis); } catch (InterruptedException ignored) {}
+    }
+
     private String formatDuration(long millis) {
         long seconds = millis / 1000;
         if (seconds < 60) return seconds + "s";
@@ -397,6 +459,12 @@ public class SyncOrchestrator {
         long hours = minutes / 60;
         return hours + "h " + (minutes % 60) + "m";
     }
-    private int getSavedState(String key) { return syncStateRepository.findById(key).map(SyncState::getStateValue).orElse(0); }
-    private void saveState(String key, int value) { syncStateRepository.save(new SyncState(key, value)); }
+
+    private int getSavedState(String key) {
+        return syncStateRepository.findById(key).map(SyncState::getStateValue).orElse(0);
+    }
+
+    private void saveState(String key, int value) {
+        syncStateRepository.save(new SyncState(key, value));
+    }
 }

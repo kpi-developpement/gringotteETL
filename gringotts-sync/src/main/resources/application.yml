@@ -14,13 +14,12 @@ spring:
       hibernate:
         format_sql: false
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        # 🚀 L'FIX HNA : Bulk Inserts/Updates bach Postgres ykhdem b zerba khayaliya
         jdbc.batch_size: 400
         order_inserts: true
         order_updates: true
         jdbc.batch_versioned_data: true
-  jackson:
-    property-naming-strategy: SNAKE_CASE
+jackson:
+  property-naming-strategy: SNAKE_CASE
 
 kyntus:
   php-api:

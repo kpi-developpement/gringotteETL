@@ -27,7 +27,11 @@ export default function DashboardPage() {
   const [currentHealerSpeed, setCurrentHealerSpeed] = useState(0);
   const [currentPeriodSpeed, setCurrentPeriodSpeed] = useState(0);
 
-  const [periodInput, setPeriodInput] = useState('2025_M01, 2025_M02, 2025_M03');
+  // 🚀 STATE DROPDOWN TIME MACHINE
+  const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
+  const [currentSelection, setCurrentSelection] = useState('2026_M01');
+  const availableYears = ['2026', '2025', '2024'];
+  const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
 
   const tickCount = useRef(0);
   const lastRadarTotal = useRef(0);
@@ -72,12 +76,23 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const addPeriod = () => {
+    if (!selectedPeriods.includes(currentSelection)) {
+      setSelectedPeriods([...selectedPeriods, currentSelection]);
+    }
+  };
+
+  const removePeriod = (p: string) => {
+    setSelectedPeriods(selectedPeriods.filter(item => item !== p));
+  };
+
   const handleStart = async () => { await startSync(); loadStats(); };
   const handleStop = async () => { await stopSync(); loadStats(); };
   
   const handleStartPeriods = async () => {
-    if (!periodInput.trim()) return alert('Veuillez entrer au moins une période.');
-    await startPeriodSync(periodInput);
+    if (selectedPeriods.length === 0) return alert('Veuillez ajouter au moins une période.');
+    const periodsStr = selectedPeriods.join(',');
+    await startPeriodSync(periodsStr);
     loadStats();
   };
 
@@ -167,9 +182,6 @@ export default function DashboardPage() {
 
       <div className={styles.dashboardGrid}>
         
-        {/* =========================================================================================
-            🚀 3 CARTES (RADAR, TIME MACHINE, HEALER) 
-           ========================================================================================= */}
         <div className={styles.panel} style={{ gridColumn: '1 / -1' }}>
           <h2 className={styles.panelTitle}>Supervision des Moteurs</h2>
           
@@ -308,27 +320,51 @@ export default function DashboardPage() {
                 )}
             </div>
 
-            {/* ESPACE TIME MACHINE UI */}
+            {/* 🚀 L'ESPACE TIME MACHINE UI AVEC DROPDOWN */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
                 <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <IconClock /> Mode Time Machine
                 </h3>
                 <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '12px' }}>
-                    Aspirer mois par mois pour éviter le Timeout de Bouygues.
+                    Sélectionnez et ajoutez les mois à aspirer.
                 </p>
                 
-                <input 
-                    type="text" 
-                    value={periodInput} 
-                    onChange={e => setPeriodInput(e.target.value)}
-                    placeholder="Ex: 2025_M01, 2025_M02"
-                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', marginBottom: '12px', outline: 'none' }}
-                />
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                  <select 
+                    value={currentSelection} 
+                    onChange={e => setCurrentSelection(e.target.value)}
+                    style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.85rem' }}
+                    disabled={isRunning}
+                  >
+                    {availableYears.map(year => (
+                      <optgroup key={year} label={`Année ${year}`}>
+                        {availableMonths.map(month => (
+                          <option key={`${year}_${month}`} value={`${year}_${month}`}>
+                            {year} — Mois {month.replace('M', '')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button onClick={addPeriod} disabled={isRunning} style={{ padding: '0 12px', background: isRunning ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isRunning ? 'not-allowed' : 'pointer', fontSize: '0.8rem' }}>
+                    + Ajouter
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px', minHeight: '30px' }}>
+                  {selectedPeriods.length === 0 && <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Aucune période...</span>}
+                  {selectedPeriods.map(p => (
+                    <div key={p} style={{ background: '#e0e7ff', color: '#047857', padding: '4px 8px', borderRadius: '99px', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #a7f3d0' }}>
+                      {p}
+                      {!isRunning && <button onClick={() => removePeriod(p)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}>✕</button>}
+                    </div>
+                  ))}
+                </div>
                 
                 <button 
                     onClick={handleStartPeriods} 
-                    disabled={isRunning}
-                    style={{ width: '100%', padding: '12px', background: isRunning ? '#cbd5e1' : '#8b5cf6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isRunning ? 'not-allowed' : 'pointer', transition: '0.2s', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
+                    disabled={isRunning || selectedPeriods.length === 0}
+                    style={{ width: '100%', padding: '12px', background: isRunning || selectedPeriods.length === 0 ? '#cbd5e1' : '#8b5cf6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isRunning || selectedPeriods.length === 0 ? 'not-allowed' : 'pointer', transition: '0.2s', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
                 >
                     <IconPlay /> Démarrer la Time Machine
                 </button>
