@@ -38,8 +38,8 @@ public class DashboardController {
         stats.put("period_processed_total", syncOrchestrator.getTotalPeriodProcessed());
         stats.put("current_period", syncOrchestrator.getCurrentPeriod());
 
-        // 🛡️ L'FIX HNA : On envoie la période sauvegardée pour la Reprise (Resume)
-        stats.put("saved_period", syncStateRepository.findById("bt_current_period_str").map(SyncState::getStateValueStr).orElse(null));
+        // 🛡️ L'FIX HNA : On envoie la période sauvegardée pour la Reprise
+        stats.put("saved_period", syncStateRepository.findById("bt_active_period_name").map(SyncState::getStateValueStr).orElse(null));
 
         stats.put("is_running", syncOrchestrator.isRunning());
         stats.put("eta", syncOrchestrator.getCurrentEta());
@@ -99,6 +99,13 @@ public class DashboardController {
     public ResponseEntity<Map<String, String>> stopSync() {
         syncOrchestrator.stopSync();
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
+    }
+
+    // 🛡️ L'FIX HNA : Endpoint pour annuler la session en pause
+    @PostMapping("/cancel-resume")
+    public ResponseEntity<Map<String, String>> cancelResume() {
+        syncOrchestrator.cancelResume();
+        return ResponseEntity.ok(Map.of("message", "Session annulée."));
     }
 
     @PostMapping("/reset")

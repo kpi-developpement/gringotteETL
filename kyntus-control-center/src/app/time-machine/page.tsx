@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { fetchStats, startPeriodSync, stopSync } from '../../services/api';
+import { fetchStats, startPeriodSync, stopSync, cancelResume } from '../../services/api';
 
 const IconClock = () => <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const IconTrash = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>;
 const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
+const IconX = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
 
 export default function TimeMachinePage() {
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
@@ -70,10 +71,21 @@ export default function TimeMachinePage() {
     }
   };
 
+  const handleCancelResume = async () => {
+    if (confirm("Voulez-vous vraiment annuler cette session ? L'avancement sera perdu et vous devrez recommencer depuis zéro.")) {
+      await cancelResume();
+      setSavedPeriod(null);
+      loadStatus();
+    }
+  };
+
   const handleStop = async () => {
     await stopSync();
     loadStatus();
   };
+
+  // 🛡️ L'FIX HNA : On bloque l'interface si une session est en pause
+  const hasSavedSession = !isRunning && savedPeriod && savedPeriod !== "" && savedOffset < savedTotal;
 
   return (
     <div style={{ padding: '40px 20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -94,7 +106,7 @@ export default function TimeMachinePage() {
       </div>
 
       {/* 🚀 BLOC DE REPRISE (RESUME) */}
-      {!isRunning && savedPeriod && savedOffset > 0 && savedOffset < savedTotal && (
+      {hasSavedSession && (
         <div style={{ background: 'linear-gradient(135deg, #fffbeb, #fef3c7)', border: '1px solid #fde68a', borderRadius: '16px', padding: '24px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px -5px rgba(245, 158, 11, 0.15)' }}>
           <div>
             <h3 style={{ margin: '0 0 8px 0', color: '#b45309', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem', fontWeight: 900 }}>
@@ -105,16 +117,21 @@ export default function TimeMachinePage() {
               Le téléchargement de la période <strong>{savedPeriod}</strong> s'est arrêté à <strong>{savedOffset.toLocaleString()} / {savedTotal.toLocaleString()}</strong>.
             </p>
           </div>
-          <button onClick={handleResume} style={{ background: '#d97706', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)', transition: 'all 0.2s' }}>
-            <IconPlay /> Reprendre l'aspiration
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={handleCancelResume} style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', padding: '12px 20px', borderRadius: '10px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}>
+              <IconX /> Annuler
+            </button>
+            <button onClick={handleResume} style={{ background: '#d97706', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)', transition: 'all 0.2s' }}>
+              <IconPlay /> Reprendre
+            </button>
+          </div>
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
         
         {/* PANNEAU DE SÉLECTION */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)', opacity: hasSavedSession ? 0.5 : 1, pointerEvents: hasSavedSession ? 'none' : 'auto' }}>
           <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', margin: '0 0 20px 0' }}>1. Sélectionner les mois</h2>
           
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
@@ -122,7 +139,7 @@ export default function TimeMachinePage() {
               value={currentSelection} 
               onChange={e => setCurrentSelection(e.target.value)}
               style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: '2px solid #e2e8f0', outline: 'none', background: '#f8fafc', fontWeight: 700, color: '#0f172a' }}
-              disabled={isRunning}
+              disabled={isRunning || hasSavedSession}
             >
               {availableYears.map(year => (
                 <optgroup key={year} label={`Année ${year}`}>
@@ -134,7 +151,7 @@ export default function TimeMachinePage() {
                 </optgroup>
               ))}
             </select>
-            <button onClick={addPeriod} disabled={isRunning} style={{ padding: '0 24px', background: isRunning ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 900, cursor: isRunning ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
+            <button onClick={addPeriod} disabled={isRunning || hasSavedSession} style={{ padding: '0 24px', background: isRunning || hasSavedSession ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 900, cursor: isRunning || hasSavedSession ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
               Ajouter
             </button>
           </div>
@@ -147,7 +164,7 @@ export default function TimeMachinePage() {
             {selectedPeriods.map(p => (
               <div key={p} style={{ background: '#e0e7ff', color: '#4338ca', padding: '8px 14px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid #c7d2fe' }}>
                 {p}
-                {!isRunning && (
+                {!isRunning && !hasSavedSession && (
                   <button onClick={() => removePeriod(p)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'flex' }}>
                     <IconTrash />
                   </button>
@@ -177,10 +194,12 @@ export default function TimeMachinePage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
               <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '30px', textAlign: 'center', fontWeight: 500 }}>
-                Le moteur va aspirer les périodes une par une. L'offset sera remis à zéro à chaque nouveau mois pour garantir qu'aucune erreur 500 ne se produise côté Bouygues.
+                {hasSavedSession 
+                  ? "Une session est en attente. Veuillez la reprendre ou l'annuler avant de lancer une nouvelle aspiration."
+                  : "Le moteur va aspirer les périodes une par une. L'offset sera remis à zéro à chaque nouveau mois pour garantir qu'aucune erreur 500 ne se produise côté Bouygues."}
               </p>
-              <button onClick={handleStart} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(139,92,246,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                Démarrer l'aspiration
+              <button onClick={handleStart} disabled={hasSavedSession || selectedPeriods.length === 0} style={{ width: '100%', padding: '16px', background: hasSavedSession || selectedPeriods.length === 0 ? '#334155' : 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: hasSavedSession || selectedPeriods.length === 0 ? '#64748b' : 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: hasSavedSession || selectedPeriods.length === 0 ? 'not-allowed' : 'pointer', boxShadow: hasSavedSession || selectedPeriods.length === 0 ? 'none' : '0 10px 20px rgba(139,92,246,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                🚀 DÉMARRER L'ASPIRATION
               </button>
             </div>
           )}

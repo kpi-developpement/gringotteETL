@@ -9,7 +9,7 @@ export interface SyncStats {
   period_total: number;
   period_processed_total: number;
   current_period: string | null;
-  saved_period: string | null; // 🛡️ JDID : Pour la reprise
+  saved_period: string | null;
 
   is_running: boolean;
   eta: string;
@@ -66,6 +66,11 @@ export const startPeriodSync = async (periodsStr: string): Promise<boolean> => {
 
 export const stopSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/stop`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
+};
+
+// 🛡️ L'FIX HNA : Appel pour annuler la session en pause
+export const cancelResume = async (): Promise<boolean> => {
+  try { const res = await fetch(`${API_URL}/cancel-resume`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
 export const resetSync = async (): Promise<boolean> => {

@@ -51,7 +51,9 @@ public class SyncOrchestrator {
     private static final String TOTAL_KEY = "bt_total_api";
     private static final String PERIOD_OFFSET_KEY = "bt_api_offset_period";
     private static final String PERIOD_TOTAL_KEY = "bt_total_api_period";
-    private static final String PERIOD_CURRENT_KEY = "bt_current_period_str"; // 🛡️ JDID
+
+    // 🛡️ L'FIX HNA : Nouvelle clé pour éviter les conflits avec l'ancienne base
+    private static final String PERIOD_CURRENT_KEY = "bt_active_period_name";
 
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 100;
@@ -81,7 +83,14 @@ public class SyncOrchestrator {
         log.warn("INTERFACE_ALERT: {}", message);
     }
 
-    // 🛡️ L'FIX HNA : Logique de Reprise (Resume)
+    // 🛡️ L'FIX HNA : Annuler la session en pause
+    public void cancelResume() {
+        saveState(PERIOD_OFFSET_KEY, 0);
+        saveState(PERIOD_TOTAL_KEY, 0);
+        saveStateString(PERIOD_CURRENT_KEY, "");
+        addAlert("[TIME MACHINE] Session en pause annulée.");
+    }
+
     public void startPeriodSync(List<String> periods) {
         if (isRunning) return;
         periodQueue.clear();
@@ -91,7 +100,7 @@ public class SyncOrchestrator {
         String savedPeriod = getSavedStateString(PERIOD_CURRENT_KEY);
 
         if (currentPeriod != null && currentPeriod.equals(savedPeriod)) {
-            // REPRISE : On ne remet pas l'offset à zéro !
+            // REPRISE : On ne touche pas à l'offset !
             log.info("Reprise de la période : {}", currentPeriod);
             addAlert("[TIME MACHINE] Reprise de la période " + currentPeriod + " à l'offset " + getSavedState(PERIOD_OFFSET_KEY));
         } else {
@@ -150,7 +159,7 @@ public class SyncOrchestrator {
         saveState(TOTAL_KEY, 0);
         saveState(PERIOD_OFFSET_KEY, 0);
         saveState(PERIOD_TOTAL_KEY, 0);
-        saveStateString(PERIOD_CURRENT_KEY, ""); // On vide la mémoire de la Time Machine
+        saveStateString(PERIOD_CURRENT_KEY, "");
 
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
@@ -256,7 +265,7 @@ public class SyncOrchestrator {
                         log.info("Période {} terminée à 100%.", currentPeriod);
                         addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
 
-                        // 🛡️ On nettoie la mémoire de la période finie
+                        // 🛡️ On nettoie la mémoire pour cette période
                         saveStateString(PERIOD_CURRENT_KEY, "");
                         currentPeriod = periodQueue.poll();
 
@@ -272,7 +281,7 @@ public class SyncOrchestrator {
                             addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
                             saveState(PERIOD_OFFSET_KEY, 0);
                             saveState(PERIOD_TOTAL_KEY, 0);
-                            saveStateString(PERIOD_CURRENT_KEY, currentPeriod); // On sauvegarde la nouvelle
+                            saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
                             currentOffset = 0;
                             totalProcessedSinceStart = 0;
                             syncStartTime = System.currentTimeMillis();
@@ -476,21 +485,23 @@ public class SyncOrchestrator {
         return hours + "h " + (minutes % 60) + "m";
     }
 
-    private int getSavedState(String key) {
-        return syncStateRepository.findById(key).map(SyncState::getStateValue).orElse(0);
-    }
-
+    // 🛡️ L'FIX HNA : Méthodes robustes pour sauvegarder dans la DB
     private void saveState(String key, int value) {
-        SyncState state = syncStateRepository.findById(key).orElse(new SyncState(key, value, null));
+        SyncState state = syncStateRepository.findById(key).orElse(new SyncState());
+        state.setStateKey(key);
         state.setStateValue(value);
         syncStateRepository.save(state);
     }
 
-    // 🛡️ L'FIX HNA : Helper pour sauvegarder le String
     private void saveStateString(String key, String value) {
-        SyncState state = syncStateRepository.findById(key).orElse(new SyncState(key, null, value));
+        SyncState state = syncStateRepository.findById(key).orElse(new SyncState());
+        state.setStateKey(key);
         state.setStateValueStr(value);
         syncStateRepository.save(state);
+    }
+
+    private int getSavedState(String key) {
+        return syncStateRepository.findById(key).map(SyncState::getStateValue).orElse(0);
     }
 
     private String getSavedStateString(String key) {

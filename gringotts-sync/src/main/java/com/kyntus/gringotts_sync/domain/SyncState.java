@@ -19,12 +19,6 @@ public class SyncState {
 
     private Integer stateValue;
 
-    // 🛡️ L'FIX HNA : On ajoute un champ String pour sauvegarder le nom de la période (ex: "2026_M08")
     @Column(name = "state_value_str")
     private String stateValueStr;
-
-    public SyncState(String stateKey, Integer stateValue) {
-        this.stateKey = stateKey;
-        this.stateValue = stateValue;
-    }
 }
