@@ -51,12 +51,12 @@ public class SyncOrchestrator {
     private static final String TOTAL_KEY = "bt_total_api";
     private static final String PERIOD_OFFSET_KEY = "bt_api_offset_period";
     private static final String PERIOD_TOTAL_KEY = "bt_total_api_period";
-
-    // 🛡️ L'FIX HNA : Nouvelle clé pour éviter les conflits avec l'ancienne base
     private static final String PERIOD_CURRENT_KEY = "bt_active_period_name";
 
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 100;
+    // 🛡️ L'FIX HNA : Vitesse x3 pour la Time Machine
+    private static final int TIME_MACHINE_BATCH = 300;
 
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
     private volatile String currentPeriod = null;
@@ -83,7 +83,6 @@ public class SyncOrchestrator {
         log.warn("INTERFACE_ALERT: {}", message);
     }
 
-    // 🛡️ L'FIX HNA : Annuler la session en pause
     public void cancelResume() {
         saveState(PERIOD_OFFSET_KEY, 0);
         saveState(PERIOD_TOTAL_KEY, 0);
@@ -100,11 +99,9 @@ public class SyncOrchestrator {
         String savedPeriod = getSavedStateString(PERIOD_CURRENT_KEY);
 
         if (currentPeriod != null && currentPeriod.equals(savedPeriod)) {
-            // REPRISE : On ne touche pas à l'offset !
             log.info("Reprise de la période : {}", currentPeriod);
             addAlert("[TIME MACHINE] Reprise de la période " + currentPeriod + " à l'offset " + getSavedState(PERIOD_OFFSET_KEY));
         } else {
-            // NOUVELLE PERIODE : On remet à zéro
             saveState(PERIOD_OFFSET_KEY, 0);
             saveState(PERIOD_TOTAL_KEY, 0);
             saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
@@ -242,8 +239,17 @@ public class SyncOrchestrator {
                                 interventionRepository.saveAll(existingMap.values());
                             });
 
-                            if (!idsToAck.isEmpty()) phpApiClient.acknowledge(idsToAck);
-                            else bufferHasData = false;
+                            if (!idsToAck.isEmpty()) {
+                                try {
+                                    phpApiClient.acknowledge(idsToAck);
+                                } catch (RestClientResponseException e) {
+                                    log.warn("⚠️ Le serveur PHP a rejeté l'ACK (HTTP {}). Les IDs sont probablement déjà purgés. On continue.", e.getStatusCode());
+                                } catch (Exception e) {
+                                    log.warn("⚠️ Erreur réseau lors de l'ACK. On continue : {}", e.getMessage());
+                                }
+                            } else {
+                                bufferHasData = false;
+                            }
                         } else {
                             bufferHasData = false;
                         }
@@ -265,7 +271,6 @@ public class SyncOrchestrator {
                         log.info("Période {} terminée à 100%.", currentPeriod);
                         addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
 
-                        // 🛡️ On nettoie la mémoire pour cette période
                         saveStateString(PERIOD_CURRENT_KEY, "");
                         currentPeriod = periodQueue.poll();
 
@@ -304,8 +309,11 @@ public class SyncOrchestrator {
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
-                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", currentOffset, RADAR_BATCH, currentPeriod);
-                        ImportResponse importResp = phpApiClient.triggerImport(currentOffset, RADAR_BATCH, currentPeriod);
+                        // 🛡️ L'FIX HNA : On choisit la taille du batch selon le mode actif
+                        int currentBatchSize = (currentPeriod != null) ? TIME_MACHINE_BATCH : RADAR_BATCH;
+
+                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", currentOffset, currentBatchSize, currentPeriod);
+                        ImportResponse importResp = phpApiClient.triggerImport(currentOffset, currentBatchSize, currentPeriod);
 
                         if (importResp != null && importResp.isOk()) {
 
@@ -340,7 +348,8 @@ public class SyncOrchestrator {
                                 currentEta = formatDuration(remainingItems * millisPerItem);
                             }
                             importSuccess = true;
-                            radarStatus = "Vitesse: " + RADAR_BATCH + " EPS (Offset: " + importResp.getNextOffset() + ")";
+                            // 🛡️ L'FIX HNA : On affiche la vraie vitesse (100 ou 300)
+                            radarStatus = "Vitesse: " + currentBatchSize + " EPS (Offset: " + importResp.getNextOffset() + ")";
                             sleep(1000);
                             break;
                         }
@@ -485,7 +494,6 @@ public class SyncOrchestrator {
         return hours + "h " + (minutes % 60) + "m";
     }
 
-    // 🛡️ L'FIX HNA : Méthodes robustes pour sauvegarder dans la DB
     private void saveState(String key, int value) {
         SyncState state = syncStateRepository.findById(key).orElse(new SyncState());
         state.setStateKey(key);

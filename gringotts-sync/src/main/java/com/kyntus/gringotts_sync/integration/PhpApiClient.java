@@ -1,5 +1,6 @@
 package com.kyntus.gringotts_sync.integration;
 
+import com.kyntus.gringotts_sync.dto.AckRequest;
 import com.kyntus.gringotts_sync.dto.ExportResponse;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -29,9 +30,10 @@ public class PhpApiClient {
     }
 
     public void acknowledge(List<Long> ids) {
+        // 🛡️ L'FIX HNA : On utilise le DTO officiel AckRequest pour garantir un JSON parfait {"ids": [1,2,3]}
         restClient.post()
                 .uri("/api/sync/ack")
-                .body(Map.of("ids", ids))
+                .body(new AckRequest(ids))
                 .retrieve()
                 .toBodilessEntity();
     }
@@ -41,7 +43,6 @@ public class PhpApiClient {
         body.put("offset", offset);
         body.put("limit", limit);
 
-        // 🚀 L'FIX HNA (L'SECRET) : Radar ma-kayjbedch d-détails, kay-khellihom l'Healer!
         body.put("fetch_details", false);
 
         if (periode != null && !periode.isEmpty()) {
