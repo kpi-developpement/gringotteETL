@@ -11,6 +11,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -38,7 +40,6 @@ public class DashboardController {
         stats.put("period_processed_total", syncOrchestrator.getTotalPeriodProcessed());
         stats.put("current_period", syncOrchestrator.getCurrentPeriod());
 
-        // 🛡️ L'FIX HNA : On envoie la période sauvegardée pour la Reprise
         stats.put("saved_period", syncStateRepository.findById("bt_active_period_name").map(SyncState::getStateValueStr).orElse(null));
 
         stats.put("is_running", syncOrchestrator.isRunning());
@@ -101,7 +102,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
     }
 
-    // 🛡️ L'FIX HNA : Endpoint pour annuler la session en pause
     @PostMapping("/cancel-resume")
     public ResponseEntity<Map<String, String>> cancelResume() {
         syncOrchestrator.cancelResume();
@@ -129,5 +129,20 @@ public class DashboardController {
     public ResponseEntity<Map<String, Object>> trimDatabase(@PathVariable int keepCount) {
         int deleted = interventionRepository.deleteExcessRecords(keepCount);
         return ResponseEntity.ok(Map.of("ok", true, "message", deleted + " anciennes interventions supprimées."));
+    }
+
+    // 🛡️ L'FIX HNA : L'endpoint pour forcer l'offset manuellement
+    @PostMapping("/offset/{value}")
+    public ResponseEntity<Map<String, Object>> setManualOffset(@PathVariable int value) {
+        if (syncOrchestrator.getCurrentPeriod() != null || syncStateRepository.findById("bt_active_period_name").map(SyncState::getStateValueStr).orElse("").length() > 0) {
+            SyncState state = syncStateRepository.findById("bt_api_offset_period").orElse(new SyncState("bt_api_offset_period", value, null));
+            state.setStateValue(value);
+            syncStateRepository.save(state);
+        } else {
+            SyncState state = syncStateRepository.findById("bt_api_offset").orElse(new SyncState("bt_api_offset", value, null));
+            state.setStateValue(value);
+            syncStateRepository.save(state);
+        }
+        return ResponseEntity.ok(Map.of("ok", true, "message", "Offset forcé à " + value));
     }
 }

@@ -2,18 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { fetchStats, startPeriodSync, stopSync, cancelResume } from '../../services/api';
+import { fetchStats, startPeriodSync, stopSync, cancelResume, setManualOffset } from '../../services/api';
 
 const IconClock = () => <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const IconTrash = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>;
 const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
 const IconX = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+const IconEdit = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
 
 export default function TimeMachinePage() {
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
   
   const [isRunning, setIsRunning] = useState(false);
+  const [isActionPending, setIsActionPending] = useState(false); // 🛡️ L'FIX HNA : Anti double-clic
   const [currentPeriodActive, setCurrentPeriodActive] = useState<string | null>(null);
   
   const [savedPeriod, setSavedPeriod] = useState<string | null>(null);
@@ -57,15 +59,18 @@ export default function TimeMachinePage() {
 
   const handleStart = async () => {
     if (selectedPeriods.length === 0) return alert('Ajoutez au moins une période à la liste.');
-    const periodsStr = selectedPeriods.join(',');
-    await startPeriodSync(periodsStr);
-    loadStatus();
+    setIsActionPending(true);
+    await startPeriodSync(selectedPeriods.join(','));
+    await loadStatus();
+    setIsActionPending(false);
   };
 
   const handleResume = async () => {
     if (savedPeriod) {
+      setIsActionPending(true);
       await startPeriodSync(savedPeriod);
-      loadStatus();
+      await loadStatus();
+      setIsActionPending(false);
     }
   };
 
@@ -78,11 +83,27 @@ export default function TimeMachinePage() {
   };
 
   const handleStop = async () => {
+    setIsActionPending(true);
     await stopSync();
-    loadStatus();
+    await loadStatus();
+    setIsActionPending(false);
   };
 
-  // 🛡️ L'FIX HNA : On force la variable à être un vrai Booléen (true/false) pour que TypeScript soit content
+  // 🛡️ L'FIX HNA : Fonction pour forcer l'offset
+  const handleForceOffset = async () => {
+    const newOffset = prompt(`L'offset actuel est de ${savedOffset}.\nEntrez la nouvelle valeur (ex: 16000) :`, savedOffset.toString());
+    if (newOffset !== null) {
+      const val = parseInt(newOffset, 10);
+      if (!isNaN(val) && val >= 0) {
+        await setManualOffset(val);
+        alert(`Offset forcé à ${val} avec succès !`);
+        loadStatus();
+      } else {
+        alert("Valeur invalide.");
+      }
+    }
+  };
+
   const hasSavedSession = Boolean(!isRunning && savedPeriod && savedPeriod !== "" && savedOffset < savedTotal);
 
   return (
@@ -111,15 +132,20 @@ export default function TimeMachinePage() {
               <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               Session Interrompue
             </h3>
-            <p style={{ margin: 0, color: '#92400e', fontWeight: 600 }}>
+            <p style={{ margin: 0, color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '10px' }}>
               Le téléchargement de la période <strong>{savedPeriod}</strong> s'est arrêté à <strong>{savedOffset.toLocaleString()} / {savedTotal.toLocaleString()}</strong>.
+              
+              {/* 🛡️ L'FIX HNA : Bouton Edit Offset */}
+              <button onClick={handleForceOffset} style={{ background: 'rgba(217, 119, 6, 0.1)', border: '1px solid rgba(217, 119, 6, 0.3)', color: '#b45309', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold', transition: 'all 0.2s' }}>
+                <IconEdit /> Forcer
+              </button>
             </p>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={handleCancelResume} style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', padding: '12px 20px', borderRadius: '10px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}>
+            <button onClick={handleCancelResume} disabled={isActionPending} style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', padding: '12px 20px', borderRadius: '10px', fontWeight: 800, cursor: isActionPending ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', opacity: isActionPending ? 0.5 : 1 }}>
               <IconX /> Annuler
             </button>
-            <button onClick={handleResume} style={{ background: '#d97706', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)', transition: 'all 0.2s' }}>
+            <button onClick={handleResume} disabled={isActionPending} style={{ background: '#d97706', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 900, cursor: isActionPending ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)', transition: 'all 0.2s', opacity: isActionPending ? 0.5 : 1 }}>
               <IconPlay /> Reprendre
             </button>
           </div>
@@ -185,7 +211,7 @@ export default function TimeMachinePage() {
               <h3 style={{ fontSize: '1rem', color: '#94a3b8', margin: '0 0 10px 0', fontWeight: 600 }}>Période en cours d'aspiration :</h3>
               <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#fcd34d', letterSpacing: '-1px', textShadow: '0 4px 15px rgba(252, 211, 77, 0.2)' }}>{currentPeriodActive || 'Chargement...'}</div>
               
-              <button onClick={handleStop} style={{ marginTop: '40px', width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(239,68,68,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <button onClick={handleStop} disabled={isActionPending} style={{ marginTop: '40px', width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: isActionPending ? 'not-allowed' : 'pointer', boxShadow: '0 10px 20px rgba(239,68,68,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px', opacity: isActionPending ? 0.5 : 1 }}>
                 Stopper le processus
               </button>
             </div>
@@ -196,7 +222,7 @@ export default function TimeMachinePage() {
                   ? "Une session est en attente. Veuillez la reprendre ou l'annuler avant de lancer une nouvelle aspiration."
                   : "Le moteur va aspirer les périodes une par une. L'offset sera remis à zéro à chaque nouveau mois pour garantir qu'aucune erreur 500 ne se produise côté Bouygues."}
               </p>
-              <button onClick={handleStart} disabled={hasSavedSession || selectedPeriods.length === 0} style={{ width: '100%', padding: '16px', background: hasSavedSession || selectedPeriods.length === 0 ? '#334155' : 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: hasSavedSession || selectedPeriods.length === 0 ? '#64748b' : 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: hasSavedSession || selectedPeriods.length === 0 ? 'not-allowed' : 'pointer', boxShadow: hasSavedSession || selectedPeriods.length === 0 ? 'none' : '0 10px 20px rgba(139,92,246,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <button onClick={handleStart} disabled={isActionPending || hasSavedSession || selectedPeriods.length === 0} style={{ width: '100%', padding: '16px', background: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? '#334155' : 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? '#64748b' : 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? 'not-allowed' : 'pointer', boxShadow: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? 'none' : '0 10px 20px rgba(139,92,246,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 🚀 DÉMARRER L'ASPIRATION
               </button>
             </div>

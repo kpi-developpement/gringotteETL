@@ -55,11 +55,14 @@ public class SyncOrchestrator {
 
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 100;
-    // 🛡️ L'FIX HNA : Vitesse x3 pour la Time Machine
     private static final int TIME_MACHINE_BATCH = 300;
 
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
     private volatile String currentPeriod = null;
+
+    // 🛡️ L'FIX HNA : Tracking des threads pour tuer les clones dans l'oeuf
+    private Thread radarThread;
+    private Thread healerThread;
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -83,15 +86,20 @@ public class SyncOrchestrator {
         log.warn("INTERFACE_ALERT: {}", message);
     }
 
-    public void cancelResume() {
+    public synchronized void cancelResume() {
         saveState(PERIOD_OFFSET_KEY, 0);
         saveState(PERIOD_TOTAL_KEY, 0);
         saveStateString(PERIOD_CURRENT_KEY, "");
         addAlert("[TIME MACHINE] Session en pause annulée.");
     }
 
-    public void startPeriodSync(List<String> periods) {
-        if (isRunning) return;
+    // 🛡️ L'FIX HNA : synchronized empêche l'exécution simultanée si tu double-cliques
+    public synchronized void startPeriodSync(List<String> periods) {
+        if (isRunning || (radarThread != null && radarThread.isAlive())) {
+            log.warn("🚨 Tentative de démarrage bloquée : Un processus Radar est déjà en cours !");
+            return;
+        }
+
         periodQueue.clear();
         periodQueue.addAll(periods);
         currentPeriod = periodQueue.poll();
@@ -113,8 +121,11 @@ public class SyncOrchestrator {
         startSyncInternal();
     }
 
-    public void startSync() {
-        if (isRunning) return;
+    public synchronized void startSync() {
+        if (isRunning || (radarThread != null && radarThread.isAlive())) {
+            log.warn("🚨 Tentative de démarrage bloquée : Un processus Radar est déjà en cours !");
+            return;
+        }
         currentPeriod = null;
         periodQueue.clear();
         log.info("Démarrage STANDARD (Offset Global).");
@@ -131,11 +142,14 @@ public class SyncOrchestrator {
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
 
-        new Thread(this::circularRadarLoop).start();
-        new Thread(this::backgroundHealerLoop).start();
+        radarThread = new Thread(this::circularRadarLoop);
+        healerThread = new Thread(this::backgroundHealerLoop);
+
+        radarThread.start();
+        healerThread.start();
     }
 
-    public void stopSync() {
+    public synchronized void stopSync() {
         isRunning = false;
         isHealing = false;
         currentEta = "Arrêté";
@@ -145,7 +159,7 @@ public class SyncOrchestrator {
         addAlert("[SYSTEM] Arrêt du système demandé");
     }
 
-    public void purgeDatabase() {
+    public synchronized void purgeDatabase() {
         stopSync();
         sleep(2000);
         try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
@@ -309,7 +323,6 @@ public class SyncOrchestrator {
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
-                        // 🛡️ L'FIX HNA : On choisit la taille du batch selon le mode actif
                         int currentBatchSize = (currentPeriod != null) ? TIME_MACHINE_BATCH : RADAR_BATCH;
 
                         log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", currentOffset, currentBatchSize, currentPeriod);
@@ -348,7 +361,6 @@ public class SyncOrchestrator {
                                 currentEta = formatDuration(remainingItems * millisPerItem);
                             }
                             importSuccess = true;
-                            // 🛡️ L'FIX HNA : On affiche la vraie vitesse (100 ou 300)
                             radarStatus = "Vitesse: " + currentBatchSize + " EPS (Offset: " + importResp.getNextOffset() + ")";
                             sleep(1000);
                             break;
