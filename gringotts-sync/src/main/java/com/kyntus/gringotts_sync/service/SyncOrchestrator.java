@@ -60,7 +60,6 @@ public class SyncOrchestrator {
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
     private volatile String currentPeriod = null;
 
-    // 🛡️ L'FIX HNA : Tracking des threads pour tuer les clones dans l'oeuf
     private Thread radarThread;
     private Thread healerThread;
 
@@ -93,7 +92,6 @@ public class SyncOrchestrator {
         addAlert("[TIME MACHINE] Session en pause annulée.");
     }
 
-    // 🛡️ L'FIX HNA : synchronized empêche l'exécution simultanée si tu double-cliques
     public synchronized void startPeriodSync(List<String> periods) {
         if (isRunning || (radarThread != null && radarThread.isAlive())) {
             log.warn("🚨 Tentative de démarrage bloquée : Un processus Radar est déjà en cours !");
@@ -201,10 +199,15 @@ public class SyncOrchestrator {
         radarStatus = "En cours d'aspiration";
         log.info("Thread Radar Circulaire Démarré.");
 
+        // 🛡️ L'FIX HNA (MASTERCLASS) : On charge l'offset UNE SEULE FOIS au démarrage
+        int localOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
+        int localTotalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
+
         while (isRunning) {
             try {
                 final String activePeriod = currentPeriod;
 
+                // 1. PHASE D'ASPIRATION DEPUIS IONOS VERS POSTGRES
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
@@ -256,10 +259,8 @@ public class SyncOrchestrator {
                             if (!idsToAck.isEmpty()) {
                                 try {
                                     phpApiClient.acknowledge(idsToAck);
-                                } catch (RestClientResponseException e) {
-                                    log.warn("⚠️ Le serveur PHP a rejeté l'ACK (HTTP {}). Les IDs sont probablement déjà purgés. On continue.", e.getStatusCode());
                                 } catch (Exception e) {
-                                    log.warn("⚠️ Erreur réseau lors de l'ACK. On continue : {}", e.getMessage());
+                                    log.warn("⚠️ Le serveur PHP a rejeté l'ACK. On continue.");
                                 }
                             } else {
                                 bufferHasData = false;
@@ -269,7 +270,6 @@ public class SyncOrchestrator {
                         }
                     } catch (Exception e) {
                         radarStatus = "Erreur Vidage IONOS";
-                        log.error("Erreur lors du vidage IONOS", e);
                         bufferHasData = false;
                         sleep(5000);
                     }
@@ -277,10 +277,18 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
-                int currentOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
-                int totalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
+                // 2. PHASE DE COMMANDE VERS BOUYGUES VIA PHP
+                // 🛡️ L'FIX HNA : On utilise `localOffset` et `localTotalApi` qui sont en mémoire RAM (Indestructibles)
 
-                if (totalApi > 0 && currentOffset >= totalApi) {
+                // Si on a forcé l'offset via l'interface pendant que ça tourne, on met à jour la RAM
+                int dbOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
+                if (Math.abs(dbOffset - localOffset) > 1000) {
+                    // Si l'écart est énorme, ça veut dire que l'utilisateur a forcé l'offset manuellement
+                    localOffset = dbOffset;
+                    log.warn("🔄 Offset forcé détecté. Mise à jour de la RAM vers : {}", localOffset);
+                }
+
+                if (localTotalApi > 0 && localOffset >= localTotalApi) {
                     if (currentPeriod != null) {
                         log.info("Période {} terminée à 100%.", currentPeriod);
                         addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
@@ -301,7 +309,9 @@ public class SyncOrchestrator {
                             saveState(PERIOD_OFFSET_KEY, 0);
                             saveState(PERIOD_TOTAL_KEY, 0);
                             saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
-                            currentOffset = 0;
+
+                            localOffset = 0; // 🛡️ Reset de la RAM pour la nouvelle période
+                            localTotalApi = 0;
                             totalProcessedSinceStart = 0;
                             syncStartTime = System.currentTimeMillis();
                             sleep(2000);
@@ -309,7 +319,7 @@ public class SyncOrchestrator {
                     } else {
                         log.info("Cycle Standard terminé. Retour à l'offset 0.");
                         saveState(OFFSET_KEY, 0);
-                        currentOffset = 0;
+                        localOffset = 0; // 🛡️ Reset de la RAM
                         currentEta = "Nouveau Cycle";
                         radarStatus = "Cycle 100% terminé. Pause 30s.";
                         sleep(30000);
@@ -325,30 +335,38 @@ public class SyncOrchestrator {
                     try {
                         int currentBatchSize = (currentPeriod != null) ? TIME_MACHINE_BATCH : RADAR_BATCH;
 
-                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", currentOffset, currentBatchSize, currentPeriod);
-                        ImportResponse importResp = phpApiClient.triggerImport(currentOffset, currentBatchSize, currentPeriod);
+                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", localOffset, currentBatchSize, currentPeriod);
+                        ImportResponse importResp = phpApiClient.triggerImport(localOffset, currentBatchSize, currentPeriod);
 
                         if (importResp != null && importResp.isOk()) {
 
                             if (importResp.getBatchCount() == 0) {
                                 log.warn("Bouygues a retourné 0 résultat. Avancement forcé de la zone.");
+                                localTotalApi = importResp.getTotalApi() > 0 ? importResp.getTotalApi() : 1;
+                                localOffset = localTotalApi; // On force la fin
+
                                 if (currentPeriod != null) {
-                                    saveState(PERIOD_OFFSET_KEY, 1);
-                                    saveState(PERIOD_TOTAL_KEY, 1);
+                                    saveState(PERIOD_OFFSET_KEY, localOffset);
+                                    saveState(PERIOD_TOTAL_KEY, localTotalApi);
                                 } else {
-                                    saveState(OFFSET_KEY, importResp.getTotalApi() > 0 ? importResp.getTotalApi() : 1);
+                                    saveState(OFFSET_KEY, localOffset);
+                                    saveState(TOTAL_KEY, localTotalApi);
                                 }
                                 importSuccess = true;
                                 break;
                             }
 
+                            // 🛡️ L'FIX HNA : On met à jour la RAM et la DB en même temps
+                            localOffset = importResp.getNextOffset();
+                            localTotalApi = importResp.getTotalApi();
+
                             if (currentPeriod != null) {
-                                saveState(PERIOD_OFFSET_KEY, importResp.getNextOffset());
-                                saveState(PERIOD_TOTAL_KEY, importResp.getTotalApi());
+                                saveState(PERIOD_OFFSET_KEY, localOffset);
+                                saveState(PERIOD_TOTAL_KEY, localTotalApi);
                                 totalPeriodProcessed += importResp.getBatchCount();
                             } else {
-                                saveState(OFFSET_KEY, importResp.getNextOffset());
-                                saveState(TOTAL_KEY, importResp.getTotalApi());
+                                saveState(OFFSET_KEY, localOffset);
+                                saveState(TOTAL_KEY, localTotalApi);
                                 totalRadarProcessed += importResp.getBatchCount();
                             }
 
@@ -357,11 +375,11 @@ public class SyncOrchestrator {
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
                                 long elapsedMillis = System.currentTimeMillis() - syncStartTime;
                                 long millisPerItem = elapsedMillis / totalProcessedSinceStart;
-                                int remainingItems = importResp.getTotalApi() - importResp.getNextOffset();
+                                int remainingItems = localTotalApi - localOffset;
                                 currentEta = formatDuration(remainingItems * millisPerItem);
                             }
                             importSuccess = true;
-                            radarStatus = "Vitesse: " + currentBatchSize + " EPS (Offset: " + importResp.getNextOffset() + ")";
+                            radarStatus = "Vitesse: " + currentBatchSize + " EPS (Offset: " + localOffset + ")";
                             sleep(1000);
                             break;
                         }

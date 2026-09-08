@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, healData, cleanDuplicates, SyncStats } from '../services/api';
+import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, healData, cleanDuplicates, setManualOffset, SyncStats } from '../services/api';
 import styles from './page.module.css';
 
 // ==========================================
@@ -18,6 +18,7 @@ const IconCheckCircle = () => <svg width="18" height="18" fill="none" stroke="cu
 const IconAlert = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
 const IconDatabase = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
 const IconTerminal = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
+const IconEdit = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
@@ -82,7 +83,6 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // 🚀 LES FONCTIONS MANQUANTES DU DROPDOWN TIME MACHINE
   const addPeriod = () => {
     if (!selectedPeriods.includes(currentSelection)) {
       setSelectedPeriods([...selectedPeriods, currentSelection]);
@@ -119,9 +119,25 @@ export default function DashboardPage() {
     }
   };
 
+  // 🛡️ L'FIX HNA : La fonction pour forcer l'offset depuis la Home Page
+  const handleForceOffset = async () => {
+    const currentVal = activeTab === 'standard' ? stats?.current_bt_offset : stats?.period_offset;
+    const newOffset = prompt(`L'offset actuel est de ${currentVal}.\nEntrez la nouvelle valeur (ex: 16000) :`, currentVal?.toString());
+    
+    if (newOffset !== null) {
+      const val = parseInt(newOffset, 10);
+      if (!isNaN(val) && val >= 0) {
+        await setManualOffset(val);
+        alert(`Offset forcé à ${val} avec succès !`);
+        loadStatus();
+      } else {
+        alert("Valeur invalide.");
+      }
+    }
+  };
+
   // Helper CSS & Status
   const isRunning = stats?.is_running || false;
-  const isTimeMachine = stats?.current_period != null;
 
   const totalApi = stats?.total_api || 0;
   const currentOffset = stats?.current_bt_offset || 0;
@@ -147,7 +163,6 @@ export default function DashboardPage() {
   const rStatus = getStatusInfo(stats?.radar_status);
   const hStatus = getStatusInfo(stats?.healer_status);
 
-  // Fonction pour récupérer la classe CSS correctement depuis l'objet module
   const getStatusCssClass = (type: string) => {
     if (type === 'statusError') return styles.statusError;
     if (type === 'statusWarn') return styles.statusWarn;
@@ -388,6 +403,12 @@ export default function DashboardPage() {
                      Explorer les données brutes
                   </button>
                 </Link>
+                
+                {/* 🛡️ L'FIX HNA : Le bouton Forcer l'Offset est là ! */}
+                <button className={styles.btnSecondary} onClick={handleForceOffset}>
+                  <IconEdit /> Forcer l'Offset (Reprise Manuelle)
+                </button>
+
                 <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca' }} onClick={handleReset}>
                   Reset & Purge Totale
                 </button>
