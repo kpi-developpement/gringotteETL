@@ -51,6 +51,7 @@ public class SyncOrchestrator {
     private static final String TOTAL_KEY = "bt_total_api";
     private static final String PERIOD_OFFSET_KEY = "bt_api_offset_period";
     private static final String PERIOD_TOTAL_KEY = "bt_total_api_period";
+    private static final String PERIOD_CURRENT_KEY = "bt_current_period_str"; // 🛡️ JDID
 
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 100;
@@ -80,19 +81,28 @@ public class SyncOrchestrator {
         log.warn("INTERFACE_ALERT: {}", message);
     }
 
+    // 🛡️ L'FIX HNA : Logique de Reprise (Resume)
     public void startPeriodSync(List<String> periods) {
         if (isRunning) return;
         periodQueue.clear();
         periodQueue.addAll(periods);
         currentPeriod = periodQueue.poll();
 
-        saveState(PERIOD_OFFSET_KEY, 0);
-        saveState(PERIOD_TOTAL_KEY, 0);
-        totalPeriodProcessed = 0;
+        String savedPeriod = getSavedStateString(PERIOD_CURRENT_KEY);
 
-        log.info("Démarrage TIME MACHINE avec {} périodes. Première période: {}", periods.size(), currentPeriod);
-        addAlert("[TIME MACHINE] Démarrage avec " + periods.size() + " périodes.");
-        if (currentPeriod != null) addAlert("[TIME MACHINE] Traitement : " + currentPeriod);
+        if (currentPeriod != null && currentPeriod.equals(savedPeriod)) {
+            // REPRISE : On ne remet pas l'offset à zéro !
+            log.info("Reprise de la période : {}", currentPeriod);
+            addAlert("[TIME MACHINE] Reprise de la période " + currentPeriod + " à l'offset " + getSavedState(PERIOD_OFFSET_KEY));
+        } else {
+            // NOUVELLE PERIODE : On remet à zéro
+            saveState(PERIOD_OFFSET_KEY, 0);
+            saveState(PERIOD_TOTAL_KEY, 0);
+            saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
+            totalPeriodProcessed = 0;
+            log.info("Démarrage TIME MACHINE avec {} périodes. Première: {}", periods.size(), currentPeriod);
+            addAlert("[TIME MACHINE] Démarrage de la période " + currentPeriod);
+        }
 
         startSyncInternal();
     }
@@ -129,10 +139,9 @@ public class SyncOrchestrator {
         addAlert("[SYSTEM] Arrêt du système demandé");
     }
 
-    // 🛡️ L'FIX HNA : On a renommé la fonction et enlevé le startSync() à la fin
     public void purgeDatabase() {
         stopSync();
-        sleep(2000); // On laisse 2 secondes aux threads pour s'arrêter proprement
+        sleep(2000);
         try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
 
         interventionRepository.truncateInterventions();
@@ -141,6 +150,8 @@ public class SyncOrchestrator {
         saveState(TOTAL_KEY, 0);
         saveState(PERIOD_OFFSET_KEY, 0);
         saveState(PERIOD_TOTAL_KEY, 0);
+        saveStateString(PERIOD_CURRENT_KEY, ""); // On vide la mémoire de la Time Machine
+
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
         totalPeriodProcessed = 0;
@@ -149,7 +160,6 @@ public class SyncOrchestrator {
 
         log.warn("PURGE TOTALE effectuée.");
         addAlert("[MAINTENANCE] Base de données purgée avec succès.");
-        // 🛑 ON NE RELANCE PLUS AUTOMATIQUEMENT ICI !
     }
 
     public void healDatabase() {
@@ -245,6 +255,9 @@ public class SyncOrchestrator {
                     if (currentPeriod != null) {
                         log.info("Période {} terminée à 100%.", currentPeriod);
                         addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
+
+                        // 🛡️ On nettoie la mémoire de la période finie
+                        saveStateString(PERIOD_CURRENT_KEY, "");
                         currentPeriod = periodQueue.poll();
 
                         if (currentPeriod == null) {
@@ -259,6 +272,7 @@ public class SyncOrchestrator {
                             addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
                             saveState(PERIOD_OFFSET_KEY, 0);
                             saveState(PERIOD_TOTAL_KEY, 0);
+                            saveStateString(PERIOD_CURRENT_KEY, currentPeriod); // On sauvegarde la nouvelle
                             currentOffset = 0;
                             totalProcessedSinceStart = 0;
                             syncStartTime = System.currentTimeMillis();
@@ -467,6 +481,19 @@ public class SyncOrchestrator {
     }
 
     private void saveState(String key, int value) {
-        syncStateRepository.save(new SyncState(key, value));
+        SyncState state = syncStateRepository.findById(key).orElse(new SyncState(key, value, null));
+        state.setStateValue(value);
+        syncStateRepository.save(state);
+    }
+
+    // 🛡️ L'FIX HNA : Helper pour sauvegarder le String
+    private void saveStateString(String key, String value) {
+        SyncState state = syncStateRepository.findById(key).orElse(new SyncState(key, null, value));
+        state.setStateValueStr(value);
+        syncStateRepository.save(state);
+    }
+
+    private String getSavedStateString(String key) {
+        return syncStateRepository.findById(key).map(SyncState::getStateValueStr).orElse("");
     }
 }

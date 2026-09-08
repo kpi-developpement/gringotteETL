@@ -19,7 +19,6 @@ export default function InterventionsPage() {
   const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
   const [trimCount, setTrimCount] = useState<string>('711003');
 
-  // Options pour le dropdown Période (Format Bouygues)
   const availableYears = ['2026', '2025', '2024'];
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
 
@@ -32,11 +31,11 @@ export default function InterventionsPage() {
 
   useEffect(() => {
     loadData();
-  }, [page]); // On recharge quand la page change
+  }, [page]);
 
   const handleApplyFilters = (e: React.FormEvent) => {
     e.preventDefault();
-    setPage(0); // Retour à la première page lors d'un nouveau filtre
+    setPage(0); 
     loadData();
   };
 
@@ -76,150 +75,151 @@ export default function InterventionsPage() {
   };
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Explorateur de Données</h1>
-        <Link href="/" className={styles.backBtn}>← Retour au Dashboard</Link>
-      </div>
-
-      <div className={styles.toolsPanel}>
-        <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
-          🧹 Nettoyer les doublons exacts
-        </button>
-        <div className={styles.trimBox}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#475569' }}>Garder uniquement les premiers :</span>
-          <input 
-            type="number" 
-            value={trimCount} 
-            onChange={(e) => setTrimCount(e.target.value)} 
-            className={styles.trimInput}
-          />
-          <button onClick={handleTrimDatabase} className={styles.trimBtn}>✂️ Couper la base</button>
-        </div>
-      </div>
-
-      {/* 🚀 MOTEUR DE FILTRAGE */}
-      <form onSubmit={handleApplyFilters} className={styles.filtersWrapper}>
-        <div className={styles.filterGroup}>
-          <label>Recherche EPS</label>
-          <input 
-            type="text" 
-            placeholder="Ex: INC-12345..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className={styles.searchInput}
-          />
+    <div className={styles.pageWrapper}>
+      <div className={styles.container}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>Explorateur de Données</h1>
+          <Link href="/" className={styles.backBtn}>← Retour au Dashboard</Link>
         </div>
 
-        <div className={styles.filterGroup}>
-          <label>Source d'Ingestion</label>
-          <select 
-            value={sourceFilter} 
-            onChange={(e) => setSourceFilter(e.target.value)} 
-            className={styles.selectInput}
-          >
-            <option value="ALL">Toutes les sources</option>
-            <option value="RADAR">RADAR (Flux Continu)</option>
-            <option value="TIME_MACHINE">TIME MACHINE (Historique)</option>
-            <option value="INCONNUE">INCONNUE (Anciennes données)</option>
-          </select>
-        </div>
-
-        {/* 🛡️ L'FIX HNA : Dropdown au format Bouygues */}
-        <div className={styles.filterGroup}>
-          <label>Période (Mois/Année)</label>
-          <select 
-            value={period} 
-            onChange={(e) => setPeriod(e.target.value)} 
-            className={styles.selectInput}
-          >
-            <option value="">Toutes les périodes</option>
-            {availableYears.map(year => (
-              <optgroup key={year} label={`Année ${year}`}>
-                {availableMonths.map(month => (
-                  <option key={`${year}-${month}`} value={`${year}-${month}`}>
-                    {year} — {month}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </div>
-
-        <button type="submit" className={styles.btnFilter}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-          Filtrer
-        </button>
-      </form>
-
-      <div className={styles.tableContainer}>
-        {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>Recherche dans la base de données...</div>
-        ) : !data || data.content.length === 0 ? (
-          <div style={{ padding: '60px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>Aucune intervention trouvée pour ces critères.</div>
-        ) : (
-          <>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>ID Local</th>
-                  <th>ID EPS</th>
-                  <th>État</th>
-                  <th>Type</th>
-                  <th>Prestation</th>
-                  <th>Date Modif</th>
-                  <th>Source</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.content.map((inv) => (
-                  <tr key={inv.id}>
-                    <td style={{ color: '#94a3b8' }}>#{inv.id}</td>
-                    <td style={{ fontWeight: '800', color: '#0f172a' }}>{inv.id_intervention}</td>
-                    <td><span className={`${styles.badge} ${styles.badgeState}`}>{inv.etat}</span></td>
-                    <td>{inv.type_intervention || '-'}</td>
-                    <td>{extractInfo(inv.detail_intervention, 'typePrestation')}</td>
-                    <td>{inv.date_modification_etat}</td>
-                    <td>
-                      {inv.source_ingestion ? (
-                        <span className={`${styles.sourceBadge} ${inv.source_ingestion === 'RADAR' ? styles.sourceRadar : styles.sourceTimeMachine}`}>
-                          {inv.source_ingestion.replace('_', ' ')}
-                        </span>
-                      ) : (
-                        <span style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 'bold' }}>INCONNUE</span>
-                      )}
-                    </td>
-                    <td>
-                      <button onClick={() => openDetails(inv.detail_intervention)} className={styles.detailsBtn}>
-                        Voir Détails
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className={styles.pagination}>
-              <button disabled={data.number === 0} onClick={() => setPage(p => p - 1)} className={styles.pageBtn}>Précédent</button>
-              <span>Page {data.number + 1} sur {data.totalPages} ({data.totalElements} résultats)</span>
-              <button disabled={data.number >= data.totalPages - 1} onClick={() => setPage(p => p + 1)} className={styles.pageBtn}>Suivant</button>
-            </div>
-          </>
-        )}
-      </div>
-
-      {selectedDetails && (
-        <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
-          <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <h2>Détails Complets (JSON)</h2>
-              <button onClick={() => setSelectedDetails(null)} className={styles.closeBtn}>×</button>
-            </div>
-            <pre className={styles.jsonView}>{selectedDetails}</pre>
+        <div className={styles.toolsPanel}>
+          <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
+            🧹 Nettoyer les doublons exacts
+          </button>
+          <div className={styles.trimBox}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 800, color: '#94a3b8' }}>Garder uniquement les premiers :</span>
+            <input 
+              type="number" 
+              value={trimCount} 
+              onChange={(e) => setTrimCount(e.target.value)} 
+              className={styles.trimInput}
+            />
+            <button onClick={handleTrimDatabase} className={styles.trimBtn}>✂️ Couper la base</button>
           </div>
         </div>
-      )}
+
+        {/* 🚀 MOTEUR DE FILTRAGE */}
+        <form onSubmit={handleApplyFilters} className={styles.filtersWrapper}>
+          <div className={styles.filterGroup}>
+            <label>Recherche EPS</label>
+            <input 
+              type="text" 
+              placeholder="Ex: INC-12345..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={styles.searchInput}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label>Source d'Ingestion</label>
+            <select 
+              value={sourceFilter} 
+              onChange={(e) => setSourceFilter(e.target.value)} 
+              className={styles.selectInput}
+            >
+              <option value="ALL">Toutes les sources</option>
+              <option value="RADAR">RADAR (Flux Continu)</option>
+              <option value="TIME_MACHINE">TIME MACHINE (Historique)</option>
+              <option value="INCONNUE">INCONNUE (Anciennes données)</option>
+            </select>
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label>Période (Mois/Année)</label>
+            <select 
+              value={period} 
+              onChange={(e) => setPeriod(e.target.value)} 
+              className={styles.selectInput}
+            >
+              <option value="">Toutes les périodes</option>
+              {availableYears.map(year => (
+                <optgroup key={year} label={`Année ${year}`}>
+                  {availableMonths.map(month => (
+                    <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                      {year} — {month}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
+          <button type="submit" className={styles.btnFilter}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            Filtrer
+          </button>
+        </form>
+
+        <div className={styles.tableContainer}>
+          {loading ? (
+            <div style={{ padding: '60px', textAlign: 'center', color: '#38bdf8', fontWeight: '900', fontSize: '1.2rem', letterSpacing: '2px' }}>SCAN EN COURS...</div>
+          ) : !data || data.content.length === 0 ? (
+            <div style={{ padding: '60px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>Aucune intervention trouvée pour ces critères.</div>
+          ) : (
+            <>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>ID Local</th>
+                    <th>ID EPS</th>
+                    <th>État</th>
+                    <th>Type</th>
+                    <th>Prestation</th>
+                    <th>Date Modif</th>
+                    <th>Source</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.content.map((inv, index) => (
+                    <tr key={inv.id} className={styles.tableRow} style={{ animationDelay: `${index * 0.05}s` }}>
+                      <td style={{ color: '#64748b', fontWeight: 800 }}>#{inv.id}</td>
+                      <td style={{ fontWeight: '900', color: '#f8fafc' }}>{inv.id_intervention}</td>
+                      <td><span className={`${styles.badge} ${styles.badgeState}`}>{inv.etat}</span></td>
+                      <td>{inv.type_intervention || '-'}</td>
+                      <td>{extractInfo(inv.detail_intervention, 'typePrestation')}</td>
+                      <td style={{ color: '#94a3b8' }}>{inv.date_modification_etat}</td>
+                      <td>
+                        {inv.source_ingestion ? (
+                          <span className={`${styles.sourceBadge} ${inv.source_ingestion === 'RADAR' ? styles.sourceRadar : styles.sourceTimeMachine}`}>
+                            {inv.source_ingestion.replace('_', ' ')}
+                          </span>
+                        ) : (
+                          <span className={`${styles.sourceBadge} ${styles.sourceUnknown}`}>INCONNUE</span>
+                        )}
+                      </td>
+                      <td>
+                        <button onClick={() => openDetails(inv.detail_intervention)} className={styles.detailsBtn}>
+                          Voir Détails
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className={styles.pagination}>
+                <button disabled={data.number === 0} onClick={() => setPage(p => p - 1)} className={styles.pageBtn}>Précédent</button>
+                <span>Page {data.number + 1} sur {data.totalPages} <span style={{ color: '#38bdf8' }}>({data.totalElements} résultats)</span></span>
+                <button disabled={data.number >= data.totalPages - 1} onClick={() => setPage(p => p + 1)} className={styles.pageBtn}>Suivant</button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {selectedDetails && (
+          <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
+            <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+              <div className={styles.modalHeader}>
+                <h2>CONSOLE JSON</h2>
+                <button onClick={() => setSelectedDetails(null)} className={styles.closeBtn}>×</button>
+              </div>
+              <pre className={styles.jsonView}>{selectedDetails}</pre>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

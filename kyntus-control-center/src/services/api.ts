@@ -9,6 +9,7 @@ export interface SyncStats {
   period_total: number;
   period_processed_total: number;
   current_period: string | null;
+  saved_period: string | null; // 🛡️ JDID : Pour la reprise
 
   is_running: boolean;
   eta: string;
@@ -102,7 +103,6 @@ export const healData = async (): Promise<string> => {
   } catch (e) { return "Erreur lors de l'appel."; }
 };
 
-// 🛡️ L'FIX HNA : On envoie "period" au lieu de startDate/endDate
 export const fetchInterventions = async (
   search: string, 
   source: string, 

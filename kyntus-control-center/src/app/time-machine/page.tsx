@@ -6,12 +6,19 @@ import { fetchStats, startPeriodSync, stopSync } from '../../services/api';
 
 const IconClock = () => <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const IconTrash = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>;
+const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
 
 export default function TimeMachinePage() {
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
+  
   const [isRunning, setIsRunning] = useState(false);
   const [currentPeriodActive, setCurrentPeriodActive] = useState<string | null>(null);
+  
+  // 🚀 STATES POUR LA REPRISE (RESUME)
+  const [savedPeriod, setSavedPeriod] = useState<string | null>(null);
+  const [savedOffset, setSavedOffset] = useState<number>(0);
+  const [savedTotal, setSavedTotal] = useState<number>(0);
 
   const availableYears = ['2026', '2025', '2024'];
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
@@ -21,6 +28,15 @@ export default function TimeMachinePage() {
     if (data) {
       setIsRunning(data.is_running && data.current_period !== null);
       setCurrentPeriodActive(data.current_period);
+      
+      // 🛡️ L'FIX HNA : On récupère l'historique si c'est arrêté
+      if (!data.is_running && data.saved_period && data.saved_period !== "") {
+        setSavedPeriod(data.saved_period);
+        setSavedOffset(data.period_offset);
+        setSavedTotal(data.period_total);
+      } else {
+        setSavedPeriod(null);
+      }
     }
   };
 
@@ -47,40 +63,65 @@ export default function TimeMachinePage() {
     loadStatus();
   };
 
+  const handleResume = async () => {
+    if (savedPeriod) {
+      await startPeriodSync(savedPeriod);
+      loadStatus();
+    }
+  };
+
   const handleStop = async () => {
     await stopSync();
     loadStatus();
   };
 
   return (
-    <div style={{ padding: '40px 20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+    <div style={{ padding: '40px 20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', paddingBottom: '20px', borderBottom: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <div style={{ background: '#8b5cf6', color: 'white', padding: '12px', borderRadius: '12px' }}>
+          <div style={{ background: '#8b5cf6', color: 'white', padding: '12px', borderRadius: '12px', boxShadow: '0 4px 10px rgba(139, 92, 246, 0.3)' }}>
             <IconClock />
           </div>
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Time Machine</h1>
-            <p style={{ color: '#64748b', marginTop: '4px' }}>Aspiration Bouygues sécurisée par Périodes mensuelles</p>
+            <h1 style={{ fontSize: '2rem', fontWeight: 900, color: '#0f172a', margin: 0, letterSpacing: '-1px' }}>Time Machine</h1>
+            <p style={{ color: '#64748b', marginTop: '4px', fontWeight: 600 }}>Aspiration Bouygues sécurisée par Périodes mensuelles</p>
           </div>
         </div>
-        <Link href="/" style={{ padding: '10px 20px', background: '#f1f5f9', color: '#334155', fontWeight: 'bold', borderRadius: '8px', textDecoration: 'none' }}>
+        <Link href="/" style={{ padding: '10px 20px', background: '#f1f5f9', color: '#334155', fontWeight: 'bold', borderRadius: '8px', textDecoration: 'none', border: '1px solid #e2e8f0', transition: 'all 0.2s' }}>
           ← Retour au Dashboard
         </Link>
       </div>
 
+      {/* 🚀 BLOC DE REPRISE (RESUME) */}
+      {!isRunning && savedPeriod && savedOffset > 0 && savedOffset < savedTotal && (
+        <div style={{ background: 'linear-gradient(135deg, #fffbeb, #fef3c7)', border: '1px solid #fde68a', borderRadius: '16px', padding: '24px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px -5px rgba(245, 158, 11, 0.15)' }}>
+          <div>
+            <h3 style={{ margin: '0 0 8px 0', color: '#b45309', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem', fontWeight: 900 }}>
+              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Session Interrompue
+            </h3>
+            <p style={{ margin: 0, color: '#92400e', fontWeight: 600 }}>
+              Le téléchargement de la période <strong>{savedPeriod}</strong> s'est arrêté à <strong>{savedOffset.toLocaleString()} / {savedTotal.toLocaleString()}</strong>.
+            </p>
+          </div>
+          <button onClick={handleResume} style={{ background: '#d97706', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)', transition: 'all 0.2s' }}>
+            <IconPlay /> Reprendre l'aspiration
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
         
         {/* PANNEAU DE SÉLECTION */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1e293b', marginBottom: '20px' }}>1. Sélectionner les mois</h2>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', margin: '0 0 20px 0' }}>1. Sélectionner les mois</h2>
           
           <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
             <select 
               value={currentSelection} 
               onChange={e => setCurrentSelection(e.target.value)}
-              style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', background: '#f8fafc' }}
+              style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: '2px solid #e2e8f0', outline: 'none', background: '#f8fafc', fontWeight: 700, color: '#0f172a' }}
               disabled={isRunning}
             >
               {availableYears.map(year => (
@@ -93,21 +134,21 @@ export default function TimeMachinePage() {
                 </optgroup>
               ))}
             </select>
-            <button onClick={addPeriod} disabled={isRunning} style={{ padding: '0 20px', background: isRunning ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isRunning ? 'not-allowed' : 'pointer' }}>
+            <button onClick={addPeriod} disabled={isRunning} style={{ padding: '0 24px', background: isRunning ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 900, cursor: isRunning ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
               Ajouter
             </button>
           </div>
 
-          <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#64748b', marginBottom: '10px' }}>Liste d'attente ({selectedPeriods.length}) :</h3>
+          <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Liste d'attente ({selectedPeriods.length})</h3>
           
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', minHeight: '150px', padding: '10px', display: 'flex', flexWrap: 'wrap', gap: '10px', alignContent: 'flex-start' }}>
-            {selectedPeriods.length === 0 && <span style={{ color: '#94a3b8', fontSize: '0.9rem', padding: '10px' }}>Aucune période sélectionnée...</span>}
+          <div style={{ background: '#f8fafc', border: '2px dashed #e2e8f0', borderRadius: '12px', minHeight: '150px', padding: '15px', display: 'flex', flexWrap: 'wrap', gap: '10px', alignContent: 'flex-start' }}>
+            {selectedPeriods.length === 0 && <span style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600, margin: 'auto' }}>Aucune période sélectionnée...</span>}
             
             {selectedPeriods.map(p => (
-              <div key={p} style={{ background: '#e0e7ff', color: '#047857', padding: '6px 12px', borderRadius: '99px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #a7f3d0' }}>
+              <div key={p} style={{ background: '#e0e7ff', color: '#4338ca', padding: '8px 14px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid #c7d2fe' }}>
                 {p}
                 {!isRunning && (
-                  <button onClick={() => removePeriod(p)} style={{ background: 'none', border: 'none', color: '#047857', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                  <button onClick={() => removePeriod(p)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'flex' }}>
                     <IconTrash />
                   </button>
                 )}
@@ -117,28 +158,29 @@ export default function TimeMachinePage() {
         </div>
 
         {/* PANNEAU DE CONTRÔLE */}
-        <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', padding: '24px', color: 'white', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#38bdf8', marginBottom: '20px' }}>2. Exécution</h2>
+        <div style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', border: '1px solid #334155', borderRadius: '16px', padding: '30px', color: 'white', boxShadow: '0 20px 40px -10px rgba(0,0,0,0.3)' }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#38bdf8', margin: '0 0 20px 0', textTransform: 'uppercase', letterSpacing: '1px' }}>2. Exécution</h2>
 
           {isRunning ? (
-            <div style={{ textAlign: 'center', padding: '30px 0' }}>
-              <div style={{ display: 'inline-block', padding: '10px 20px', background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#34d399', borderRadius: '8px', fontWeight: 'bold', marginBottom: '20px' }}>
-                Moteur Time Machine Actif
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{ display: 'inline-block', padding: '8px 16px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', color: '#34d399', borderRadius: '99px', fontWeight: 800, fontSize: '0.85rem', marginBottom: '25px', letterSpacing: '1px' }}>
+                <span style={{ display: 'inline-block', width: '8px', height: '8px', background: '#10b981', borderRadius: '50%', marginRight: '8px', boxShadow: '0 0 8px #10b981' }}></span>
+                MOTEUR ACTIF
               </div>
-              <h3 style={{ fontSize: '1.5rem', margin: '0 0 10px 0' }}>Période en cours :</h3>
-              <div style={{ fontSize: '2rem', fontWeight: 900, color: '#fcd34d' }}>{currentPeriodActive || 'Chargement...'}</div>
+              <h3 style={{ fontSize: '1rem', color: '#94a3b8', margin: '0 0 10px 0', fontWeight: 600 }}>Période en cours d'aspiration :</h3>
+              <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#fcd34d', letterSpacing: '-1px', textShadow: '0 4px 15px rgba(252, 211, 77, 0.2)' }}>{currentPeriodActive || 'Chargement...'}</div>
               
-              <button onClick={handleStop} style={{ marginTop: '30px', width: '100%', padding: '16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 4px 6px rgba(239,68,68,0.3)' }}>
-                ⏹ STOPPER LE PROCESSUS
+              <button onClick={handleStop} style={{ marginTop: '40px', width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(239,68,68,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                Stopper le processus
               </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
-              <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '30px', textAlign: 'center' }}>
+              <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '30px', textAlign: 'center', fontWeight: 500 }}>
                 Le moteur va aspirer les périodes une par une. L'offset sera remis à zéro à chaque nouveau mois pour garantir qu'aucune erreur 500 ne se produise côté Bouygues.
               </p>
-              <button onClick={handleStart} style={{ width: '100%', padding: '16px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 4px 6px rgba(139,92,246,0.3)' }}>
-                🚀 DÉMARRER L'ASPIRATION
+              <button onClick={handleStart} style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 10px 20px rgba(139,92,246,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                Démarrer l'aspiration
               </button>
             </div>
           )}

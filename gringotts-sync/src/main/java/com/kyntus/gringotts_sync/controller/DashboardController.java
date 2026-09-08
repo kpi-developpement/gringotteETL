@@ -38,6 +38,9 @@ public class DashboardController {
         stats.put("period_processed_total", syncOrchestrator.getTotalPeriodProcessed());
         stats.put("current_period", syncOrchestrator.getCurrentPeriod());
 
+        // 🛡️ L'FIX HNA : On envoie la période sauvegardée pour la Reprise (Resume)
+        stats.put("saved_period", syncStateRepository.findById("bt_current_period_str").map(SyncState::getStateValueStr).orElse(null));
+
         stats.put("is_running", syncOrchestrator.isRunning());
         stats.put("eta", syncOrchestrator.getCurrentEta());
         stats.put("is_healing", syncOrchestrator.isHealing());
@@ -52,7 +55,6 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
-    // 🛡️ L'FIX HNA : On passe des chaînes vides ("") au lieu de NULL pour éviter le crash Postgres
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(required = false, defaultValue = "") String search,
@@ -99,7 +101,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
     }
 
-    // 🛡️ L'FIX HNA : On appelle la nouvelle méthode purgeDatabase()
     @PostMapping("/reset")
     public ResponseEntity<Map<String, String>> resetSync() {
         new Thread(syncOrchestrator::purgeDatabase).start();
