@@ -129,12 +129,12 @@ public class SyncOrchestrator {
         addAlert("[SYSTEM] Arrêt du système demandé");
     }
 
-    public void resetAndStartFromZero() {
+    // 🛡️ L'FIX HNA : On a renommé la fonction et enlevé le startSync() à la fin
+    public void purgeDatabase() {
         stopSync();
-        sleep(2000);
+        sleep(2000); // On laisse 2 secondes aux threads pour s'arrêter proprement
         try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
 
-        // 🛡️ L'FIX HNA : TRUNCATE au lieu de deleteAll() pour éviter l'OutOfMemory
         interventionRepository.truncateInterventions();
 
         saveState(OFFSET_KEY, 0);
@@ -146,9 +146,10 @@ public class SyncOrchestrator {
         totalPeriodProcessed = 0;
         currentPeriod = null;
         periodQueue.clear();
-        log.warn("RESET TOTAL effectué.");
-        addAlert("[MAINTENANCE] Base de données réinitialisée (TRUNCATE)");
-        startSync();
+
+        log.warn("PURGE TOTALE effectuée.");
+        addAlert("[MAINTENANCE] Base de données purgée avec succès.");
+        // 🛑 ON NE RELANCE PLUS AUTOMATIQUEMENT ICI !
     }
 
     public void healDatabase() {

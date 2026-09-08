@@ -52,7 +52,7 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
-    // 🛡️ L'FIX HNA : On prend la période (ex: 2026_M08) et on la passe directement au Repository
+    // 🛡️ L'FIX HNA : On passe des chaînes vides ("") au lieu de NULL pour éviter le crash Postgres
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(required = false, defaultValue = "") String search,
@@ -61,14 +61,16 @@ public class DashboardController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        // On nettoie la période pour qu'elle matche exactement le JSON de Bouygues ("2026-M01")
-        String cleanPeriod = null;
+        String cleanPeriod = "";
         if (period != null && !period.isEmpty()) {
-            cleanPeriod = period.replace("_", "-").replace("-M", "-M"); // Assure le format YYYY-MXX
+            cleanPeriod = period.replace("_", "-").replace("-M", "-M");
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                search, source, cleanPeriod, PageRequest.of(page, size)
+                search == null ? "" : search,
+                source == null ? "ALL" : source,
+                cleanPeriod,
+                PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
@@ -97,10 +99,11 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
     }
 
+    // 🛡️ L'FIX HNA : On appelle la nouvelle méthode purgeDatabase()
     @PostMapping("/reset")
     public ResponseEntity<Map<String, String>> resetSync() {
-        new Thread(syncOrchestrator::resetAndStartFromZero).start();
-        return ResponseEntity.ok(Map.of("message", "Reset en cours..."));
+        new Thread(syncOrchestrator::purgeDatabase).start();
+        return ResponseEntity.ok(Map.of("message", "Purge en cours..."));
     }
 
     @PostMapping("/heal")

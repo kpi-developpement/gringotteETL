@@ -15,10 +15,13 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
+    // 🛡️ L'FIX HNA (MASTERCLASS) :
+    // 1. On utilise CAST(:param AS text) pour éviter le bug "bytea" de PostgreSQL.
+    // 2. On compare avec '' (chaîne vide) au lieu de NULL.
     @Query("SELECT i FROM Intervention i WHERE " +
-            "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
+            "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period IS NULL OR i.detailIntervention LIKE CONCAT('%', :period, '%') OR i.payloadRecu LIKE CONCAT('%', :period, '%')) " +
+            "(:period = '' OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) " +
             "ORDER BY i.id DESC")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
@@ -29,7 +32,6 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
 
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
 
-    // 🛡️ L'FIX HNA : La commande magique qui vide la table instantanément sans toucher à la RAM
     @Modifying
     @Transactional
     @Query(value = "TRUNCATE TABLE interventions CASCADE", nativeQuery = true)
