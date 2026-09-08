@@ -14,6 +14,7 @@ export interface SyncStats {
   is_running: boolean;
   eta: string;
   is_healing: boolean;
+  healer_mode: string; // 🛡️ L'FIX HNA
   heal_total: number;
   heal_current: number;
   radar_status: string;
@@ -68,7 +69,22 @@ export const stopSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/stop`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
-// 🛡️ L'FIX HNA : Appel pour annuler la session en pause
+// 🛡️ L'FIX HNA : API Healer
+export const startHealer = async (mode: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_URL}/start-healer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    return res.ok;
+  } catch (e) { return false; }
+};
+
+export const stopHealer = async (): Promise<boolean> => {
+  try { const res = await fetch(`${API_URL}/stop-healer`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
+};
+
 export const cancelResume = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/cancel-resume`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
@@ -98,14 +114,6 @@ export const trimDatabase = async (keepCount: number): Promise<string> => {
     const data = await res.json();
     return data.message || "Opération terminée.";
   } catch (e) { return "Erreur lors de la suppression."; }
-};
-
-export const healData = async (): Promise<string> => {
-  try {
-    const res = await fetch(`${API_URL}/heal`, { method: 'POST' });
-    const data = await res.json();
-    return data.message || "Opération lancée.";
-  } catch (e) { return "Erreur lors de l'appel."; }
 };
 
 export const fetchInterventions = async (

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, healData, cleanDuplicates, setManualOffset, SyncStats } from '../services/api';
+import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, cleanDuplicates, setManualOffset, startHealer, stopHealer, SyncStats } from '../services/api';
 import styles from './page.module.css';
 
 // ==========================================
@@ -23,17 +23,15 @@ const IconEdit = () => <svg width="16" height="16" fill="none" stroke="currentCo
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
   
-  // Onglets (Tabs)
   const [activeTab, setActiveTab] = useState<'standard' | 'timemachine'>('standard');
+  const [healerMode, setHealerMode] = useState('RADAR'); // 🛡️ L'FIX HNA : Sélecteur Healer
 
-  // Historique pour Sparklines
   const [radarHistory, setRadarHistory] = useState<number[]>(Array(12).fill(0));
   const [periodHistory, setPeriodHistory] = useState<number[]>(Array(12).fill(0));
   
   const [currentRadarSpeed, setCurrentRadarSpeed] = useState(0);
   const [currentPeriodSpeed, setCurrentPeriodSpeed] = useState(0);
 
-  // Sélecteur Time Machine
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
   const availableYears = ['2026', '2025', '2024'];
@@ -48,7 +46,6 @@ export default function DashboardPage() {
     if (data) {
       setStats(data);
       
-      // Auto-switch Tab si Time Machine est actif
       if (data.is_running && data.current_period !== null) {
         setActiveTab('timemachine');
       } else if (data.is_running && data.current_period === null) {
@@ -103,6 +100,10 @@ export default function DashboardPage() {
     loadStats();
   };
 
+  // 🛡️ L'FIX HNA : Actions Healer
+  const handleStartHealer = async () => { await startHealer(healerMode); loadStats(); };
+  const handleStopHealer = async () => { await stopHealer(); loadStats(); };
+
   const handleReset = async () => {
     if (window.confirm("ATTENTION : Purge Totale de la base de données. Confirmer ?")) {
       await resetSync();
@@ -119,7 +120,6 @@ export default function DashboardPage() {
     }
   };
 
-  // 🛡️ L'FIX HNA : Remplacement de loadStatus() par loadStats()
   const handleForceOffset = async () => {
     const currentVal = activeTab === 'standard' ? stats?.current_bt_offset : stats?.period_offset;
     const newOffset = prompt(`L'offset actuel est de ${currentVal}.\nEntrez la nouvelle valeur (ex: 16000) :`, currentVal?.toString());
@@ -129,15 +129,15 @@ export default function DashboardPage() {
       if (!isNaN(val) && val >= 0) {
         await setManualOffset(val);
         alert(`Offset forcé à ${val} avec succès !`);
-        loadStats(); // <--- FIX ICI
+        loadStats(); 
       } else {
         alert("Valeur invalide.");
       }
     }
   };
 
-  // Helper CSS & Status
   const isRunning = stats?.is_running || false;
+  const isHealing = stats?.is_healing || false;
 
   const totalApi = stats?.total_api || 0;
   const currentOffset = stats?.current_bt_offset || 0;
@@ -203,9 +203,6 @@ export default function DashboardPage() {
 
         <div className={styles.mainGrid}>
           
-          {/* =========================================================
-              COLONNE DE GAUCHE : MOTEUR ACTIF
-              ========================================================= */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
             
             {/* VUE STANDARD */}
@@ -275,7 +272,6 @@ export default function DashboardPage() {
                   <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>{rStatus.icon} {rStatus.text}</span>
                 </div>
 
-                {/* SÉLECTEUR DE MOIS */}
                 {!isRunning && (
                   <div className={styles.controlsGroup}>
                     <div className={styles.tmSelector}>
@@ -349,7 +345,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* HEALER (GLOBAL - TOUJOURS VISIBLE) */}
+            {/* 🛡️ L'FIX HNA : HEALER INDÉPENDANT */}
             <div className={styles.glassCard}>
               <div className={styles.cardHeader}>
                 <h2 className={styles.cardTitle}>
@@ -359,9 +355,27 @@ export default function DashboardPage() {
                 <span className={`${styles.statusText} ${getStatusCssClass(hStatus.css)}`}>{hStatus.icon} {hStatus.text}</span>
               </div>
               
-              <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
-                Le Healer détecte automatiquement les interventions sans détails (importées par le Radar ou la Time Machine) et les enrichit en tâche de fond.
-              </p>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <select 
+                  value={healerMode} 
+                  onChange={e => setHealerMode(e.target.value)}
+                  disabled={isHealing}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontWeight: 'bold', color: '#334155' }}
+                >
+                  <option value="RADAR">Priorité RADAR (Plus Récents d'abord)</option>
+                  <option value="TIME_MACHINE">Priorité TIME MACHINE (Plus Anciens d'abord)</option>
+                </select>
+                
+                {!isHealing ? (
+                  <button onClick={handleStartHealer} style={{ padding: '10px 20px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <IconPlay /> Démarrer
+                  </button>
+                ) : (
+                  <button onClick={handleStopHealer} style={{ padding: '10px 20px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <IconStop /> Stopper
+                  </button>
+                )}
+              </div>
 
               <div className={styles.metricsGrid}>
                 <div className={styles.metricBox}>
@@ -404,7 +418,6 @@ export default function DashboardPage() {
                   </button>
                 </Link>
                 
-                {/* 🛡️ L'FIX HNA : Le bouton Forcer l'Offset est là ! */}
                 <button className={styles.btnSecondary} onClick={handleForceOffset}>
                   <IconEdit /> Forcer l'Offset (Reprise Manuelle)
                 </button>

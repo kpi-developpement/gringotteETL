@@ -11,8 +11,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -39,12 +37,15 @@ public class DashboardController {
         stats.put("period_total", syncStateRepository.findById("bt_total_api_period").map(SyncState::getStateValue).orElse(0));
         stats.put("period_processed_total", syncOrchestrator.getTotalPeriodProcessed());
         stats.put("current_period", syncOrchestrator.getCurrentPeriod());
-
         stats.put("saved_period", syncStateRepository.findById("bt_active_period_name").map(SyncState::getStateValueStr).orElse(null));
 
         stats.put("is_running", syncOrchestrator.isRunning());
         stats.put("eta", syncOrchestrator.getCurrentEta());
+
+        // 🛡️ L'FIX HNA : On renvoie l'état du Healer
         stats.put("is_healing", syncOrchestrator.isHealing());
+        stats.put("healer_mode", syncOrchestrator.getHealerMode());
+
         stats.put("heal_total", syncOrchestrator.getHealTotal());
         stats.put("heal_current", syncOrchestrator.getHealCurrent());
         stats.put("radar_status", syncOrchestrator.getRadarStatus());
@@ -102,6 +103,20 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
     }
 
+    // 🛡️ L'FIX HNA : Endpoints pour le Healer
+    @PostMapping("/start-healer")
+    public ResponseEntity<Map<String, String>> startHealer(@RequestBody Map<String, String> body) {
+        String mode = body.getOrDefault("mode", "RADAR");
+        syncOrchestrator.startHealer(mode);
+        return ResponseEntity.ok(Map.of("message", "Healer démarré en mode " + mode));
+    }
+
+    @PostMapping("/stop-healer")
+    public ResponseEntity<Map<String, String>> stopHealer() {
+        syncOrchestrator.stopHealer();
+        return ResponseEntity.ok(Map.of("message", "Healer arrêté."));
+    }
+
     @PostMapping("/cancel-resume")
     public ResponseEntity<Map<String, String>> cancelResume() {
         syncOrchestrator.cancelResume();
@@ -114,15 +129,10 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Purge en cours..."));
     }
 
-    @PostMapping("/heal")
-    public ResponseEntity<Map<String, String>> healData() {
-        new Thread(syncOrchestrator::healDatabase).start();
-        return ResponseEntity.ok(Map.of("message", "Processus lancé."));
-    }
-
     @PostMapping("/clean-duplicates")
     public ResponseEntity<Map<String, Object>> cleanDuplicates() {
-        return ResponseEntity.ok(Map.of("ok", true, "message", interventionRepository.deleteDuplicates() + " doublons supprimés."));
+        new Thread(syncOrchestrator::cleanDuplicatesTask).start();
+        return ResponseEntity.ok(Map.of("ok", true, "message", "Nettoyage lancé en arrière-plan."));
     }
 
     @PostMapping("/trim/{keepCount}")
@@ -131,7 +141,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", deleted + " anciennes interventions supprimées."));
     }
 
-    // 🛡️ L'FIX HNA : L'endpoint pour forcer l'offset manuellement
     @PostMapping("/offset/{value}")
     public ResponseEntity<Map<String, Object>> setManualOffset(@PathVariable int value) {
         if (syncOrchestrator.getCurrentPeriod() != null || syncStateRepository.findById("bt_active_period_name").map(SyncState::getStateValueStr).orElse("").length() > 0) {

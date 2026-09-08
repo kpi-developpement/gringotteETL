@@ -33,6 +33,8 @@ public class SyncOrchestrator {
 
     private volatile boolean isRunning = false;
     private volatile boolean isHealing = false;
+    private volatile String healerMode = "RADAR"; // 🛡️ L'FIX HNA : Mode par défaut
+
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
     private volatile long syncStartTime = 0;
@@ -65,6 +67,7 @@ public class SyncOrchestrator {
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
+    public String getHealerMode() { return healerMode; }
     public int getHealTotal() { return healTotal; }
     public int getHealCurrent() { return healCurrent; }
     public String getCurrentEta() { return currentEta; }
@@ -133,32 +136,50 @@ public class SyncOrchestrator {
 
     private void startSyncInternal() {
         isRunning = true;
-        isHealing = true;
         currentEta = "Initialisation...";
         radarStatus = "Démarrage en cours";
-        healerStatus = "Démarrage en cours";
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
 
         radarThread = new Thread(this::circularRadarLoop);
-        healerThread = new Thread(this::backgroundHealerLoop);
-
         radarThread.start();
-        healerThread.start();
     }
 
     public synchronized void stopSync() {
         isRunning = false;
-        isHealing = false;
         currentEta = "Arrêté";
         radarStatus = "Arrêt demandé";
-        healerStatus = "Arrêt demandé";
         log.info("Arrêt du Daemon demandé.");
         addAlert("[SYSTEM] Arrêt du système demandé");
     }
 
+    // 🛡️ L'FIX HNA : Démarrage indépendant du Healer
+    public synchronized void startHealer(String mode) {
+        if (isHealing || (healerThread != null && healerThread.isAlive())) {
+            log.warn("🚨 Healer déjà en cours d'exécution !");
+            return;
+        }
+        isHealing = true;
+        healerMode = mode;
+        healerStatus = "Démarrage en cours";
+        log.info("Démarrage du Healer en mode : {}", mode);
+        addAlert("[HEALER] Démarrage en mode " + mode);
+
+        healerThread = new Thread(this::backgroundHealerLoop);
+        healerThread.start();
+    }
+
+    // 🛡️ L'FIX HNA : Arrêt indépendant du Healer
+    public synchronized void stopHealer() {
+        isHealing = false;
+        healerStatus = "Arrêt demandé";
+        log.info("Arrêt du Healer demandé.");
+        addAlert("[HEALER] Arrêt demandé");
+    }
+
     public synchronized void purgeDatabase() {
         stopSync();
+        stopHealer();
         sleep(2000);
         try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
 
@@ -180,7 +201,7 @@ public class SyncOrchestrator {
         addAlert("[MAINTENANCE] Base de données purgée avec succès.");
     }
 
-    public void healDatabase() {
+    public void cleanDuplicatesTask() {
         log.info("Smart Clean (Dédoublonnage) démarré.");
         addAlert("[MAINTENANCE] Smart Clean lancé");
         int totalDeleted = 0;
@@ -199,7 +220,6 @@ public class SyncOrchestrator {
         radarStatus = "En cours d'aspiration";
         log.info("Thread Radar Circulaire Démarré.");
 
-        // 🛡️ L'FIX HNA (MASTERCLASS) : On charge l'offset UNE SEULE FOIS au démarrage
         int localOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
         int localTotalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
 
@@ -207,7 +227,6 @@ public class SyncOrchestrator {
             try {
                 final String activePeriod = currentPeriod;
 
-                // 1. PHASE D'ASPIRATION DEPUIS IONOS VERS POSTGRES
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
@@ -277,13 +296,8 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
-                // 2. PHASE DE COMMANDE VERS BOUYGUES VIA PHP
-                // 🛡️ L'FIX HNA : On utilise `localOffset` et `localTotalApi` qui sont en mémoire RAM (Indestructibles)
-
-                // Si on a forcé l'offset via l'interface pendant que ça tourne, on met à jour la RAM
                 int dbOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
                 if (Math.abs(dbOffset - localOffset) > 1000) {
-                    // Si l'écart est énorme, ça veut dire que l'utilisateur a forcé l'offset manuellement
                     localOffset = dbOffset;
                     log.warn("🔄 Offset forcé détecté. Mise à jour de la RAM vers : {}", localOffset);
                 }
@@ -310,7 +324,7 @@ public class SyncOrchestrator {
                             saveState(PERIOD_TOTAL_KEY, 0);
                             saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
 
-                            localOffset = 0; // 🛡️ Reset de la RAM pour la nouvelle période
+                            localOffset = 0;
                             localTotalApi = 0;
                             totalProcessedSinceStart = 0;
                             syncStartTime = System.currentTimeMillis();
@@ -319,7 +333,7 @@ public class SyncOrchestrator {
                     } else {
                         log.info("Cycle Standard terminé. Retour à l'offset 0.");
                         saveState(OFFSET_KEY, 0);
-                        localOffset = 0; // 🛡️ Reset de la RAM
+                        localOffset = 0;
                         currentEta = "Nouveau Cycle";
                         radarStatus = "Cycle 100% terminé. Pause 30s.";
                         sleep(30000);
@@ -343,7 +357,7 @@ public class SyncOrchestrator {
                             if (importResp.getBatchCount() == 0) {
                                 log.warn("Bouygues a retourné 0 résultat. Avancement forcé de la zone.");
                                 localTotalApi = importResp.getTotalApi() > 0 ? importResp.getTotalApi() : 1;
-                                localOffset = localTotalApi; // On force la fin
+                                localOffset = localTotalApi;
 
                                 if (currentPeriod != null) {
                                     saveState(PERIOD_OFFSET_KEY, localOffset);
@@ -356,7 +370,6 @@ public class SyncOrchestrator {
                                 break;
                             }
 
-                            // 🛡️ L'FIX HNA : On met à jour la RAM et la DB en même temps
                             localOffset = importResp.getNextOffset();
                             localTotalApi = importResp.getTotalApi();
 
@@ -431,7 +444,7 @@ public class SyncOrchestrator {
 
     private void backgroundHealerLoop() {
         healerStatus = "En veille";
-        log.info("Thread Background Healer Démarré.");
+        log.info("Thread Background Healer Démarré en mode : {}", healerMode);
 
         while (isHealing) {
             try {
@@ -447,7 +460,14 @@ public class SyncOrchestrator {
                 healTotal = (int) missingCount;
                 healCurrent = 0;
 
-                List<Intervention> chunk = interventionRepository.findInterventionsWithMissingDetails();
+                // 🛡️ L'FIX HNA : On choisit la requête selon la priorité (Radar = DESC, Time Machine = ASC)
+                List<Intervention> chunk;
+                if ("TIME_MACHINE".equals(healerMode)) {
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc();
+                } else {
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc();
+                }
+
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
                 List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();

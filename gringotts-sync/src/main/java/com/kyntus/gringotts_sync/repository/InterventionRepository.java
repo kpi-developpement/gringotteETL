@@ -15,9 +15,6 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    // 🛡️ L'FIX HNA (MASTERCLASS) :
-    // 1. On utilise CAST(:param AS text) pour éviter le bug "bytea" de PostgreSQL.
-    // 2. On compare avec '' (chaîne vide) au lieu de NULL.
     @Query("SELECT i FROM Intervention i WHERE " +
             "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
@@ -60,8 +57,12 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' LIMIT 20", nativeQuery = true)
-    List<Intervention> findInterventionsWithMissingDetails();
+    // 🛡️ L'FIX HNA : Séparation de la logique Healer (Radar = DESC, Time Machine = ASC) et LIMIT 40
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 40", nativeQuery = true)
+    List<Intervention> findInterventionsWithMissingDetailsDesc();
+
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 40", nativeQuery = true)
+    List<Intervention> findInterventionsWithMissingDetailsAsc();
 
     @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
     long countInterventionsWithMissingDetails();
