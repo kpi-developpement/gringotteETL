@@ -15,10 +15,6 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    // 🛡️ L'FIX HNA (MASTERCLASS) :
-    // Au lieu de filtrer par date, on cherche directement la string "2026-M01"
-    // à l'intérieur du champ detail_intervention (qui contient le JSON de Bouygues).
-    // C'est 100% précis et ça évite les bugs de parsing de dates !
     @Query("SELECT i FROM Intervention i WHERE " +
             "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
@@ -32,6 +28,12 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     );
 
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
+
+    // 🛡️ L'FIX HNA : La commande magique qui vide la table instantanément sans toucher à la RAM
+    @Modifying
+    @Transactional
+    @Query(value = "TRUNCATE TABLE interventions CASCADE", nativeQuery = true)
+    void truncateInterventions();
 
     @Modifying
     @Transactional

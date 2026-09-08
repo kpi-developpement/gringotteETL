@@ -133,7 +133,10 @@ public class SyncOrchestrator {
         stopSync();
         sleep(2000);
         try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
-        interventionRepository.deleteAll();
+
+        // 🛡️ L'FIX HNA : TRUNCATE au lieu de deleteAll() pour éviter l'OutOfMemory
+        interventionRepository.truncateInterventions();
+
         saveState(OFFSET_KEY, 0);
         saveState(TOTAL_KEY, 0);
         saveState(PERIOD_OFFSET_KEY, 0);
@@ -144,7 +147,7 @@ public class SyncOrchestrator {
         currentPeriod = null;
         periodQueue.clear();
         log.warn("RESET TOTAL effectué.");
-        addAlert("[MAINTENANCE] Base de données réinitialisée");
+        addAlert("[MAINTENANCE] Base de données réinitialisée (TRUNCATE)");
         startSync();
     }
 
@@ -169,10 +172,8 @@ public class SyncOrchestrator {
 
         while (isRunning) {
             try {
-                // Capturer la période active pour la lambda
                 final String activePeriod = currentPeriod;
 
-                // 1. PHASE D'ASPIRATION DEPUIS IONOS VERS POSTGRES
                 boolean bufferHasData = true;
                 while (bufferHasData && isRunning) {
                     try {
@@ -193,7 +194,6 @@ public class SyncOrchestrator {
                                     if (existing == null) {
                                         existing = incoming;
                                         existing.setId(null);
-                                        // 🛡️ L'FIX HNA : On taggue la source d'ingestion
                                         existing.setSourceIngestion(activePeriod != null ? "TIME_MACHINE" : "RADAR");
 
                                         if (existing.getActionsLog() != null) {
@@ -237,7 +237,6 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
-                // 2. PHASE DE COMMANDE VERS BOUYGUES VIA PHP
                 int currentOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
                 int totalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
 
