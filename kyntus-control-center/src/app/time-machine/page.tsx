@@ -16,7 +16,6 @@ export default function TimeMachinePage() {
   const [isRunning, setIsRunning] = useState(false);
   const [currentPeriodActive, setCurrentPeriodActive] = useState<string | null>(null);
   
-  // 🚀 STATES POUR LA REPRISE (RESUME)
   const [savedPeriod, setSavedPeriod] = useState<string | null>(null);
   const [savedOffset, setSavedOffset] = useState<number>(0);
   const [savedTotal, setSavedTotal] = useState<number>(0);
@@ -30,7 +29,6 @@ export default function TimeMachinePage() {
       setIsRunning(data.is_running && data.current_period !== null);
       setCurrentPeriodActive(data.current_period);
       
-      // 🛡️ L'FIX HNA : On récupère l'historique si c'est arrêté
       if (!data.is_running && data.saved_period && data.saved_period !== "") {
         setSavedPeriod(data.saved_period);
         setSavedOffset(data.period_offset);
@@ -84,8 +82,8 @@ export default function TimeMachinePage() {
     loadStatus();
   };
 
-  // 🛡️ L'FIX HNA : On bloque l'interface si une session est en pause
-  const hasSavedSession = !isRunning && savedPeriod && savedPeriod !== "" && savedOffset < savedTotal;
+  // 🛡️ L'FIX HNA : On force la variable à être un vrai Booléen (true/false) pour que TypeScript soit content
+  const hasSavedSession = Boolean(!isRunning && savedPeriod && savedPeriod !== "" && savedOffset < savedTotal);
 
   return (
     <div style={{ padding: '40px 20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
