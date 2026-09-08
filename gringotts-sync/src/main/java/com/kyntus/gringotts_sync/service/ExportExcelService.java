@@ -19,13 +19,20 @@ import java.util.*;
 public class ExportExcelService {
 
     private final InterventionRepository interventionRepository;
-    private final ObjectMapper objectMapper;
+
+    // 🛡️ L'FIX HNA : On instancie l'ObjectMapper manuellement au lieu d'attendre que Spring le fasse.
+    // Ça évite le crash "No qualifying bean of type ObjectMapper".
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public byte[] generateExcelExport(String source, String period) {
         log.info("Démarrage de l'export Excel pour Source: {}, Période: {}", source, period);
 
-        String cleanPeriod = (period != null && !period.isEmpty()) ? period.replace("_", "-").replace("-M", "-M") : "";
-        String cleanSource = (source == null || source.isEmpty()) ? "ALL" : source;
+        String cleanPeriod = null;
+        if (period != null && !period.trim().isEmpty()) {
+            cleanPeriod = period.replace("_", "-").replace("-M", "-M");
+        }
+
+        String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
 
         List<Intervention> interventions = interventionRepository.findAllForExport(cleanSource, cleanPeriod);
 
@@ -122,7 +129,7 @@ public class ExportExcelService {
                         }
                     }
 
-                    // 🛡️ L'FIX HNA : On inverse l'array pour que V1 soit en premier
+                    // On inverse l'array pour que V1 soit en premier
                     Collections.reverse(versions);
 
                     if (versions.isEmpty()) {
