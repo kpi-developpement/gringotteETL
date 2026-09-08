@@ -119,7 +119,7 @@ export default function DashboardPage() {
     }
   };
 
-  // 🛡️ L'FIX HNA : La fonction pour forcer l'offset depuis la Home Page
+  // 🛡️ L'FIX HNA : Remplacement de loadStatus() par loadStats()
   const handleForceOffset = async () => {
     const currentVal = activeTab === 'standard' ? stats?.current_bt_offset : stats?.period_offset;
     const newOffset = prompt(`L'offset actuel est de ${currentVal}.\nEntrez la nouvelle valeur (ex: 16000) :`, currentVal?.toString());
@@ -129,7 +129,7 @@ export default function DashboardPage() {
       if (!isNaN(val) && val >= 0) {
         await setManualOffset(val);
         alert(`Offset forcé à ${val} avec succès !`);
-        loadStatus();
+        loadStats(); // <--- FIX ICI
       } else {
         alert("Valeur invalide.");
       }
