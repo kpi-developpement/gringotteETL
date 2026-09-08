@@ -14,7 +14,7 @@ export interface SyncStats {
   is_running: boolean;
   eta: string;
   is_healing: boolean;
-  healer_mode: string; // 🛡️ L'FIX HNA
+  healer_mode: string; 
   heal_total: number;
   heal_current: number;
   radar_status: string;
@@ -69,7 +69,6 @@ export const stopSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/stop`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
-// 🛡️ L'FIX HNA : API Healer
 export const startHealer = async (mode: string): Promise<boolean> => {
   try {
     const res = await fetch(`${API_URL}/start-healer`, {
@@ -136,4 +135,32 @@ export const fetchInterventions = async (
     if (!res.ok) throw new Error('Erreur réseau');
     return await res.json();
   } catch (error) { return null; }
+};
+
+// 🛡️ L'FIX HNA : Fonction pour télécharger le fichier Excel
+export const exportInterventionsExcel = async (source: string, period: string): Promise<void> => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (source && source !== 'ALL') queryParams.append('source', source);
+    if (period) queryParams.append('period', period);
+
+    const res = await fetch(`${API_URL}/export?${queryParams.toString()}`, { method: 'GET' });
+    
+    if (!res.ok) throw new Error('Erreur lors de la génération du fichier Excel');
+    
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    
+    const filename = `Export_Gringotts_${source === 'ALL' ? 'Global' : source}${period ? '_' + period : ''}.xlsx`;
+    a.download = filename;
+    
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    alert("Erreur lors de l'exportation. Vérifiez qu'il y a bien des données pour ces filtres.");
+  }
 };

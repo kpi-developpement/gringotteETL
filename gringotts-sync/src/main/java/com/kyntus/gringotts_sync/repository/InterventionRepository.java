@@ -27,6 +27,16 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
             Pageable pageable
     );
 
+    // 🛡️ L'FIX HNA : Requête sans pagination pour l'Export Excel
+    @Query("SELECT i FROM Intervention i WHERE " +
+            "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
+            "(:period = '' OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) " +
+            "ORDER BY i.id DESC")
+    List<Intervention> findAllForExport(
+            @Param("source") String source,
+            @Param("period") String period
+    );
+
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
 
     @Modifying
@@ -57,7 +67,6 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    // 🛡️ L'FIX HNA : Séparation de la logique Healer (Radar = DESC, Time Machine = ASC) et LIMIT 40
     @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 40", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsDesc();
 

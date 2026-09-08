@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchInterventions, cleanDuplicates, trimDatabase, PageResponse } from '../../services/api';
+import { fetchInterventions, cleanDuplicates, trimDatabase, exportInterventionsExcel, PageResponse } from '../../services/api';
 import styles from './page.module.css';
 
 export default function InterventionsPage() {
@@ -15,9 +15,15 @@ export default function InterventionsPage() {
   const [sourceFilter, setSourceFilter] = useState('ALL');
   const [period, setPeriod] = useState(''); 
   
-  // State pour le Modal
+  // State pour le Modal JSON
   const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
   const [trimCount, setTrimCount] = useState<string>('711003');
+
+  // 🚀 STATES POUR L'EXPORT
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportSource, setExportSource] = useState('ALL');
+  const [exportPeriod, setExportPeriod] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
 
   const availableYears = ['2026', '2025', '2024'];
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
@@ -58,6 +64,15 @@ export default function InterventionsPage() {
     }
   };
 
+  // 🛡️ L'FIX HNA : Lancement de l'Export
+  const handleExport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsExporting(true);
+    await exportInterventionsExcel(exportSource, exportPeriod);
+    setIsExporting(false);
+    setIsExportModalOpen(false);
+  };
+
   const openDetails = (jsonString: string) => {
     try {
       const parsed = JSON.parse(jsonString);
@@ -83,9 +98,16 @@ export default function InterventionsPage() {
         </div>
 
         <div className={styles.toolsPanel}>
-          <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
-            🧹 Nettoyer les doublons exacts
-          </button>
+          <div style={{ display: 'flex', gap: '15px' }}>
+            <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
+              🧹 Nettoyer les doublons
+            </button>
+            <button onClick={() => setIsExportModalOpen(true)} className={styles.exportBtn}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Exporter (Excel)
+            </button>
+          </div>
+          
           <div className={styles.trimBox}>
             <span style={{ fontSize: '0.875rem', fontWeight: 800, color: '#94a3b8' }}>Garder uniquement les premiers :</span>
             <input 
@@ -208,6 +230,54 @@ export default function InterventionsPage() {
           )}
         </div>
 
+        {/* 🚀 MODAL EXPORT EXCEL */}
+        {isExportModalOpen && (
+          <div className={styles.modalOverlay} onClick={() => !isExporting && setIsExportModalOpen(false)}>
+            <div className={styles.modalExportContent} onClick={e => e.stopPropagation()}>
+              <div className={styles.modalHeader}>
+                <h2>Générer un Export Excel</h2>
+                <button onClick={() => !isExporting && setIsExportModalOpen(false)} className={styles.closeBtn}>×</button>
+              </div>
+              <form onSubmit={handleExport} className={styles.exportForm}>
+                
+                <div className={styles.filterGroup}>
+                  <label>Source d'Ingestion</label>
+                  <select value={exportSource} onChange={(e) => setExportSource(e.target.value)} className={styles.selectInput}>
+                    <option value="ALL">Toutes les sources</option>
+                    <option value="RADAR">RADAR (Flux Continu)</option>
+                    <option value="TIME_MACHINE">TIME MACHINE (Historique)</option>
+                    <option value="INCONNUE">INCONNUE (Anciennes données)</option>
+                  </select>
+                </div>
+
+                <div className={styles.filterGroup}>
+                  <label>Période (Mois/Année)</label>
+                  <select value={exportPeriod} onChange={(e) => setExportPeriod(e.target.value)} className={styles.selectInput}>
+                    <option value="">Toutes les périodes</option>
+                    {availableYears.map(year => (
+                      <optgroup key={year} label={`Année ${year}`}>
+                        {availableMonths.map(month => (
+                          <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                            {year} — {month}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.modalActions}>
+                  <button type="button" className={styles.btnCancel} onClick={() => setIsExportModalOpen(false)} disabled={isExporting}>Annuler</button>
+                  <button type="submit" className={styles.exportBtn} disabled={isExporting}>
+                    {isExporting ? 'Génération en cours...' : 'Télécharger le fichier'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 🚀 MODAL JSON DETAILS */}
         {selectedDetails && (
           <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
             <div className={styles.modalContent} onClick={e => e.stopPropagation()}>

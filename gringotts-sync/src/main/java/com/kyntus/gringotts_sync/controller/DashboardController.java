@@ -5,12 +5,17 @@ import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
+import com.kyntus.gringotts_sync.service.ExportExcelService; // 🛡️ JDID
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +29,7 @@ public class DashboardController {
     private final InterventionRepository interventionRepository;
     private final SyncStateRepository syncStateRepository;
     private final SyncOrchestrator syncOrchestrator;
+    private final ExportExcelService exportExcelService; // 🛡️ JDID
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
@@ -41,11 +47,8 @@ public class DashboardController {
 
         stats.put("is_running", syncOrchestrator.isRunning());
         stats.put("eta", syncOrchestrator.getCurrentEta());
-
-        // 🛡️ L'FIX HNA : On renvoie l'état du Healer
         stats.put("is_healing", syncOrchestrator.isHealing());
         stats.put("healer_mode", syncOrchestrator.getHealerMode());
-
         stats.put("heal_total", syncOrchestrator.getHealTotal());
         stats.put("heal_current", syncOrchestrator.getHealCurrent());
         stats.put("radar_status", syncOrchestrator.getRadarStatus());
@@ -79,6 +82,27 @@ public class DashboardController {
         return ResponseEntity.ok(result);
     }
 
+    // 🛡️ L'FIX HNA : L'Endpoint Magique pour l'Export Excel
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportExcel(
+            @RequestParam(required = false, defaultValue = "ALL") String source,
+            @RequestParam(required = false, defaultValue = "") String period) {
+
+        try {
+            byte[] excelData = exportExcelService.generateExcelExport(source, period);
+
+            String filename = "Export_Gringotts_" + (source.equals("ALL") ? "Global" : source) +
+                    (period.isEmpty() ? "" : "_" + period) + ".xlsx";
+
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .body(excelData);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     @PostMapping("/start")
     public ResponseEntity<Map<String, String>> startSync() {
         syncOrchestrator.startSync();
@@ -103,7 +127,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
     }
 
-    // 🛡️ L'FIX HNA : Endpoints pour le Healer
     @PostMapping("/start-healer")
     public ResponseEntity<Map<String, String>> startHealer(@RequestBody Map<String, String> body) {
         String mode = body.getOrDefault("mode", "RADAR");

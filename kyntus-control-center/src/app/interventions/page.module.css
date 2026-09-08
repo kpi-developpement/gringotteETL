@@ -30,6 +30,11 @@
 .trimBtn { background-color: rgba(245, 158, 11, 0.1); color: #fbbf24; padding: 10px 20px; border-radius: 10px; font-weight: 800; border: 1px solid rgba(245, 158, 11, 0.3); cursor: pointer; transition: all 0.3s; }
 .trimBtn:hover { background-color: #f59e0b; color: #0f172a; box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); }
 
+/* 🚀 BOUTON EXPORT */
+.exportBtn { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 10px 20px; border-radius: 10px; font-weight: 900; border: none; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3); }
+.exportBtn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(16, 185, 129, 0.5); }
+.exportBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* FILTERS */
 .filtersWrapper { display: flex; gap: 15px; align-items: flex-end; background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(20px); padding: 20px 24px; border-radius: 16px; border: 1px solid rgba(51, 65, 85, 0.8); box-shadow: 0 10px 30px rgba(0,0,0,0.2); margin-bottom: 30px; }
 .filterGroup { display: flex; flex-direction: column; gap: 8px; flex: 1; }
@@ -76,3 +81,10 @@
 .jsonView::-webkit-scrollbar { width: 8px; }
 .jsonView::-webkit-scrollbar-track { background: #020617; }
 .jsonView::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+
+/* 🚀 MODAL EXPORT */
+.modalExportContent { background: #0f172a; width: 100%; max-width: 500px; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); border: 1px solid #1e293b; overflow: hidden; }
+.exportForm { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.modalActions { display: flex; justify-content: flex-end; gap: 15px; margin-top: 10px; }
+.btnCancel { background: rgba(51, 65, 85, 0.4); color: #cbd5e1; border: 1px solid rgba(71, 85, 105, 0.5); padding: 10px 20px; border-radius: 10px; font-weight: 800; cursor: pointer; transition: all 0.2s; }
+.btnCancel:hover { background: rgba(51, 65, 85, 0.8); color: white; }
