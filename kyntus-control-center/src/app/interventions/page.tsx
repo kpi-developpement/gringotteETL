@@ -23,7 +23,7 @@ export default function InterventionsPage() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportSource, setExportSource] = useState('ALL');
   const [exportPeriod, setExportPeriod] = useState('');
-  const [exportType, setExportType] = useState('ALL'); // 🛡️ L'FIX HNA : Le state pour le Type
+  const [exportType, setExportType] = useState('ALL');
   const [isExporting, setIsExporting] = useState(false);
 
   const availableYears = ['2026', '2025', '2024'];
@@ -65,7 +65,6 @@ export default function InterventionsPage() {
     }
   };
 
-  // 🛡️ L'FIX HNA : Lancement de l'Export avec le paramètre exportType
   const handleExport = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsExporting(true);
@@ -241,14 +240,13 @@ export default function InterventionsPage() {
               </div>
               <form onSubmit={handleExport} className={styles.exportForm}>
                 
-                {/* 🛡️ L'FIX HNA : Le nouveau filtre Type d'intervention */}
                 <div className={styles.filterGroup}>
                   <label>Type d'Intervention</label>
                   <select value={exportType} onChange={(e) => setExportType(e.target.value)} className={styles.selectInput}>
                     <option value="ALL">Tous les types (Global)</option>
                     <option value="RACC">RACC (Raccordement)</option>
                     <option value="SAV">SAV (Service Après Vente)</option>
-                    <option value="AUDITS">RZO (Audits / Réseau)</option>
+                    <option value="RZO">RZO (Audits / Réseau)</option>
                   </select>
                 </div>
 

@@ -82,7 +82,6 @@ public class DashboardController {
         return ResponseEntity.ok(result);
     }
 
-    // 🛡️ L'FIX HNA : Ajout du paramètre "type"
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportExcel(
             @RequestParam(required = false, defaultValue = "ALL") String source,
@@ -100,7 +99,10 @@ public class DashboardController {
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                     .body(excelData);
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            // 🛡️ L'FIX HNA : On attrape TOUT (même les OutOfMemoryError) et on logge en ROUGE
+            System.err.println("❌ ERREUR CRITIQUE DANS LE CONTROLEUR EXPORT : " + t.getMessage());
+            t.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
     }

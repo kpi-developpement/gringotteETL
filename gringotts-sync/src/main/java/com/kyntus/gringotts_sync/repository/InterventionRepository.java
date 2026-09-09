@@ -16,9 +16,9 @@ import java.util.List;
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
     @Query("SELECT i FROM Intervention i WHERE " +
-            "(:search IS NULL OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
+            "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period IS NULL OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) " +
+            "(:period = '' OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) " +
             "ORDER BY i.id DESC")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
@@ -27,16 +27,21 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
             Pageable pageable
     );
 
-    // 🛡️ L'FIX HNA : Ajout du filtre TYPE (RACC, SAV, AUDITS) pour l'export Excel
+    // 🛡️ L'FIX HNA : On ajoute Pageable pour éviter l'explosion de la RAM
+    // On cherche le Type dans la colonne ET dans le JSON pour être 100% sûr de le trouver
     @Query("SELECT i FROM Intervention i WHERE " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period IS NULL OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
-            "(:type = 'ALL' OR i.typeIntervention = :type) " +
+            "(:period = '' OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
+            "(:type = 'ALL' OR i.typeIntervention = :type OR " +
+            "(:type = 'RACC' AND i.detailIntervention LIKE '%QualificationRaccordement%') OR " +
+            "(:type = 'SAV' AND i.detailIntervention LIKE '%QualificationSAV%') OR " +
+            "(:type = 'RZO' AND i.detailIntervention LIKE '%QualificationReseau%')) " +
             "ORDER BY i.id DESC")
-    List<Intervention> findAllForExport(
+    Page<Intervention> findAllForExport(
             @Param("source") String source,
             @Param("period") String period,
-            @Param("type") String type
+            @Param("type") String type,
+            Pageable pageable
     );
 
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
