@@ -137,12 +137,13 @@ export const fetchInterventions = async (
   } catch (error) { return null; }
 };
 
-// 🛡️ L'FIX HNA : Fonction pour télécharger le fichier Excel
-export const exportInterventionsExcel = async (source: string, period: string): Promise<void> => {
+
+export const exportInterventionsExcel = async (source: string, period: string, type: string): Promise<void> => {
   try {
     const queryParams = new URLSearchParams();
     if (source && source !== 'ALL') queryParams.append('source', source);
     if (period) queryParams.append('period', period);
+    if (type && type !== 'ALL') queryParams.append('type', type);
 
     const res = await fetch(`${API_URL}/export?${queryParams.toString()}`, { method: 'GET' });
     
@@ -153,7 +154,7 @@ export const exportInterventionsExcel = async (source: string, period: string): 
     const a = document.createElement('a');
     a.href = url;
     
-    const filename = `Export_Gringotts_${source === 'ALL' ? 'Global' : source}${period ? '_' + period : ''}.xlsx`;
+    const filename = `Export_Gringotts_${type === 'ALL' ? 'Global' : type}_${source === 'ALL' ? 'ToutesSources' : source}${period ? '_' + period : ''}.xlsx`;
     a.download = filename;
     
     document.body.appendChild(a);

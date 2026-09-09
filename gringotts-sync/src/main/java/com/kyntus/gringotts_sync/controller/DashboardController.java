@@ -82,17 +82,19 @@ public class DashboardController {
         return ResponseEntity.ok(result);
     }
 
-    // 🛡️ L'FIX HNA : L'Endpoint Magique pour l'Export Excel
+    // 🛡️ L'FIX HNA : Ajout du paramètre "type"
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportExcel(
             @RequestParam(required = false, defaultValue = "ALL") String source,
-            @RequestParam(required = false, defaultValue = "") String period) {
+            @RequestParam(required = false) String period,
+            @RequestParam(required = false, defaultValue = "ALL") String type) {
 
         try {
-            byte[] excelData = exportExcelService.generateExcelExport(source, period);
+            byte[] excelData = exportExcelService.generateExcelExport(source, period, type);
 
-            String filename = "Export_Gringotts_" + (source.equals("ALL") ? "Global" : source) +
-                    (period.isEmpty() ? "" : "_" + period) + ".xlsx";
+            String filename = "Export_Gringotts_" + (type.equals("ALL") ? "Global" : type) +
+                    "_" + (source.equals("ALL") ? "ToutesSources" : source) +
+                    ((period == null || period.isEmpty()) ? "" : "_" + period) + ".xlsx";
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
