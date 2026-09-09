@@ -27,9 +27,8 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
             Pageable pageable
     );
 
-    // 🛡️ L'FIX HNA : On ajoute Pageable pour éviter l'explosion de la RAM
-    // On cherche le Type dans la colonne ET dans le JSON pour être 100% sûr de le trouver
-    @Query("SELECT i FROM Intervention i WHERE " +
+    // 🛡️ L'FIX HNA : La méthode qui manquait ! Elle récupère juste les IDs (Long) pour ne pas exploser la RAM
+    @Query("SELECT i.id FROM Intervention i WHERE " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
             "(:period = '' OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
             "(:type = 'ALL' OR i.typeIntervention = :type OR " +
@@ -37,11 +36,10 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
             "(:type = 'SAV' AND i.detailIntervention LIKE '%QualificationSAV%') OR " +
             "(:type = 'RZO' AND i.detailIntervention LIKE '%QualificationReseau%')) " +
             "ORDER BY i.id DESC")
-    Page<Intervention> findAllForExport(
+    List<Long> findIdsForExport(
             @Param("source") String source,
             @Param("period") String period,
-            @Param("type") String type,
-            Pageable pageable
+            @Param("type") String type
     );
 
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
