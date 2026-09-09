@@ -23,22 +23,34 @@ public class ExportExcelService {
     private final InterventionRepository interventionRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // 🛡️ LISTES EXHAUSTIVES DES COLONNES PAR TYPE (Format exact Bouygues)
+    // 🛡️ L'FIX HNA : Dictionnaire de traduction pour corriger les fautes du JSON Bouygues
+    private String mapColumnName(String original) {
+        if (original == null) return "";
+        switch (original) {
+            case "A2_DOUBLON": return "A2_DOUBLONS";
+            case "C2_DOUTE_POS": return "C2_DOUTE_POSE";
+            case "F2_RACC_CPL": return "F2_RACC_CPLX";
+            case "FLAG_REPROV_CH": return "FLAG_REPROV_CHAUD";
+            default: return original;
+        }
+    }
+
+    // 🛡️ LISTES EXHAUSTIVES DES COLONNES PAR TYPE (Pour forcer leur affichage même si vides)
     private static final List<String> RACC_COLUMNS = Arrays.asList(
-            "A1_CLES_CTRL", "A2_DOUBLON", "A2_DOUBLONS", "A3_FIN_CMD", "ANALYSE_PHOTO", "B1_FORMAT_CHAMPS", "C1_NOK_POSE", "C1_PHOTO", "C2_DOUTE_POS", "C3_DEPORT",
+            "A1_CLES_CTRL", "A2_DOUBLONS", "A3_FIN_CMD", "ANALYSE_PHOTO", "B1_FORMAT_CHAMPS", "C1_NOK_POSE", "C1_PHOTO", "C2_DOUTE_POSE", "C3_DEPORT",
             "categorie", "categorieRaccordementLogementAnalyse", "CHAMP_1", "CHAMP_2", "CHAMP_3", "CHAMP_4", "CHAMP_5", "CHAMP_6", "codeCloture", "CODE_DECHARGE_TECH",
-            "CODE_FACTURE", "codeInsee", "commentaireFinalBytel", "commentairePhotos", "TYPE_DESSERTE_CR", "dateIntervention", "departement", "DEPLACEMENT", "DEPLACEMENT_BRUT",
+            "CODE_FACTURE", "codeInsee", "commentaireFinalBytel", "commentairePhotos", "TYPE_DESSERTE_CR", "dateIntervention", "departement",
             "E1_MES", "estBranchement", "estBranchement_BRUT", "estDiagnosticInternet", "estDiagnosticInternet_BRUT", "estDiagnosticTelephone", "estDiagnosticTelephone_BRUT",
             "estDiagnosticTv", "estDiagnosticTv_BRUT", "estDiagnosticWifi", "estDiagnosticWifi_BRUT", "estFournisseurBytel", "estFournisseurBytel_BRUT", "estInterventionComplexe",
             "estInterventionComplexe_BRUT", "estInterventionDimanche", "estInterventionDimanche_BRUT", "estMiseEnRelation", "estMiseEnRelation_BRUT", "estMiseEnService",
             "estMiseEnService_BRUT", "estPreAppel", "estPreAppel_BRUT", "estRACCGroupe", "estRACCGroupe_BRUT", "estZoneComplexe", "estZoneComplexe_BRUT", "F1_GOUL_ETH",
-            "F2_RACC_CPL", "FLAG_1", "FLAG_2", "FLAG_3", "FLAG_4", "FLAG_5", "FLAG_6", "FLAG_DEVIS_TRAVAUX", "FLAG_ECRASEMENT", "FLAG_EMUTATION", "FLAG_REPROV_CH", "fyt",
+            "F2_RACC_CPLX", "FLAG_1", "FLAG_2", "FLAG_3", "FLAG_4", "FLAG_5", "FLAG_6", "FLAG_DEVIS_TRAVAUX", "FLAG_ECRASEMENT", "FLAG_EMUTATION", "FLAG_REPROV_CHAUD", "fyt",
             "GOULOTTE", "GOULOTTE_BRUT", "GX", "HX", "identifiant", "identifiantTechnicien", "INSTALLATION", "INSTALLATION_BRUT", "IX", "JX", "KX", "LOGISTIQUE", "LOGISTIQUE_BRUT",
             "longueurGoulottes", "longueurGoulottes_BRUT", "mainteneurIdentifiant", "MATERIEL", "MATERIEL_BRUT", "MES", "MES_BRUT", "montantDevis", "montantDevis_BRUT",
             "nombreRepeteursPoses", "nombreRepeteursPoses_BRUT", "idWkf", "oi", "periode", "presenceNacelle", "presenceNacelle_BRUT", "presenceNacelleAnalysePhoto", "PRESTATION_OI",
             "REF_PBO_CR", "REF_PBO_OI", "REF_PTO_CR", "REF_PTO_OI", "sousCategorieControlePhoto", "sousTraitant", "statutAnalysePhoto", "SUPPORT", "SUPPORT_BRUT", "TARIF_CALCULE",
             "TARIF_RECALCULE", "TOTAL", "TOTAL_BRUT", "TYPE_DESSERTE_OI", "TYPE_INSTALLATION", "typeIntervention_BRUT", "typeMalfaconPbo", "typeMalfaconPM", "typeMalfaconPto",
-            "TYPE_OFFRE", "typePrestation", "typePrestation_BRUT", "typeRaccordement", "typeRaccordement_BRUT", "TYPE_ZONE", "visionAnalysteQualite", "loginAnalysteQu"
+            "TYPE_OFFRE", "D1_TYPE_RACC", "typeRaccordement", "typeRaccordement_BRUT", "TYPE_ZONE", "visionAnalysteQualite", "estDeplacementFacturable", "estDeplacementFacturable_BRUT"
     );
 
     private static final List<String> SAV_COLUMNS = Arrays.asList(
@@ -47,10 +59,10 @@ public class ExportExcelService {
             "estDeplacementFacturable_BRUT", "estGarantieRaccordement", "estGarantieRaccordement_BRUT", "estGarantieSav", "estGarantieSav_BRUT", "estGti4h", "estGti4h_BRUT",
             "estGti8h", "estGti8h_BRUT", "estInterventionJPlus1", "estInterventionJPlus1_BRUT", "estKroe", "estKroe_BRUT", "estSAVGroupe", "estSAVGroupe_BRUT", "nombreClientsRetablis",
             "nombreClientsRetablis_BRUT", "nombreJarretiere", "nombreJarretiere_BRUT", "idTicket", "codeCloture", "codeInsee", "dateIntervention", "departement", "fyt", "identifiant",
-            "identifiantTechnicien", "mainteneurIdentifiant", "oi", "periode", "sousTraitant", "TOTAL", "TOTAL_BRUT", "INSTALLATION", "INSTALLATION_BRUT", "DEPLACEMENT",
-            "DEPLACEMENT_BRUT", "MATERIEL", "MATERIEL_BRUT", "SUPPORT", "SUPPORT_BRUT", "JARRETIERES", "JARRETIERES_BRUT", "loginAnalysteQu", "CODE_FACTURE", "CHAMP_1", "CHAMP_2",
+            "identifiantTechnicien", "mainteneurIdentifiant", "oi", "periode", "sousTraitant", "TOTAL", "TOTAL_BRUT", "INSTALLATION", "INSTALLATION_BRUT",
+            "MATERIEL", "MATERIEL_BRUT", "SUPPORT", "SUPPORT_BRUT", "JARRETIERES", "JARRETIERES_BRUT", "CODE_FACTURE", "CHAMP_1", "CHAMP_2",
             "CHAMP_3", "CHAMP_4", "CHAMP_5", "CHAMP_6", "FLAG_1", "FLAG_2", "FLAG_3", "FLAG_4", "FLAG_5", "FLAG_6", "REF_PTO_OI", "TYPE_DESSERTE_CR", "TYPE_ZONE", "REF_PBO_OI",
-            "typeIntervention_BRUT", "typePrestation", "typePrestation_BRUT", "presenceNacelle", "presenceNacelle_BRUT"
+            "typeIntervention_BRUT", "D1_TYPE_RACC", "presenceNacelle", "presenceNacelle_BRUT"
     );
 
     private static final List<String> RZO_COLUMNS = Arrays.asList(
@@ -67,8 +79,8 @@ public class ExportExcelService {
             "nombreTestContinuitePmPbo", "nombreTestContinuitePmPbo_BRUT", "nombreTestsSynchroOnt", "nombreTestsSynchroOnt_BRUT", "responsabiliteFinale", "responsabiliteFinale_BRUT",
             "tarifMaterielUtilise", "tarifMaterielUtilise_BRUT", "referencePm", "idInterventionReseau", "codeCloture", "codeInsee", "dateIntervention", "departement", "fyt",
             "identifiant", "identifiantTechnicien", "mainteneurIdentifiant", "oi", "periode", "sousTraitant", "TOTAL", "TOTAL_BRUT", "INSTALLATION", "INSTALLATION_BRUT",
-            "DEPLACEMENT", "DEPLACEMENT_BRUT", "MATERIEL", "MATERIEL_BRUT", "JARRETIERES", "JARRETIERES_BRUT", "loginAnalysteQu", "CODE_FACTURE", "CHAMP_1", "CHAMP_2",
-            "typeIntervention_BRUT", "typePrestation", "typePrestation_BRUT"
+            "MATERIEL", "MATERIEL_BRUT", "JARRETIERES", "JARRETIERES_BRUT", "CODE_FACTURE", "CHAMP_1", "CHAMP_2",
+            "typeIntervention_BRUT", "D1_TYPE_RACC", "estDeplacementFacturable", "estDeplacementFacturable_BRUT"
     );
 
     public byte[] generateExcelExport(String source, String period, String type) {
@@ -102,18 +114,24 @@ public class ExportExcelService {
             columnsToUse.addAll(RZO_COLUMNS);
         }
 
+        // 1. On trie tout par ordre alphabétique (Comme Bouygues)
         List<String> sortedColumns = new ArrayList<>(columnsToUse);
-        sortedColumns.sort(String.CASE_INSENSITIVE_ORDER); // Tri alphabétique de A à Z
+        sortedColumns.sort(String.CASE_INSENSITIVE_ORDER);
 
+        // 2. On force les 4 premières colonnes
         List<String> finalHeaders = new ArrayList<>(Arrays.asList(
                 "idIntervention", "typeIntervention", "etat", "commentaire"
         ));
 
+        // 3. On ajoute le reste trié
         for (String col : sortedColumns) {
             if (!finalHeaders.contains(col)) {
                 finalHeaders.add(col);
             }
         }
+
+        // 4. On ajoute les métadonnées Kyntus à la toute fin
+        finalHeaders.addAll(Arrays.asList("N_Version", "Date_Version", "Source_Ingestion"));
 
         log.info("📝 Génération du fichier Excel ({} colonnes)...", finalHeaders.size());
 
@@ -144,112 +162,145 @@ public class ExportExcelService {
                 interventions.sort((a, b) -> b.getId().compareTo(a.getId()));
 
                 for (Intervention inv : interventions) {
-                    Row row = sheet.createRow(rowIdx++);
-
                     if (inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("{}")) {
+                        Row row = sheet.createRow(rowIdx++);
                         row.createCell(finalHeaders.indexOf("idIntervention")).setCellValue(inv.getIdIntervention());
+                        row.createCell(finalHeaders.indexOf("Source_Ingestion")).setCellValue(inv.getSourceIngestion() != null ? inv.getSourceIngestion() : "INCONNUE");
                         continue;
                     }
 
                     try {
                         JsonNode root = objectMapper.readTree(inv.getDetailIntervention());
-                        Map<String, String> rowData = new HashMap<>();
 
-                        // 1. Extraction des versions (Current = index 0 | BRUT = dernier index)
-                        JsonNode currentQualif = null;
-                        JsonNode brutQualif = null;
-
-                        if (root.has("qualificationInterventions") && root.get("qualificationInterventions").isArray() && root.get("qualificationInterventions").size() > 0) {
-                            currentQualif = root.get("qualificationInterventions").get(0);
-                            brutQualif = root.get("qualificationInterventions").get(root.get("qualificationInterventions").size() - 1);
-                        }
-
-                        // 2. Remplissage des champs de base
-                        rowData.put("idIntervention", root.path("identifiant").asText(inv.getIdIntervention()));
-                        rowData.put("identifiant", root.path("identifiant").asText(inv.getIdIntervention()));
-                        rowData.put("mainteneurIdentifiant", root.path("mainteneur").path("identifiant").asText(""));
-                        rowData.put("codeCloture", root.path("codeCloture").asText(""));
-                        rowData.put("codeInsee", root.path("codeInsee").asText(""));
-                        rowData.put("dateIntervention", root.path("dateIntervention").asText(""));
-                        rowData.put("departement", root.path("departement").asText(""));
-                        rowData.put("fyt", root.path("fyt").asText(""));
-                        rowData.put("idWkf", root.path("idWkf").asText(""));
-                        rowData.put("idTicket", root.path("idTicket").asText(""));
-                        rowData.put("referencePm", root.path("referencePm").asText(""));
-                        rowData.put("idInterventionReseau", root.path("idInterventionReseau").asText(""));
-                        rowData.put("identifiantTechnicien", root.path("identifiantTechnicien").asText(""));
-                        rowData.put("oi", root.path("oi").asText(""));
-                        rowData.put("periode", root.path("periode").asText(""));
-                        rowData.put("sousTraitant", root.path("sousTraitant").asText(""));
-
-                        // 3. Propriétés (Array)
-                        if (root.has("proprietes")) {
-                            for (JsonNode p : root.get("proprietes")) {
-                                rowData.put(p.path("nom").asText(""), p.path("valeur").asText(""));
+                        List<JsonNode> versions = new ArrayList<>();
+                        if (root.has("qualificationInterventions") && root.get("qualificationInterventions").isArray()) {
+                            for (JsonNode v : root.get("qualificationInterventions")) {
+                                versions.add(v);
                             }
                         }
 
-                        // 4. Qualification Actuelle (Normal)
-                        if (currentQualif != null) {
-                            rowData.put("typeIntervention", currentQualif.path("typeIntervention").asText(inv.getTypeIntervention()));
-                            rowData.put("etat", currentQualif.path("etat").asText(inv.getEtat()));
+                        // 🛡️ INVERSION : V1 en premier
+                        Collections.reverse(versions);
 
-                            JsonNode etape = currentQualif.path("etapeTraitementFacturation");
-                            rowData.put("commentaire", etape.path("commentaire").asText(""));
-                            rowData.put("loginAnalysteQu", etape.path("acteur").path("login").asText(""));
+                        if (versions.isEmpty()) {
+                            versions.add(objectMapper.createObjectNode());
+                        }
 
-                            Iterator<String> fieldNames = currentQualif.fieldNames();
-                            while (fieldNames.hasNext()) {
-                                String fieldName = fieldNames.next();
-                                if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant").contains(fieldName)) {
-                                    rowData.put(fieldName, currentQualif.path(fieldName).asText(""));
-                                }
-                            }
+                        // 🛡️ SAUVEGARDE DE LA V1 POUR LES COLONNES _BRUT
+                        JsonNode v1 = versions.get(0);
+                        String v1Total = v1.path("coutIntervention").path("montant").asText("0");
+                        String v1TypeRacc = v1.path("typePrestation").asText(""); // typePrestation_BRUT devient D1_TYPE_RACC
 
-                            rowData.put("TOTAL", currentQualif.path("coutIntervention").path("montant").asText("0"));
-                            if (currentQualif.has("elementsFacturationCalcule")) {
-                                for (JsonNode e : currentQualif.get("elementsFacturationCalcule")) {
-                                    rowData.put(e.path("designationElementFacturation").asText(""), e.path("montant").asText("0"));
+                        Map<String, String> v1FactMap = new HashMap<>();
+                        if (v1.has("elementsFacturationCalcule")) {
+                            for (JsonNode e : v1.get("elementsFacturationCalcule")) {
+                                String fName = e.path("designationElementFacturation").asText("");
+                                if (!fName.equals("DEPLACEMENT")) { // On ignore DEPLACEMENT facturation
+                                    v1FactMap.put(fName, e.path("montant").asText("0"));
                                 }
                             }
                         }
 
-                        // 5. Qualification Initiale (BRUT)
-                        if (brutQualif != null) {
-                            Iterator<String> fieldNames = brutQualif.fieldNames();
-                            while (fieldNames.hasNext()) {
-                                String fieldName = fieldNames.next();
-                                if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant").contains(fieldName)) {
-                                    rowData.put(fieldName + "_BRUT", brutQualif.path(fieldName).asText(""));
-                                }
-                            }
-
-                            rowData.put("TOTAL_BRUT", brutQualif.path("coutIntervention").path("montant").asText("0"));
-                            if (brutQualif.has("elementsFacturationCalcule")) {
-                                for (JsonNode e : brutQualif.get("elementsFacturationCalcule")) {
-                                    rowData.put(e.path("designationElementFacturation").asText("") + "_BRUT", e.path("montant").asText("0"));
-                                }
-                            }
+                        Map<String, String> v1QualifMap = new HashMap<>();
+                        Iterator<String> v1FieldNames = v1.fieldNames();
+                        while (v1FieldNames.hasNext()) {
+                            String fieldName = v1FieldNames.next();
+                            v1QualifMap.put(fieldName, v1.path(fieldName).asText(""));
                         }
 
-                        // 6. Écriture dans les cellules Excel
-                        for (int i = 0; i < finalHeaders.size(); i++) {
-                            String colName = finalHeaders.get(i);
-                            String value = rowData.getOrDefault(colName, "");
+                        int versionNumber = 1;
+                        for (JsonNode version : versions) {
+                            Row row = sheet.createRow(rowIdx++);
+                            Map<String, String> rowData = new HashMap<>();
 
-                            Cell cell = row.createCell(i);
+                            // 1. Base Infos
+                            rowData.put("idIntervention", root.path("identifiant").asText(inv.getIdIntervention()));
+                            rowData.put("identifiant", root.path("identifiant").asText(inv.getIdIntervention()));
+                            rowData.put("mainteneurIdentifiant", root.path("mainteneur").path("identifiant").asText(""));
 
-                            try {
-                                if (!value.isEmpty() && value.matches("-?\\d+(\\.\\d+)?")) {
-                                    cell.setCellValue(Double.parseDouble(value));
-                                } else {
+                            // Root fields
+                            rowData.put("codeCloture", root.path("codeCloture").asText(""));
+                            rowData.put("codeInsee", root.path("codeInsee").asText(""));
+                            rowData.put("dateIntervention", root.path("dateIntervention").asText(""));
+                            rowData.put("departement", root.path("departement").asText(""));
+                            rowData.put("fyt", root.path("fyt").asText(""));
+                            rowData.put("idWkf", root.path("idWkf").asText(""));
+                            rowData.put("idTicket", root.path("idTicket").asText(""));
+                            rowData.put("referencePm", root.path("referencePm").asText(""));
+                            rowData.put("idInterventionReseau", root.path("idInterventionReseau").asText(""));
+                            rowData.put("identifiantTechnicien", root.path("identifiantTechnicien").asText(""));
+                            rowData.put("oi", root.path("oi").asText(""));
+                            rowData.put("periode", root.path("periode").asText(""));
+                            rowData.put("sousTraitant", root.path("sousTraitant").asText(""));
+
+                            // 2. Propriétés (Avec correction des fautes de frappe)
+                            if (root.has("proprietes")) {
+                                for (JsonNode p : root.get("proprietes")) {
+                                    String mappedName = mapColumnName(p.path("nom").asText(""));
+                                    rowData.put(mappedName, p.path("valeur").asText(""));
+                                }
+                            }
+
+                            if (!version.isEmpty()) {
+                                rowData.put("typeIntervention", version.path("typeIntervention").asText(inv.getTypeIntervention()));
+                                rowData.put("etat", version.path("etat").asText(inv.getEtat()));
+
+                                JsonNode etape = version.path("etapeTraitementFacturation");
+                                rowData.put("commentaire", etape.path("commentaire").asText(""));
+                                // On supprime loginAnalysteQu et typePrestation comme demandé
+
+                                // 3. Champs dynamiques (Normal + BRUT)
+                                Iterator<String> fieldNames = version.fieldNames();
+                                while (fieldNames.hasNext()) {
+                                    String fieldName = fieldNames.next();
+                                    if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typeIntervention", "typePrestation").contains(fieldName)) {
+                                        rowData.put(fieldName, version.path(fieldName).asText(""));
+                                        rowData.put(fieldName + "_BRUT", v1QualifMap.getOrDefault(fieldName, ""));
+                                    }
+                                }
+
+                                // 4. Facturation (Normal + BRUT)
+                                rowData.put("TOTAL", version.path("coutIntervention").path("montant").asText("0"));
+                                rowData.put("TOTAL_BRUT", v1Total);
+                                rowData.put("D1_TYPE_RACC", v1TypeRacc); // typePrestation_BRUT devient D1_TYPE_RACC
+
+                                if (version.has("elementsFacturationCalcule")) {
+                                    for (JsonNode e : version.get("elementsFacturationCalcule")) {
+                                        String fName = e.path("designationElementFacturation").asText("");
+                                        if (!fName.equals("DEPLACEMENT")) { // On ignore DEPLACEMENT facturation
+                                            rowData.put(fName, e.path("montant").asText("0"));
+                                            rowData.put(fName + "_BRUT", v1FactMap.getOrDefault(fName, "0"));
+                                        }
+                                    }
+                                }
+
+                                rowData.put("N_Version", "V" + versionNumber);
+                                rowData.put("Date_Version", version.path("date").asText(""));
+                            } else {
+                                rowData.put("N_Version", "V1");
+                            }
+
+                            rowData.put("Source_Ingestion", inv.getSourceIngestion() != null ? inv.getSourceIngestion() : "INCONNUE");
+
+                            // 5. Écriture dans les cellules Excel selon l'ordre exact de finalHeaders
+                            for (int i = 0; i < finalHeaders.size(); i++) {
+                                String colName = finalHeaders.get(i);
+                                String value = rowData.getOrDefault(colName, "");
+
+                                Cell cell = row.createCell(i);
+
+                                try {
+                                    if (!value.isEmpty() && value.matches("-?\\d+(\\.\\d+)?")) {
+                                        cell.setCellValue(Double.parseDouble(value));
+                                    } else {
+                                        cell.setCellValue(value);
+                                    }
+                                } catch (Exception e) {
                                     cell.setCellValue(value);
                                 }
-                            } catch (Exception e) {
-                                cell.setCellValue(value);
                             }
+                            versionNumber++;
                         }
-
                     } catch (Exception e) {
                         log.warn("Erreur écriture Excel pour ID {}", inv.getIdIntervention());
                     }
