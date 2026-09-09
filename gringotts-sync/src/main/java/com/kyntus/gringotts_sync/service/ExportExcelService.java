@@ -24,48 +24,70 @@ public class ExportExcelService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public byte[] generateExcelExport(String source, String period, String type) {
-        log.info("🚀 Démarrage de l'export Excel | Source: {} | Période: {} | Type: {}", source, period, type);
+        log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Période: {} | Type: {}", source, period, type);
 
         String cleanPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("_", "-").replace("-M", "-M") : "";
         String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
         String cleanType = (type == null || type.trim().isEmpty()) ? "ALL" : type;
 
-        Set<String> propertyKeys = new LinkedHashSet<>();
-        Set<String> facturationKeys = new LinkedHashSet<>();
-        Set<String> qualifKeys = new LinkedHashSet<>();
+        log.info("🔍 Recherche des IDs correspondants...");
+        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, cleanType);
 
-        int page = 0;
-        int size = 500; // 🛡️ L'FIX HNA : On traite 500 lignes par 500 lignes pour ne jamais saturer la RAM
-        Page<Intervention> interventionPage;
+        if (interventionIds.isEmpty()) {
+            throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");
+        }
 
-        log.info("🔍 PASSE 1 : Découverte dynamique des colonnes...");
-        do {
-            interventionPage = interventionRepository.findAllForExport(cleanSource, cleanPeriod, cleanType, PageRequest.of(page, size));
+        log.info("✅ {} interventions trouvées. Découpage en lots de 500...", interventionIds.size());
+        List<List<Long>> chunks = new ArrayList<>();
+        for (int i = 0; i < interventionIds.size(); i += 500) {
+            chunks.add(interventionIds.subList(i, Math.min(i + 500, interventionIds.size())));
+        }
 
-            for (Intervention inv : interventionPage.getContent()) {
+        // 🚀 PASSE 1 : DÉCOUVERTE DYNAMIQUE DE TOUTES LES COLONNES
+        Set<String> dynamicColumns = new HashSet<>();
+
+        // Liste des champs racines connus dans le JSON
+        List<String> rootFields = Arrays.asList(
+                "codeCloture", "codeInsee", "dateIntervention", "departement", "fyt",
+                "identifiantTechnicien", "oi", "periode", "sousTraitant", "idWkf",
+                "idTicket", "referencePm", "idInterventionReseau"
+        );
+
+        int currentChunk = 1;
+        for (List<Long> chunk : chunks) {
+            List<Intervention> interventions = interventionRepository.findAllById(chunk);
+            for (Intervention inv : interventions) {
                 if (inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("{}")) continue;
                 try {
                     JsonNode root = objectMapper.readTree(inv.getDetailIntervention());
 
+                    // 1. Propriétés
                     if (root.has("proprietes") && root.get("proprietes").isArray()) {
                         for (JsonNode prop : root.get("proprietes")) {
-                            propertyKeys.add(prop.get("nom").asText());
+                            dynamicColumns.add(prop.get("nom").asText());
                         }
                     }
 
+                    // 2. Qualifications (Champs dynamiques + Facturation)
                     if (root.has("qualificationInterventions") && root.get("qualificationInterventions").isArray()) {
-                        for (JsonNode qualif : root.get("qualificationInterventions")) {
-                            if (qualif.has("elementsFacturationCalcule") && qualif.get("elementsFacturationCalcule").isArray()) {
-                                for (JsonNode elem : qualif.get("elementsFacturationCalcule")) {
-                                    facturationKeys.add(elem.get("designationElementFacturation").asText());
-                                }
+                        JsonNode firstQualif = root.get("qualificationInterventions").get(0); // On prend juste la structure
+
+                        // Champs dynamiques (estBranchement, nombreSoudures...)
+                        Iterator<String> fieldNames = firstQualif.fieldNames();
+                        while (fieldNames.hasNext()) {
+                            String fieldName = fieldNames.next();
+                            if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typeIntervention", "typePrestation").contains(fieldName)) {
+                                dynamicColumns.add(fieldName);
+                                dynamicColumns.add(fieldName + "_BRUT"); // On prépare la colonne BRUT
                             }
-                            Iterator<String> fieldNames = qualif.fieldNames();
-                            while (fieldNames.hasNext()) {
-                                String fieldName = fieldNames.next();
-                                if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typeIntervention", "typePrestation").contains(fieldName)) {
-                                    qualifKeys.add(fieldName);
-                                }
+                        }
+
+                        // Facturation (INSTALLATION, MATERIEL...)
+                        if (firstQualif.has("elementsFacturationCalcule") && firstQualif.get("elementsFacturationCalcule").isArray()) {
+                            for (JsonNode elem : firstQualif.get("elementsFacturationCalcule")) {
+                                String factName = elem.get("designationElementFacturation").asText();
+                                dynamicColumns.add(factName);
+                                dynamicColumns.add(factName + "_BRUT");
                             }
                         }
                     }
@@ -73,172 +95,166 @@ public class ExportExcelService {
                     log.warn("Erreur parsing JSON pour intervention ID {}", inv.getIdIntervention());
                 }
             }
-            page++;
-        } while (interventionPage.hasNext());
-
-        if (propertyKeys.isEmpty() && facturationKeys.isEmpty() && qualifKeys.isEmpty() && page == 1 && interventionPage.getContent().isEmpty()) {
-            throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");
         }
 
-        log.info("📝 PASSE 2 : Génération du fichier Excel en cours...");
-        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("Interventions");
+        // 🚀 TRI DES COLONNES (Format exact Bouygues)
+        List<String> finalHeaders = new ArrayList<>(Arrays.asList(
+                "idIntervention", "typeIntervention", "etat", "commentaire", "loginAnalysteQu"
+        ));
 
+        List<String> sortedDynamicColumns = new ArrayList<>(dynamicColumns);
+        sortedDynamicColumns.addAll(rootFields);
+        sortedDynamicColumns.add("TOTAL");
+        sortedDynamicColumns.add("TOTAL_BRUT");
+        sortedDynamicColumns.add("identifiant"); // Parfois Bouygues met l'identifiant à la fin
+
+        // Tri alphabétique (ignorer la casse)
+        sortedDynamicColumns.sort(String.CASE_INSENSITIVE_ORDER);
+
+        // On enlève les doublons au cas où
+        for (String col : sortedDynamicColumns) {
+            if (!finalHeaders.contains(col)) {
+                finalHeaders.add(col);
+            }
+        }
+
+        log.info("📝 PASSE 2 : Génération du fichier Excel ({} colonnes)...", finalHeaders.size());
+
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Export_Gringotts");
+
+            // Styles
             CellStyle headerStyle = workbook.createCellStyle();
-            headerStyle.setFillForegroundColor(IndexedColors.DARK_BLUE.getIndex());
+            headerStyle.setFillForegroundColor(IndexedColors.PALE_BLUE.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             Font headerFont = workbook.createFont();
-            headerFont.setColor(IndexedColors.WHITE.getIndex());
+            headerFont.setColor(IndexedColors.BLACK.getIndex());
             headerFont.setBold(true);
             headerStyle.setFont(headerFont);
 
-            List<String> headers = new ArrayList<>(Arrays.asList(
-                    "ID Local", "ID EPS", "Source Ingestion", "Période", "Date Intervention",
-                    "Technicien", "Sous-Traitant", "Code Clôture", "Code Insee", "Département", "FYT", "ID WKF", "ID Ticket", "Ref PM", "ID Reseau"
-            ));
-
-            headers.addAll(propertyKeys);
-
-            headers.addAll(Arrays.asList(
-                    "N° Version", "Date Version", "État Version", "Type Intervention",
-                    "Type Prestation", "Acteur", "Avis", "Commentaire", "Montant Total (€)", "Montant Total BRUT (€)"
-            ));
-
-            for (String fKey : facturationKeys) {
-                headers.add("Frais " + fKey + " (€)");
-                headers.add("Frais " + fKey + " BRUT (€)");
-            }
-
-            for (String qKey : qualifKeys) {
-                headers.add(qKey);
-                headers.add(qKey + "_BRUT");
-            }
-
+            // Écriture de l'en-tête
             Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.size(); i++) {
+            for (int i = 0; i < finalHeaders.size(); i++) {
                 Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers.get(i));
+                cell.setCellValue(finalHeaders.get(i));
                 cell.setCellStyle(headerStyle);
             }
 
-            page = 0;
+            // Remplissage des données
             int rowIdx = 1;
+            currentChunk = 1;
 
-            do {
-                interventionPage = interventionRepository.findAllForExport(cleanSource, cleanPeriod, cleanType, PageRequest.of(page, size));
+            for (List<Long> chunk : chunks) {
+                log.info("   -> Écriture du lot {}/{}", currentChunk++, chunks.size());
+                List<Intervention> interventions = interventionRepository.findAllById(chunk);
+                interventions.sort((a, b) -> b.getId().compareTo(a.getId()));
 
-                for (Intervention inv : interventionPage.getContent()) {
+                for (Intervention inv : interventions) {
+                    Row row = sheet.createRow(rowIdx++);
+
                     if (inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("{}")) {
-                        Row row = sheet.createRow(rowIdx++);
-                        row.createCell(0).setCellValue(inv.getId());
-                        row.createCell(1).setCellValue(inv.getIdIntervention());
-                        row.createCell(2).setCellValue(inv.getSourceIngestion() != null ? inv.getSourceIngestion() : "INCONNUE");
+                        row.createCell(finalHeaders.indexOf("idIntervention")).setCellValue(inv.getIdIntervention());
                         continue;
                     }
 
                     try {
                         JsonNode root = objectMapper.readTree(inv.getDetailIntervention());
+                        Map<String, String> rowData = new HashMap<>();
 
-                        List<JsonNode> versions = new ArrayList<>();
-                        if (root.has("qualificationInterventions") && root.get("qualificationInterventions").isArray()) {
-                            for (JsonNode v : root.get("qualificationInterventions")) {
-                                versions.add(v);
-                            }
+                        // 1. Extraction des versions (Current = index 0 | BRUT = dernier index)
+                        JsonNode currentQualif = null;
+                        JsonNode brutQualif = null;
+
+                        if (root.has("qualificationInterventions") && root.get("qualificationInterventions").isArray() && root.get("qualificationInterventions").size() > 0) {
+                            currentQualif = root.get("qualificationInterventions").get(0);
+                            brutQualif = root.get("qualificationInterventions").get(root.get("qualificationInterventions").size() - 1);
                         }
 
-                        Collections.reverse(versions);
+                        // 2. Remplissage du dictionnaire de la ligne
+                        rowData.put("idIntervention", root.path("identifiant").asText(""));
+                        rowData.put("identifiant", root.path("identifiant").asText("")); // Au cas où
 
-                        if (versions.isEmpty()) {
-                            versions.add(objectMapper.createObjectNode());
-                        }
+                        if (currentQualif != null) {
+                            rowData.put("typeIntervention", currentQualif.path("typeIntervention").asText(inv.getTypeIntervention()));
+                            rowData.put("etat", currentQualif.path("etat").asText(inv.getEtat()));
 
-                        JsonNode v1 = versions.get(0);
-                        double v1Total = v1.path("coutIntervention").path("montant").asDouble(0.0);
+                            JsonNode etape = currentQualif.path("etapeTraitementFacturation");
+                            rowData.put("commentaire", etape.path("commentaire").asText(""));
+                            rowData.put("loginAnalysteQu", etape.path("acteur").path("login").asText(""));
 
-                        Map<String, Double> v1FactMap = new HashMap<>();
-                        if (v1.has("elementsFacturationCalcule")) {
-                            for (JsonNode e : v1.get("elementsFacturationCalcule")) {
-                                v1FactMap.put(e.path("designationElementFacturation").asText(""), e.path("montant").asDouble(0.0));
-                            }
-                        }
-
-                        Map<String, String> v1QualifMap = new HashMap<>();
-                        for (String qKey : qualifKeys) {
-                            v1QualifMap.put(qKey, v1.path(qKey).asText(""));
-                        }
-
-                        int versionNumber = 1;
-                        for (JsonNode version : versions) {
-                            Row row = sheet.createRow(rowIdx++);
-                            int colIdx = 0;
-
-                            row.createCell(colIdx++).setCellValue(inv.getId());
-                            row.createCell(colIdx++).setCellValue(inv.getIdIntervention());
-                            row.createCell(colIdx++).setCellValue(inv.getSourceIngestion() != null ? inv.getSourceIngestion() : "INCONNUE");
-                            row.createCell(colIdx++).setCellValue(root.path("periode").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("dateIntervention").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("identifiantTechnicien").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("sousTraitant").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("codeCloture").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("codeInsee").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("departement").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("fyt").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("idWkf").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("idTicket").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("referencePm").asText(""));
-                            row.createCell(colIdx++).setCellValue(root.path("idInterventionReseau").asText(""));
-
-                            Map<String, String> propMap = new HashMap<>();
-                            if (root.has("proprietes")) {
-                                for (JsonNode p : root.get("proprietes")) {
-                                    propMap.put(p.path("nom").asText(""), p.path("valeur").asText(""));
+                            // Champs dynamiques (Normal)
+                            Iterator<String> fieldNames = currentQualif.fieldNames();
+                            while (fieldNames.hasNext()) {
+                                String fieldName = fieldNames.next();
+                                if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typeIntervention", "typePrestation").contains(fieldName)) {
+                                    rowData.put(fieldName, currentQualif.path(fieldName).asText(""));
                                 }
                             }
-                            for (String key : propertyKeys) {
-                                row.createCell(colIdx++).setCellValue(propMap.getOrDefault(key, ""));
+
+                            // Facturation (Normal)
+                            rowData.put("TOTAL", currentQualif.path("coutIntervention").path("montant").asText("0"));
+                            if (currentQualif.has("elementsFacturationCalcule")) {
+                                for (JsonNode e : currentQualif.get("elementsFacturationCalcule")) {
+                                    rowData.put(e.path("designationElementFacturation").asText(""), e.path("montant").asText("0"));
+                                }
                             }
-
-                            if (!version.isEmpty()) {
-                                row.createCell(colIdx++).setCellValue("V" + versionNumber);
-                                row.createCell(colIdx++).setCellValue(version.path("date").asText(""));
-                                row.createCell(colIdx++).setCellValue(version.path("etat").asText(inv.getEtat()));
-                                row.createCell(colIdx++).setCellValue(version.path("typeIntervention").asText(inv.getTypeIntervention()));
-                                row.createCell(colIdx++).setCellValue(version.path("typePrestation").asText(""));
-
-                                JsonNode etape = version.path("etapeTraitementFacturation");
-                                row.createCell(colIdx++).setCellValue(etape.path("acteur").path("login").asText(""));
-                                row.createCell(colIdx++).setCellValue(etape.path("avis").asText(""));
-                                row.createCell(colIdx++).setCellValue(etape.path("commentaire").asText(""));
-
-                                row.createCell(colIdx++).setCellValue(version.path("coutIntervention").path("montant").asDouble(0.0));
-                                row.createCell(colIdx++).setCellValue(v1Total);
-
-                                Map<String, Double> currentFactMap = new HashMap<>();
-                                if (version.has("elementsFacturationCalcule")) {
-                                    for (JsonNode e : version.get("elementsFacturationCalcule")) {
-                                        currentFactMap.put(e.path("designationElementFacturation").asText(""), e.path("montant").asDouble(0.0));
-                                    }
-                                }
-                                for (String fKey : facturationKeys) {
-                                    row.createCell(colIdx++).setCellValue(currentFactMap.getOrDefault(fKey, 0.0));
-                                    row.createCell(colIdx++).setCellValue(v1FactMap.getOrDefault(fKey, 0.0));
-                                }
-
-                                for (String qKey : qualifKeys) {
-                                    row.createCell(colIdx++).setCellValue(version.path(qKey).asText(""));
-                                    row.createCell(colIdx++).setCellValue(v1QualifMap.getOrDefault(qKey, ""));
-                                }
-                            } else {
-                                row.createCell(colIdx++).setCellValue("V1");
-                            }
-                            versionNumber++;
                         }
+
+                        if (brutQualif != null) {
+                            // Champs dynamiques (BRUT)
+                            Iterator<String> fieldNames = brutQualif.fieldNames();
+                            while (fieldNames.hasNext()) {
+                                String fieldName = fieldNames.next();
+                                if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typeIntervention", "typePrestation").contains(fieldName)) {
+                                    rowData.put(fieldName + "_BRUT", brutQualif.path(fieldName).asText(""));
+                                }
+                            }
+
+                            // Facturation (BRUT)
+                            rowData.put("TOTAL_BRUT", brutQualif.path("coutIntervention").path("montant").asText("0"));
+                            if (brutQualif.has("elementsFacturationCalcule")) {
+                                for (JsonNode e : brutQualif.get("elementsFacturationCalcule")) {
+                                    rowData.put(e.path("designationElementFacturation").asText("") + "_BRUT", e.path("montant").asText("0"));
+                                }
+                            }
+                        }
+
+                        // 3. Root fields
+                        for (String rootField : rootFields) {
+                            rowData.put(rootField, root.path(rootField).asText(""));
+                        }
+
+                        // 4. Propriétés
+                        if (root.has("proprietes")) {
+                            for (JsonNode p : root.get("proprietes")) {
+                                rowData.put(p.path("nom").asText(""), p.path("valeur").asText(""));
+                            }
+                        }
+
+                        // 5. Écriture dans les cellules Excel selon l'ordre exact de finalHeaders
+                        for (int i = 0; i < finalHeaders.size(); i++) {
+                            String colName = finalHeaders.get(i);
+                            String value = rowData.getOrDefault(colName, "");
+
+                            Cell cell = row.createCell(i);
+
+                            // Essayer de convertir en nombre si possible pour un Excel propre
+                            try {
+                                if (!value.isEmpty() && value.matches("-?\\d+(\\.\\d+)?")) {
+                                    cell.setCellValue(Double.parseDouble(value));
+                                } else {
+                                    cell.setCellValue(value);
+                                }
+                            } catch (Exception e) {
+                                cell.setCellValue(value);
+                            }
+                        }
+
                     } catch (Exception e) {
                         log.warn("Erreur écriture Excel pour ID {}", inv.getIdIntervention());
                     }
                 }
-                page++;
-            } while (interventionPage.hasNext());
+            }
 
             workbook.write(out);
             log.info("✅ Export Excel généré avec succès !");
