@@ -2,25 +2,23 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { fetchStats, startPeriodSync, stopSync, cancelResume, setManualOffset } from '../../services/api';
+import { fetchStats, startPeriodSync, stopSync, fetchPeriodInfo } from '../../services/api';
 
 const IconClock = () => <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const IconTrash = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>;
 const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
-const IconX = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
-const IconEdit = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
+const IconStop = () => <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
 
 export default function TimeMachinePage() {
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
   
   const [isRunning, setIsRunning] = useState(false);
-  const [isActionPending, setIsActionPending] = useState(false); // 🛡️ L'FIX HNA : Anti double-clic
+  const [isActionPending, setIsActionPending] = useState(false); 
   const [currentPeriodActive, setCurrentPeriodActive] = useState<string | null>(null);
   
-  const [savedPeriod, setSavedPeriod] = useState<string | null>(null);
-  const [savedOffset, setSavedOffset] = useState<number>(0);
-  const [savedTotal, setSavedTotal] = useState<number>(0);
+  // 🛡️ L'FIX HNA : State pour stocker l'info du mois sélectionné
+  const [periodInfo, setPeriodInfo] = useState<{offset: number, total: number} | null>(null);
 
   const availableYears = ['2026', '2025', '2024'];
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
@@ -30,14 +28,6 @@ export default function TimeMachinePage() {
     if (data) {
       setIsRunning(data.is_running && data.current_period !== null);
       setCurrentPeriodActive(data.current_period);
-      
-      if (!data.is_running && data.saved_period && data.saved_period !== "") {
-        setSavedPeriod(data.saved_period);
-        setSavedOffset(data.period_offset);
-        setSavedTotal(data.period_total);
-      } else {
-        setSavedPeriod(null);
-      }
     }
   };
 
@@ -46,6 +36,15 @@ export default function TimeMachinePage() {
     const interval = setInterval(loadStatus, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  // 🛡️ L'FIX HNA : Dès qu'on change le mois dans le menu déroulant, on scanne la DB
+  useEffect(() => {
+    const checkPeriod = async () => {
+      const info = await fetchPeriodInfo(currentSelection);
+      setPeriodInfo(info);
+    };
+    checkPeriod();
+  }, [currentSelection]);
 
   const addPeriod = () => {
     if (!selectedPeriods.includes(currentSelection)) {
@@ -65,46 +64,12 @@ export default function TimeMachinePage() {
     setIsActionPending(false);
   };
 
-  const handleResume = async () => {
-    if (savedPeriod) {
-      setIsActionPending(true);
-      await startPeriodSync(savedPeriod);
-      await loadStatus();
-      setIsActionPending(false);
-    }
-  };
-
-  const handleCancelResume = async () => {
-    if (confirm("Voulez-vous vraiment annuler cette session ? L'avancement sera perdu et vous devrez recommencer depuis zéro.")) {
-      await cancelResume();
-      setSavedPeriod(null);
-      loadStatus();
-    }
-  };
-
   const handleStop = async () => {
     setIsActionPending(true);
     await stopSync();
     await loadStatus();
     setIsActionPending(false);
   };
-
-  // 🛡️ L'FIX HNA : Fonction pour forcer l'offset
-  const handleForceOffset = async () => {
-    const newOffset = prompt(`L'offset actuel est de ${savedOffset}.\nEntrez la nouvelle valeur (ex: 16000) :`, savedOffset.toString());
-    if (newOffset !== null) {
-      const val = parseInt(newOffset, 10);
-      if (!isNaN(val) && val >= 0) {
-        await setManualOffset(val);
-        alert(`Offset forcé à ${val} avec succès !`);
-        loadStatus();
-      } else {
-        alert("Valeur invalide.");
-      }
-    }
-  };
-
-  const hasSavedSession = Boolean(!isRunning && savedPeriod && savedPeriod !== "" && savedOffset < savedTotal);
 
   return (
     <div style={{ padding: '40px 20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -124,46 +89,18 @@ export default function TimeMachinePage() {
         </Link>
       </div>
 
-      {/* 🚀 BLOC DE REPRISE (RESUME) */}
-      {hasSavedSession && (
-        <div style={{ background: 'linear-gradient(135deg, #fffbeb, #fef3c7)', border: '1px solid #fde68a', borderRadius: '16px', padding: '24px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px -5px rgba(245, 158, 11, 0.15)' }}>
-          <div>
-            <h3 style={{ margin: '0 0 8px 0', color: '#b45309', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem', fontWeight: 900 }}>
-              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              Session Interrompue
-            </h3>
-            <p style={{ margin: 0, color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '10px' }}>
-              Le téléchargement de la période <strong>{savedPeriod}</strong> s'est arrêté à <strong>{savedOffset.toLocaleString()} / {savedTotal.toLocaleString()}</strong>.
-              
-              {/* 🛡️ L'FIX HNA : Bouton Edit Offset */}
-              <button onClick={handleForceOffset} style={{ background: 'rgba(217, 119, 6, 0.1)', border: '1px solid rgba(217, 119, 6, 0.3)', color: '#b45309', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold', transition: 'all 0.2s' }}>
-                <IconEdit /> Forcer
-              </button>
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={handleCancelResume} disabled={isActionPending} style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca', padding: '12px 20px', borderRadius: '10px', fontWeight: 800, cursor: isActionPending ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s', opacity: isActionPending ? 0.5 : 1 }}>
-              <IconX /> Annuler
-            </button>
-            <button onClick={handleResume} disabled={isActionPending} style={{ background: '#d97706', color: 'white', border: 'none', padding: '12px 24px', borderRadius: '10px', fontWeight: 900, cursor: isActionPending ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 10px rgba(217, 119, 6, 0.3)', transition: 'all 0.2s', opacity: isActionPending ? 0.5 : 1 }}>
-              <IconPlay /> Reprendre
-            </button>
-          </div>
-        </div>
-      )}
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
         
         {/* PANNEAU DE SÉLECTION */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)', opacity: hasSavedSession ? 0.5 : 1, pointerEvents: hasSavedSession ? 'none' : 'auto' }}>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}>
           <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', margin: '0 0 20px 0' }}>1. Sélectionner les mois</h2>
           
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
             <select 
               value={currentSelection} 
               onChange={e => setCurrentSelection(e.target.value)}
               style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: '2px solid #e2e8f0', outline: 'none', background: '#f8fafc', fontWeight: 700, color: '#0f172a' }}
-              disabled={isRunning || hasSavedSession}
+              disabled={isRunning}
             >
               {availableYears.map(year => (
                 <optgroup key={year} label={`Année ${year}`}>
@@ -175,10 +112,22 @@ export default function TimeMachinePage() {
                 </optgroup>
               ))}
             </select>
-            <button onClick={addPeriod} disabled={isRunning || hasSavedSession} style={{ padding: '0 24px', background: isRunning || hasSavedSession ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 900, cursor: isRunning || hasSavedSession ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
+            <button onClick={addPeriod} disabled={isRunning} style={{ padding: '0 24px', background: isRunning ? '#cbd5e1' : '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 900, cursor: isRunning ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
               Ajouter
             </button>
           </div>
+
+          {/* 🛡️ L'FIX HNA : Le Scanner en temps réel du mois sélectionné */}
+          {periodInfo && (
+            <div style={{ marginBottom: '25px', padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 'bold',
+              background: (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#ecfdf5' : (periodInfo.offset > 0 ? '#fffbeb' : '#eff6ff'),
+              color: (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#059669' : (periodInfo.offset > 0 ? '#d97706' : '#2563eb'),
+              border: `1px solid ${(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#a7f3d0' : (periodInfo.offset > 0 ? '#fde68a' : '#bfdbfe')}`
+            }}>
+              {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '✅ Terminé :' : (periodInfo.offset > 0 ? '⚠️ À reprendre :' : '🆕 Nouveau :')}
+              <span style={{ color: '#0f172a' }}>{periodInfo.offset.toLocaleString()} / {periodInfo.total > 0 ? periodInfo.total.toLocaleString() : '?'} EPS</span>
+            </div>
+          )}
 
           <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Liste d'attente ({selectedPeriods.length})</h3>
           
@@ -188,7 +137,7 @@ export default function TimeMachinePage() {
             {selectedPeriods.map(p => (
               <div key={p} style={{ background: '#e0e7ff', color: '#4338ca', padding: '8px 14px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid #c7d2fe' }}>
                 {p}
-                {!isRunning && !hasSavedSession && (
+                {!isRunning && (
                   <button onClick={() => removePeriod(p)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, display: 'flex' }}>
                     <IconTrash />
                   </button>
@@ -212,18 +161,16 @@ export default function TimeMachinePage() {
               <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#fcd34d', letterSpacing: '-1px', textShadow: '0 4px 15px rgba(252, 211, 77, 0.2)' }}>{currentPeriodActive || 'Chargement...'}</div>
               
               <button onClick={handleStop} disabled={isActionPending} style={{ marginTop: '40px', width: '100%', padding: '16px', background: 'linear-gradient(135deg, #ef4444, #b91c1c)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: isActionPending ? 'not-allowed' : 'pointer', boxShadow: '0 10px 20px rgba(239,68,68,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px', opacity: isActionPending ? 0.5 : 1 }}>
-                Stopper le processus
+                <IconStop /> Stopper le processus
               </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
               <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '30px', textAlign: 'center', fontWeight: 500 }}>
-                {hasSavedSession 
-                  ? "Une session est en attente. Veuillez la reprendre ou l'annuler avant de lancer une nouvelle aspiration."
-                  : "Le moteur va aspirer les périodes une par une. L'offset sera remis à zéro à chaque nouveau mois pour garantir qu'aucune erreur 500 ne se produise côté Bouygues."}
+                Le moteur va aspirer les périodes une par une. L'offset sera sauvegardé automatiquement pour chaque mois. Si vous relancez un mois déjà entamé, il reprendra exactement là où il s'est arrêté.
               </p>
-              <button onClick={handleStart} disabled={isActionPending || hasSavedSession || selectedPeriods.length === 0} style={{ width: '100%', padding: '16px', background: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? '#334155' : 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? '#64748b' : 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? 'not-allowed' : 'pointer', boxShadow: isActionPending || hasSavedSession || selectedPeriods.length === 0 ? 'none' : '0 10px 20px rgba(139,92,246,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                🚀 DÉMARRER L'ASPIRATION
+              <button onClick={handleStart} disabled={isActionPending || selectedPeriods.length === 0} style={{ width: '100%', padding: '16px', background: selectedPeriods.length === 0 ? '#334155' : 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: selectedPeriods.length === 0 ? '#64748b' : 'white', border: 'none', borderRadius: '12px', fontWeight: 900, fontSize: '1rem', cursor: selectedPeriods.length === 0 ? 'not-allowed' : 'pointer', boxShadow: selectedPeriods.length === 0 ? 'none' : '0 10px 20px rgba(139,92,246,0.3)', transition: 'all 0.2s', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                <IconPlay /> DÉMARRER L'ASPIRATION
               </button>
             </div>
           )}

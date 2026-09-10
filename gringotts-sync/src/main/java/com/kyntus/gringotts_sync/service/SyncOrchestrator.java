@@ -8,7 +8,6 @@ import com.kyntus.gringotts_sync.dto.ImportResponse;
 import com.kyntus.gringotts_sync.integration.PhpApiClient;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -52,9 +51,6 @@ public class SyncOrchestrator {
 
     private static final String OFFSET_KEY = "bt_api_offset";
     private static final String TOTAL_KEY = "bt_total_api";
-    private static final String PERIOD_OFFSET_KEY = "bt_api_offset_period";
-    private static final String PERIOD_TOTAL_KEY = "bt_total_api_period";
-    private static final String PERIOD_CURRENT_KEY = "bt_active_period_name";
 
     private static final int IONOS_EXPORT_BATCH = 300;
     private static final int RADAR_BATCH = 100;
@@ -65,21 +61,6 @@ public class SyncOrchestrator {
 
     private Thread radarThread;
     private Thread healerThread;
-
-    // 🛡️ L'FIX HNA (MASTERCLASS) : Auto-Recovery au démarrage du serveur
-    @PostConstruct
-    public void init() {
-        String savedPeriod = getSavedStateString(PERIOD_CURRENT_KEY);
-        int savedOffset = getSavedState(PERIOD_OFFSET_KEY);
-        int savedTotal = getSavedState(PERIOD_TOTAL_KEY);
-
-        if (savedPeriod != null && !savedPeriod.isEmpty() && savedOffset > 0 && savedOffset < savedTotal) {
-            log.warn("🔄 CRASH RECOVERY : Session Time Machine interrompue détectée pour la période {} (Offset: {}/{})", savedPeriod, savedOffset, savedTotal);
-            this.currentPeriod = savedPeriod; // On charge en RAM
-            this.radarStatus = "Session interrompue (Prêt pour reprise)";
-            addAlert("[SYSTEM] Redémarrage serveur. Reprise disponible pour " + savedPeriod);
-        }
-    }
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -104,14 +85,6 @@ public class SyncOrchestrator {
         log.warn("INTERFACE_ALERT: {}", message);
     }
 
-    public synchronized void cancelResume() {
-        saveState(PERIOD_OFFSET_KEY, 0);
-        saveState(PERIOD_TOTAL_KEY, 0);
-        saveStateString(PERIOD_CURRENT_KEY, "");
-        this.currentPeriod = null; // On vide la RAM
-        addAlert("[TIME MACHINE] Session en pause annulée.");
-    }
-
     public synchronized void startPeriodSync(List<String> periods) {
         if (isRunning || (radarThread != null && radarThread.isAlive())) {
             log.warn("🚨 Tentative de démarrage bloquée : Un processus Radar est déjà en cours !");
@@ -120,18 +93,16 @@ public class SyncOrchestrator {
 
         periodQueue.clear();
         periodQueue.addAll(periods);
+        currentPeriod = periodQueue.poll();
+        totalPeriodProcessed = 0;
 
-        // Si on a cliqué sur "Reprendre", currentPeriod est déjà en RAM grâce au @PostConstruct
-        if (currentPeriod != null && periods.contains(currentPeriod)) {
-            log.info("Reprise de la période : {}", currentPeriod);
-            addAlert("[TIME MACHINE] Reprise de la période " + currentPeriod + " à l'offset " + getSavedState(PERIOD_OFFSET_KEY));
+        // 🛡️ L'FIX HNA : On vérifie l'offset spécifique de CE mois
+        int savedOffset = getSavedState("offset_" + currentPeriod);
+
+        if (savedOffset > 0) {
+            log.info("Reprise de la période : {} à l'offset {}", currentPeriod, savedOffset);
+            addAlert("[TIME MACHINE] Reprise de la période " + currentPeriod + " à l'offset " + savedOffset);
         } else {
-            // Nouvelle session
-            currentPeriod = periodQueue.poll();
-            saveState(PERIOD_OFFSET_KEY, 0);
-            saveState(PERIOD_TOTAL_KEY, 0);
-            saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
-            totalPeriodProcessed = 0;
             log.info("Démarrage TIME MACHINE avec {} périodes. Première: {}", periods.size(), currentPeriod);
             addAlert("[TIME MACHINE] Démarrage de la période " + currentPeriod);
         }
@@ -200,11 +171,8 @@ public class SyncOrchestrator {
 
         interventionRepository.truncateInterventions();
 
-        saveState(OFFSET_KEY, 0);
-        saveState(TOTAL_KEY, 0);
-        saveState(PERIOD_OFFSET_KEY, 0);
-        saveState(PERIOD_TOTAL_KEY, 0);
-        saveStateString(PERIOD_CURRENT_KEY, "");
+        // 🛡️ L'FIX HNA : On supprime TOUS les offsets de la base de données
+        syncStateRepository.deleteAll();
 
         totalRadarProcessed = 0;
         totalHealerProcessed = 0;
@@ -235,8 +203,9 @@ public class SyncOrchestrator {
         radarStatus = "En cours d'aspiration";
         log.info("Thread Radar Circulaire Démarré.");
 
-        int localOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
-        int localTotalApi = currentPeriod != null ? getSavedState(PERIOD_TOTAL_KEY) : getSavedState(TOTAL_KEY);
+        // 🛡️ L'FIX HNA : On charge l'offset spécifique au mois en cours
+        int localOffset = currentPeriod != null ? getSavedState("offset_" + currentPeriod) : getSavedState(OFFSET_KEY);
+        int localTotalApi = currentPeriod != null ? getSavedState("total_" + currentPeriod) : getSavedState(TOTAL_KEY);
 
         while (isRunning) {
             try {
@@ -311,7 +280,7 @@ public class SyncOrchestrator {
 
                 if (!isRunning) break;
 
-                int dbOffset = currentPeriod != null ? getSavedState(PERIOD_OFFSET_KEY) : getSavedState(OFFSET_KEY);
+                int dbOffset = currentPeriod != null ? getSavedState("offset_" + currentPeriod) : getSavedState(OFFSET_KEY);
                 if (Math.abs(dbOffset - localOffset) > 1000) {
                     localOffset = dbOffset;
                     log.warn("🔄 Offset forcé détecté. Mise à jour de la RAM vers : {}", localOffset);
@@ -322,25 +291,20 @@ public class SyncOrchestrator {
                         log.info("Période {} terminée à 100%.", currentPeriod);
                         addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
 
-                        saveStateString(PERIOD_CURRENT_KEY, "");
                         currentPeriod = periodQueue.poll();
 
                         if (currentPeriod == null) {
                             log.info("Toutes les périodes ont été traitées. Arrêt.");
                             addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées !");
-                            saveState(PERIOD_OFFSET_KEY, 0);
-                            saveState(PERIOD_TOTAL_KEY, 0);
                             stopSync();
                             break;
                         } else {
                             log.info("Passage à la période suivante: {}", currentPeriod);
                             addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
-                            saveState(PERIOD_OFFSET_KEY, 0);
-                            saveState(PERIOD_TOTAL_KEY, 0);
-                            saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
 
-                            localOffset = 0;
-                            localTotalApi = 0;
+                            // 🛡️ L'FIX HNA : On charge l'offset du NOUVEAU mois
+                            localOffset = getSavedState("offset_" + currentPeriod);
+                            localTotalApi = getSavedState("total_" + currentPeriod);
                             totalProcessedSinceStart = 0;
                             syncStartTime = System.currentTimeMillis();
                             sleep(2000);
@@ -375,8 +339,8 @@ public class SyncOrchestrator {
                                 localOffset = localTotalApi;
 
                                 if (currentPeriod != null) {
-                                    saveState(PERIOD_OFFSET_KEY, localOffset);
-                                    saveState(PERIOD_TOTAL_KEY, localTotalApi);
+                                    saveState("offset_" + currentPeriod, localOffset);
+                                    saveState("total_" + currentPeriod, localTotalApi);
                                 } else {
                                     saveState(OFFSET_KEY, localOffset);
                                     saveState(TOTAL_KEY, localTotalApi);
@@ -389,8 +353,8 @@ public class SyncOrchestrator {
                             localTotalApi = importResp.getTotalApi();
 
                             if (currentPeriod != null) {
-                                saveState(PERIOD_OFFSET_KEY, localOffset);
-                                saveState(PERIOD_TOTAL_KEY, localTotalApi);
+                                saveState("offset_" + currentPeriod, localOffset);
+                                saveState("total_" + currentPeriod, localTotalApi);
                                 totalPeriodProcessed += importResp.getBatchCount();
                             } else {
                                 saveState(OFFSET_KEY, localOffset);

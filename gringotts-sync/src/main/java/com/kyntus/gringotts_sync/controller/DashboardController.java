@@ -5,7 +5,7 @@ import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
-import com.kyntus.gringotts_sync.service.ExportExcelService; // 🛡️ JDID
+import com.kyntus.gringotts_sync.service.ExportExcelService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -14,8 +14,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -29,7 +27,7 @@ public class DashboardController {
     private final InterventionRepository interventionRepository;
     private final SyncStateRepository syncStateRepository;
     private final SyncOrchestrator syncOrchestrator;
-    private final ExportExcelService exportExcelService; // 🛡️ JDID
+    private final ExportExcelService exportExcelService;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
@@ -39,11 +37,18 @@ public class DashboardController {
         stats.put("current_bt_offset", syncStateRepository.findById("bt_api_offset").map(SyncState::getStateValue).orElse(0));
         stats.put("total_api", syncStateRepository.findById("bt_total_api").map(SyncState::getStateValue).orElse(0));
 
-        stats.put("period_offset", syncStateRepository.findById("bt_api_offset_period").map(SyncState::getStateValue).orElse(0));
-        stats.put("period_total", syncStateRepository.findById("bt_total_api_period").map(SyncState::getStateValue).orElse(0));
+        // 🛡️ L'FIX HNA : On récupère l'offset du mois en cours de traitement
+        String currentPeriod = syncOrchestrator.getCurrentPeriod();
+        if (currentPeriod != null) {
+            stats.put("period_offset", syncStateRepository.findById("offset_" + currentPeriod).map(SyncState::getStateValue).orElse(0));
+            stats.put("period_total", syncStateRepository.findById("total_" + currentPeriod).map(SyncState::getStateValue).orElse(0));
+        } else {
+            stats.put("period_offset", 0);
+            stats.put("period_total", 0);
+        }
+
         stats.put("period_processed_total", syncOrchestrator.getTotalPeriodProcessed());
-        stats.put("current_period", syncOrchestrator.getCurrentPeriod());
-        stats.put("saved_period", syncStateRepository.findById("bt_active_period_name").map(SyncState::getStateValueStr).orElse(null));
+        stats.put("current_period", currentPeriod);
 
         stats.put("is_running", syncOrchestrator.isRunning());
         stats.put("eta", syncOrchestrator.getCurrentEta());
@@ -60,24 +65,38 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
+    // 🛡️ NOUVEL ENDPOINT : Permet au frontend de savoir où en est un mois spécifique avant de le lancer
+    @GetMapping("/period-info")
+    public ResponseEntity<Map<String, Object>> getPeriodInfo(@RequestParam String period) {
+        int offset = syncStateRepository.findById("offset_" + period).map(SyncState::getStateValue).orElse(0);
+        int total = syncStateRepository.findById("total_" + period).map(SyncState::getStateValue).orElse(0);
+        return ResponseEntity.ok(Map.of(
+                "period", period,
+                "offset", offset,
+                "total", total
+        ));
+    }
+
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
-            @RequestParam(required = false, defaultValue = "") String search,
+            @RequestParam(required = false) String search,
             @RequestParam(required = false, defaultValue = "ALL") String source,
-            @RequestParam(required = false, defaultValue = "") String period,
+            @RequestParam(required = false) String period,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        String cleanPeriod = "";
-        if (period != null && !period.isEmpty()) {
+        String cleanPeriod = null;
+        if (period != null && !period.trim().isEmpty()) {
             cleanPeriod = period.replace("_", "-").replace("-M", "-M");
         }
 
+        String cleanSearch = null;
+        if (search != null && !search.trim().isEmpty()) {
+            cleanSearch = search.trim();
+        }
+
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                search == null ? "" : search,
-                source == null ? "ALL" : source,
-                cleanPeriod,
-                PageRequest.of(page, size)
+                cleanSearch, source, cleanPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
@@ -90,7 +109,6 @@ public class DashboardController {
 
         try {
             byte[] excelData = exportExcelService.generateExcelExport(source, period, type);
-
             String filename = "Export_Gringotts_" + (type.equals("ALL") ? "Global" : type) +
                     "_" + (source.equals("ALL") ? "ToutesSources" : source) +
                     ((period == null || period.isEmpty()) ? "" : "_" + period) + ".xlsx";
@@ -100,7 +118,6 @@ public class DashboardController {
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                     .body(excelData);
         } catch (Throwable t) {
-            // 🛡️ L'FIX HNA : On attrape TOUT (même les OutOfMemoryError) et on logge en ROUGE
             System.err.println("❌ ERREUR CRITIQUE DANS LE CONTROLEUR EXPORT : " + t.getMessage());
             t.printStackTrace();
             return ResponseEntity.internalServerError().build();
@@ -144,12 +161,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Healer arrêté."));
     }
 
-    @PostMapping("/cancel-resume")
-    public ResponseEntity<Map<String, String>> cancelResume() {
-        syncOrchestrator.cancelResume();
-        return ResponseEntity.ok(Map.of("message", "Session annulée."));
-    }
-
     @PostMapping("/reset")
     public ResponseEntity<Map<String, String>> resetSync() {
         new Thread(syncOrchestrator::purgeDatabase).start();
@@ -170,8 +181,9 @@ public class DashboardController {
 
     @PostMapping("/offset/{value}")
     public ResponseEntity<Map<String, Object>> setManualOffset(@PathVariable int value) {
-        if (syncOrchestrator.getCurrentPeriod() != null || syncStateRepository.findById("bt_active_period_name").map(SyncState::getStateValueStr).orElse("").length() > 0) {
-            SyncState state = syncStateRepository.findById("bt_api_offset_period").orElse(new SyncState("bt_api_offset_period", value, null));
+        String currentPeriod = syncOrchestrator.getCurrentPeriod();
+        if (currentPeriod != null) {
+            SyncState state = syncStateRepository.findById("offset_" + currentPeriod).orElse(new SyncState("offset_" + currentPeriod, value, null));
             state.setStateValue(value);
             syncStateRepository.save(state);
         } else {

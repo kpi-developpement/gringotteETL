@@ -9,7 +9,6 @@ export interface SyncStats {
   period_total: number;
   period_processed_total: number;
   current_period: string | null;
-  saved_period: string | null;
 
   is_running: boolean;
   eta: string;
@@ -50,6 +49,15 @@ export const fetchStats = async (): Promise<SyncStats | null> => {
   } catch (error) { return null; }
 };
 
+// 🛡️ L'FIX HNA : L'endpoint qui donne l'état exact d'un mois avant de le lancer
+export const fetchPeriodInfo = async (period: string): Promise<{ offset: number, total: number } | null> => {
+  try {
+    const response = await fetch(`${API_URL}/period-info?period=${period}`, { method: 'GET', cache: 'no-store' });
+    if (!response.ok) throw new Error('Erreur réseau');
+    return await response.json();
+  } catch (error) { return null; }
+};
+
 export const startSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/start`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
@@ -82,10 +90,6 @@ export const startHealer = async (mode: string): Promise<boolean> => {
 
 export const stopHealer = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/stop-healer`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
-};
-
-export const cancelResume = async (): Promise<boolean> => {
-  try { const res = await fetch(`${API_URL}/cancel-resume`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
 export const resetSync = async (): Promise<boolean> => {
@@ -136,7 +140,6 @@ export const fetchInterventions = async (
     return await res.json();
   } catch (error) { return null; }
 };
-
 
 export const exportInterventionsExcel = async (source: string, period: string, type: string): Promise<void> => {
   try {
