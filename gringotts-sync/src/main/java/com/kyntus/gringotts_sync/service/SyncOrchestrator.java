@@ -8,6 +8,7 @@ import com.kyntus.gringotts_sync.dto.ImportResponse;
 import com.kyntus.gringotts_sync.integration.PhpApiClient;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,7 +34,7 @@ public class SyncOrchestrator {
 
     private volatile boolean isRunning = false;
     private volatile boolean isHealing = false;
-    private volatile String healerMode = "RADAR"; // 🛡️ L'FIX HNA : Mode par défaut
+    private volatile String healerMode = "RADAR";
 
     private volatile int healTotal = 0;
     private volatile int healCurrent = 0;
@@ -65,6 +66,21 @@ public class SyncOrchestrator {
     private Thread radarThread;
     private Thread healerThread;
 
+    // 🛡️ L'FIX HNA (MASTERCLASS) : Auto-Recovery au démarrage du serveur
+    @PostConstruct
+    public void init() {
+        String savedPeriod = getSavedStateString(PERIOD_CURRENT_KEY);
+        int savedOffset = getSavedState(PERIOD_OFFSET_KEY);
+        int savedTotal = getSavedState(PERIOD_TOTAL_KEY);
+
+        if (savedPeriod != null && !savedPeriod.isEmpty() && savedOffset > 0 && savedOffset < savedTotal) {
+            log.warn("🔄 CRASH RECOVERY : Session Time Machine interrompue détectée pour la période {} (Offset: {}/{})", savedPeriod, savedOffset, savedTotal);
+            this.currentPeriod = savedPeriod; // On charge en RAM
+            this.radarStatus = "Session interrompue (Prêt pour reprise)";
+            addAlert("[SYSTEM] Redémarrage serveur. Reprise disponible pour " + savedPeriod);
+        }
+    }
+
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
     public String getHealerMode() { return healerMode; }
@@ -92,6 +108,7 @@ public class SyncOrchestrator {
         saveState(PERIOD_OFFSET_KEY, 0);
         saveState(PERIOD_TOTAL_KEY, 0);
         saveStateString(PERIOD_CURRENT_KEY, "");
+        this.currentPeriod = null; // On vide la RAM
         addAlert("[TIME MACHINE] Session en pause annulée.");
     }
 
@@ -103,14 +120,14 @@ public class SyncOrchestrator {
 
         periodQueue.clear();
         periodQueue.addAll(periods);
-        currentPeriod = periodQueue.poll();
 
-        String savedPeriod = getSavedStateString(PERIOD_CURRENT_KEY);
-
-        if (currentPeriod != null && currentPeriod.equals(savedPeriod)) {
+        // Si on a cliqué sur "Reprendre", currentPeriod est déjà en RAM grâce au @PostConstruct
+        if (currentPeriod != null && periods.contains(currentPeriod)) {
             log.info("Reprise de la période : {}", currentPeriod);
             addAlert("[TIME MACHINE] Reprise de la période " + currentPeriod + " à l'offset " + getSavedState(PERIOD_OFFSET_KEY));
         } else {
+            // Nouvelle session
+            currentPeriod = periodQueue.poll();
             saveState(PERIOD_OFFSET_KEY, 0);
             saveState(PERIOD_TOTAL_KEY, 0);
             saveStateString(PERIOD_CURRENT_KEY, currentPeriod);
@@ -153,7 +170,6 @@ public class SyncOrchestrator {
         addAlert("[SYSTEM] Arrêt du système demandé");
     }
 
-    // 🛡️ L'FIX HNA : Démarrage indépendant du Healer
     public synchronized void startHealer(String mode) {
         if (isHealing || (healerThread != null && healerThread.isAlive())) {
             log.warn("🚨 Healer déjà en cours d'exécution !");
@@ -169,7 +185,6 @@ public class SyncOrchestrator {
         healerThread.start();
     }
 
-    // 🛡️ L'FIX HNA : Arrêt indépendant du Healer
     public synchronized void stopHealer() {
         isHealing = false;
         healerStatus = "Arrêt demandé";
@@ -460,7 +475,6 @@ public class SyncOrchestrator {
                 healTotal = (int) missingCount;
                 healCurrent = 0;
 
-                // 🛡️ L'FIX HNA : On choisit la requête selon la priorité (Radar = DESC, Time Machine = ASC)
                 List<Intervention> chunk;
                 if ("TIME_MACHINE".equals(healerMode)) {
                     chunk = interventionRepository.findInterventionsWithMissingDetailsAsc();

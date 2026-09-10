@@ -15,10 +15,12 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
+    // 🛡️ L'FIX HNA (MASTERCLASS) : Utilisation de COALESCE pour que les EPS sans détails (NULL)
+    // ne soient pas exclus des résultats quand on ne filtre pas par période.
     @Query("SELECT i FROM Intervention i WHERE " +
             "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period = '' OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) " +
+            "(:period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) " +
             "ORDER BY i.id DESC")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
@@ -27,14 +29,14 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
             Pageable pageable
     );
 
-    // 🛡️ L'FIX HNA : La méthode qui manquait ! Elle récupère juste les IDs (Long) pour ne pas exploser la RAM
+    // 🛡️ L'FIX HNA : Même chose pour l'export Excel !
     @Query("SELECT i.id FROM Intervention i WHERE " +
             "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period = '' OR i.detailIntervention LIKE CONCAT('%', CAST(:period AS text), '%') OR i.payloadRecu LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
+            "(:period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
             "(:type = 'ALL' OR i.typeIntervention = :type OR " +
-            "(:type = 'RACC' AND i.detailIntervention LIKE '%QualificationRaccordement%') OR " +
-            "(:type = 'SAV' AND i.detailIntervention LIKE '%QualificationSAV%') OR " +
-            "(:type = 'RZO' AND i.detailIntervention LIKE '%QualificationReseau%')) " +
+            "(:type = 'RACC' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationRaccordement%') OR " +
+            "(:type = 'SAV' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationSAV%') OR " +
+            "(:type = 'RZO' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationReseau%')) " +
             "ORDER BY i.id DESC")
     List<Long> findIdsForExport(
             @Param("source") String source,
