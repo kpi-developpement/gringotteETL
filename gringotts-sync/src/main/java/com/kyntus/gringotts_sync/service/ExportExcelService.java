@@ -23,7 +23,7 @@ public class ExportExcelService {
     private final InterventionRepository interventionRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // 🛡️ L'FIX HNA : Dictionnaire de traduction pour corriger les fautes du JSON Bouygues
+    // 🛡️ Dictionnaire de traduction pour corriger les fautes du JSON Bouygues
     private String mapColumnName(String original) {
         if (original == null) return "";
         switch (original) {
@@ -35,7 +35,7 @@ public class ExportExcelService {
         }
     }
 
-    // 🛡️ LISTES EXHAUSTIVES DES COLONNES PAR TYPE (Pour forcer leur affichage même si vides)
+    // 🛡️ LISTES EXHAUSTIVES DES COLONNES PAR TYPE
     private static final List<String> RACC_COLUMNS = Arrays.asList(
             "A1_CLES_CTRL", "A2_DOUBLONS", "A3_FIN_CMD", "ANALYSE_PHOTO", "B1_FORMAT_CHAMPS", "C1_NOK_POSE", "C1_PHOTO", "C2_DOUTE_POSE", "C3_DEPORT",
             "categorie", "categorieRaccordementLogementAnalyse", "CHAMP_1", "CHAMP_2", "CHAMP_3", "CHAMP_4", "CHAMP_5", "CHAMP_6", "codeCloture", "CODE_DECHARGE_TECH",
@@ -49,8 +49,9 @@ public class ExportExcelService {
             "longueurGoulottes", "longueurGoulottes_BRUT", "mainteneurIdentifiant", "MATERIEL", "MATERIEL_BRUT", "MES", "MES_BRUT", "montantDevis", "montantDevis_BRUT",
             "nombreRepeteursPoses", "nombreRepeteursPoses_BRUT", "idWkf", "oi", "periode", "presenceNacelle", "presenceNacelle_BRUT", "presenceNacelleAnalysePhoto", "PRESTATION_OI",
             "REF_PBO_CR", "REF_PBO_OI", "REF_PTO_CR", "REF_PTO_OI", "sousCategorieControlePhoto", "sousTraitant", "statutAnalysePhoto", "SUPPORT", "SUPPORT_BRUT", "TARIF_CALCULE",
-            "TARIF_RECALCULE", "TOTAL", "TOTAL_BRUT", "TYPE_DESSERTE_OI", "TYPE_INSTALLATION", "typeIntervention_BRUT", "typeMalfaconPbo", "typeMalfaconPM", "typeMalfaconPto",
-            "TYPE_OFFRE", "D1_TYPE_RACC", "typeRaccordement", "typeRaccordement_BRUT", "TYPE_ZONE", "visionAnalysteQualite", "estDeplacementFacturable", "estDeplacementFacturable_BRUT"
+            "TARIF_RECALCULE", "TOTAL", "TOTAL_BRUT", "TYPE_DESSERTE_OI", "TYPE_INSTALLATION", "typeIntervention", "typeIntervention_BRUT", "typeMalfaconPbo", "typeMalfaconPM", "typeMalfaconPto",
+            "TYPE_OFFRE", "D1_TYPE_RACC", "typeRaccordement", "typeRaccordement_BRUT", "TYPE_ZONE", "visionAnalysteQualite", "estDeplacementFacturable", "estDeplacementFacturable_BRUT",
+            "DEPLACEMENT", "DEPLACEMENT_BRUT"
     );
 
     private static final List<String> SAV_COLUMNS = Arrays.asList(
@@ -62,7 +63,7 @@ public class ExportExcelService {
             "identifiantTechnicien", "mainteneurIdentifiant", "oi", "periode", "sousTraitant", "TOTAL", "TOTAL_BRUT", "INSTALLATION", "INSTALLATION_BRUT",
             "MATERIEL", "MATERIEL_BRUT", "SUPPORT", "SUPPORT_BRUT", "JARRETIERES", "JARRETIERES_BRUT", "CODE_FACTURE", "CHAMP_1", "CHAMP_2",
             "CHAMP_3", "CHAMP_4", "CHAMP_5", "CHAMP_6", "FLAG_1", "FLAG_2", "FLAG_3", "FLAG_4", "FLAG_5", "FLAG_6", "REF_PTO_OI", "TYPE_DESSERTE_CR", "TYPE_ZONE", "REF_PBO_OI",
-            "typeIntervention_BRUT", "D1_TYPE_RACC", "presenceNacelle", "presenceNacelle_BRUT"
+            "typeIntervention", "typeIntervention_BRUT", "D1_TYPE_RACC", "presenceNacelle", "presenceNacelle_BRUT", "DEPLACEMENT", "DEPLACEMENT_BRUT"
     );
 
     private static final List<String> RZO_COLUMNS = Arrays.asList(
@@ -80,7 +81,7 @@ public class ExportExcelService {
             "tarifMaterielUtilise", "tarifMaterielUtilise_BRUT", "referencePm", "idInterventionReseau", "codeCloture", "codeInsee", "dateIntervention", "departement", "fyt",
             "identifiant", "identifiantTechnicien", "mainteneurIdentifiant", "oi", "periode", "sousTraitant", "TOTAL", "TOTAL_BRUT", "INSTALLATION", "INSTALLATION_BRUT",
             "MATERIEL", "MATERIEL_BRUT", "JARRETIERES", "JARRETIERES_BRUT", "CODE_FACTURE", "CHAMP_1", "CHAMP_2",
-            "typeIntervention_BRUT", "D1_TYPE_RACC", "estDeplacementFacturable", "estDeplacementFacturable_BRUT"
+            "typeIntervention", "typeIntervention_BRUT", "D1_TYPE_RACC", "estDeplacementFacturable", "estDeplacementFacturable_BRUT", "DEPLACEMENT", "DEPLACEMENT_BRUT"
     );
 
     public byte[] generateExcelExport(String source, String period, String type) {
@@ -103,7 +104,7 @@ public class ExportExcelService {
             chunks.add(interventionIds.subList(i, Math.min(i + 500, interventionIds.size())));
         }
 
-        // 🚀 CRÉATION DE L'EN-TÊTE EXACT (Tri Alphabétique après les 4 premières)
+        // 🚀 CRÉATION DE L'EN-TÊTE EXACT
         Set<String> columnsToUse = new HashSet<>();
         if (cleanType.equals("RACC")) columnsToUse.addAll(RACC_COLUMNS);
         else if (cleanType.equals("SAV")) columnsToUse.addAll(SAV_COLUMNS);
@@ -114,13 +115,14 @@ public class ExportExcelService {
             columnsToUse.addAll(RZO_COLUMNS);
         }
 
-        // 1. On trie tout par ordre alphabétique (Comme Bouygues)
+        // 1. On trie tout par ordre alphabétique
         List<String> sortedColumns = new ArrayList<>(columnsToUse);
         sortedColumns.sort(String.CASE_INSENSITIVE_ORDER);
 
-        // 2. On force les 4 premières colonnes
+        // 2. On force les 5 premières colonnes.
+        // 🛡️ L'FIX HNA : On utilise "typeIntervention_1" en interne pour la 2ème colonne
         List<String> finalHeaders = new ArrayList<>(Arrays.asList(
-                "idIntervention", "typeIntervention", "etat", "commentaire"
+                "idIntervention", "typeIntervention_1", "etat", "commentaire", "loginAnalysteQu"
         ));
 
         // 3. On ajoute le reste trié
@@ -129,9 +131,6 @@ public class ExportExcelService {
                 finalHeaders.add(col);
             }
         }
-
-        // 4. On ajoute les métadonnées Kyntus à la toute fin
-        finalHeaders.addAll(Arrays.asList("N_Version", "Date_Version", "Source_Ingestion"));
 
         log.info("📝 Génération du fichier Excel ({} colonnes)...", finalHeaders.size());
 
@@ -149,7 +148,9 @@ public class ExportExcelService {
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < finalHeaders.size(); i++) {
                 Cell cell = headerRow.createCell(i);
-                cell.setCellValue(finalHeaders.get(i));
+                // 🛡️ L'FIX HNA : Si c'est "typeIntervention_1", on écrit "typeIntervention" dans l'Excel
+                String headerName = finalHeaders.get(i).equals("typeIntervention_1") ? "typeIntervention" : finalHeaders.get(i);
+                cell.setCellValue(headerName);
                 cell.setCellStyle(headerStyle);
             }
 
@@ -165,7 +166,6 @@ public class ExportExcelService {
                     if (inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("{}")) {
                         Row row = sheet.createRow(rowIdx++);
                         row.createCell(finalHeaders.indexOf("idIntervention")).setCellValue(inv.getIdIntervention());
-                        row.createCell(finalHeaders.indexOf("Source_Ingestion")).setCellValue(inv.getSourceIngestion() != null ? inv.getSourceIngestion() : "INCONNUE");
                         continue;
                     }
 
@@ -189,15 +189,13 @@ public class ExportExcelService {
                         // 🛡️ SAUVEGARDE DE LA V1 POUR LES COLONNES _BRUT
                         JsonNode v1 = versions.get(0);
                         String v1Total = v1.path("coutIntervention").path("montant").asText("0");
-                        String v1TypeRacc = v1.path("typePrestation").asText(""); // typePrestation_BRUT devient D1_TYPE_RACC
+                        String v1TypeRacc = v1.path("typePrestation").asText("");
 
                         Map<String, String> v1FactMap = new HashMap<>();
                         if (v1.has("elementsFacturationCalcule")) {
                             for (JsonNode e : v1.get("elementsFacturationCalcule")) {
                                 String fName = e.path("designationElementFacturation").asText("");
-                                if (!fName.equals("DEPLACEMENT")) { // On ignore DEPLACEMENT facturation
-                                    v1FactMap.put(fName, e.path("montant").asText("0"));
-                                }
+                                v1FactMap.put(fName, e.path("montant").asText("0"));
                             }
                         }
 
@@ -208,7 +206,6 @@ public class ExportExcelService {
                             v1QualifMap.put(fieldName, v1.path(fieldName).asText(""));
                         }
 
-                        int versionNumber = 1;
                         for (JsonNode version : versions) {
                             Row row = sheet.createRow(rowIdx++);
                             Map<String, String> rowData = new HashMap<>();
@@ -242,18 +239,28 @@ public class ExportExcelService {
                             }
 
                             if (!version.isEmpty()) {
-                                rowData.put("typeIntervention", version.path("typeIntervention").asText(inv.getTypeIntervention()));
+                                // 🛡️ L'FIX HNA : Le Domaine (RACC/SAV/RZO) va dans typeIntervention_1
+                                String domain = "INCONNU";
+                                if (version.has("_type")) {
+                                    String t = version.get("_type").asText("");
+                                    if (t.contains("Raccordement")) domain = "RACC";
+                                    else if (t.contains("SAV")) domain = "SAV";
+                                    else if (t.contains("Reseau")) domain = "RZO";
+                                }
+                                rowData.put("typeIntervention_1", domain);
+
                                 rowData.put("etat", version.path("etat").asText(inv.getEtat()));
 
                                 JsonNode etape = version.path("etapeTraitementFacturation");
                                 rowData.put("commentaire", etape.path("commentaire").asText(""));
-                                // On supprime loginAnalysteQu et typePrestation comme demandé
+                                rowData.put("loginAnalysteQu", etape.path("acteur").path("login").asText(""));
 
                                 // 3. Champs dynamiques (Normal + BRUT)
                                 Iterator<String> fieldNames = version.fieldNames();
                                 while (fieldNames.hasNext()) {
                                     String fieldName = fieldNames.next();
-                                    if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typeIntervention", "typePrestation").contains(fieldName)) {
+                                    // 🛡️ L'FIX HNA : On garde le 2ème typeIntervention (NOK, BRASSAGE_PM)
+                                    if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typePrestation").contains(fieldName)) {
                                         rowData.put(fieldName, version.path(fieldName).asText(""));
                                         rowData.put(fieldName + "_BRUT", v1QualifMap.getOrDefault(fieldName, ""));
                                     }
@@ -262,27 +269,18 @@ public class ExportExcelService {
                                 // 4. Facturation (Normal + BRUT)
                                 rowData.put("TOTAL", version.path("coutIntervention").path("montant").asText("0"));
                                 rowData.put("TOTAL_BRUT", v1Total);
-                                rowData.put("D1_TYPE_RACC", v1TypeRacc); // typePrestation_BRUT devient D1_TYPE_RACC
+                                rowData.put("D1_TYPE_RACC", v1TypeRacc);
 
                                 if (version.has("elementsFacturationCalcule")) {
                                     for (JsonNode e : version.get("elementsFacturationCalcule")) {
                                         String fName = e.path("designationElementFacturation").asText("");
-                                        if (!fName.equals("DEPLACEMENT")) { // On ignore DEPLACEMENT facturation
-                                            rowData.put(fName, e.path("montant").asText("0"));
-                                            rowData.put(fName + "_BRUT", v1FactMap.getOrDefault(fName, "0"));
-                                        }
+                                        rowData.put(fName, e.path("montant").asText("0"));
+                                        rowData.put(fName + "_BRUT", v1FactMap.getOrDefault(fName, "0"));
                                     }
                                 }
-
-                                rowData.put("N_Version", "V" + versionNumber);
-                                rowData.put("Date_Version", version.path("date").asText(""));
-                            } else {
-                                rowData.put("N_Version", "V1");
                             }
 
-                            rowData.put("Source_Ingestion", inv.getSourceIngestion() != null ? inv.getSourceIngestion() : "INCONNUE");
-
-                            // 5. Écriture dans les cellules Excel selon l'ordre exact de finalHeaders
+                            // 5. Écriture dans les cellules Excel
                             for (int i = 0; i < finalHeaders.size(); i++) {
                                 String colName = finalHeaders.get(i);
                                 String value = rowData.getOrDefault(colName, "");
@@ -299,7 +297,6 @@ public class ExportExcelService {
                                     cell.setCellValue(value);
                                 }
                             }
-                            versionNumber++;
                         }
                     } catch (Exception e) {
                         log.warn("Erreur écriture Excel pour ID {}", inv.getIdIntervention());
