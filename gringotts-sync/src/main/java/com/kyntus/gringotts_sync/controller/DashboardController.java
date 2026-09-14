@@ -85,12 +85,14 @@ public class DashboardController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        String cleanPeriod = null;
+        // 🛡️ L'FIX HNA : On initialise avec "" au lieu de null pour éviter le bug SQL (NULL = '')
+        String cleanPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
             cleanPeriod = period.replace("_", "-").replace("-M", "-M");
         }
 
-        String cleanSearch = null;
+        // 🛡️ L'FIX HNA : On initialise avec "" au lieu de null
+        String cleanSearch = "";
         if (search != null && !search.trim().isEmpty()) {
             cleanSearch = search.trim();
         }
