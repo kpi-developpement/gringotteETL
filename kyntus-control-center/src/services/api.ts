@@ -49,7 +49,6 @@ export const fetchStats = async (): Promise<SyncStats | null> => {
   } catch (error) { return null; }
 };
 
-// 🛡️ L'FIX HNA : L'endpoint qui donne l'état exact d'un mois avant de le lancer
 export const fetchPeriodInfo = async (period: string): Promise<{ offset: number, total: number } | null> => {
   try {
     const response = await fetch(`${API_URL}/period-info?period=${period}`, { method: 'GET', cache: 'no-store' });
@@ -117,6 +116,15 @@ export const trimDatabase = async (keepCount: number): Promise<string> => {
     const data = await res.json();
     return data.message || "Opération terminée.";
   } catch (e) { return "Erreur lors de la suppression."; }
+};
+
+// 🚀 L'FIX HNA : Appel pour réparer les fantômes
+export const retryFailedHeals = async (): Promise<string> => {
+  try {
+    const res = await fetch(`${API_URL}/retry-failed-heals`, { method: 'POST' });
+    const data = await res.json();
+    return data.message || "Opération terminée.";
+  } catch (e) { return "Erreur lors de la réparation."; }
 };
 
 export const fetchInterventions = async (

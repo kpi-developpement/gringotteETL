@@ -86,11 +86,12 @@ public class ExportExcelService {
         log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Période: {} | Type: {}", source, period, type);
 
         String cleanPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("_", "-").replace("-M", "-M") : "";
+        String dbPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("-M", "_M") : "";
         String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
         String cleanType = (type == null || type.trim().isEmpty()) ? "ALL" : type;
 
         log.info("🔍 Recherche des IDs correspondants...");
-        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, cleanType);
+        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, dbPeriod, cleanType);
 
         if (interventionIds.isEmpty()) {
             throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");
@@ -155,9 +156,16 @@ public class ExportExcelService {
                 interventions.sort((a, b) -> b.getId().compareTo(a.getId()));
 
                 for (Intervention inv : interventions) {
+                    // 🚀 L'FIX HNA : Si l'JSON est vide, on écrit quand même l'ID, l'Etat et la Date dans l'Excel
                     if (inv.getDetailIntervention() == null || inv.getDetailIntervention().isEmpty() || inv.getDetailIntervention().equals("{}")) {
                         Row row = sheet.createRow(rowIdx++);
                         row.createCell(finalHeaders.indexOf("idIntervention")).setCellValue(inv.getIdIntervention());
+                        row.createCell(finalHeaders.indexOf("etat")).setCellValue(inv.getEtat() != null ? inv.getEtat() : "");
+                        row.createCell(finalHeaders.indexOf("typeIntervention_1")).setCellValue(inv.getTypeIntervention() != null ? inv.getTypeIntervention() : "INCONNU");
+
+                        if (finalHeaders.contains("dateIntervention") && inv.getDateModificationEtat() != null) {
+                            row.createCell(finalHeaders.indexOf("dateIntervention")).setCellValue(inv.getDateModificationEtat().toString());
+                        }
                         continue;
                     }
 

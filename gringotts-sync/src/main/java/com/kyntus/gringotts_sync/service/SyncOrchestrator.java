@@ -63,7 +63,6 @@ public class SyncOrchestrator {
     private Thread radarThread;
     private Thread healerThread;
 
-    // 🚀 L'FIX HNA : Pool de 3 Threads (Équilibre parfait pour ne pas bloquer PHP)
     private final ForkJoinPool healerThreadPool = new ForkJoinPool(3);
 
     public boolean isRunning() { return isRunning; }
@@ -173,7 +172,6 @@ public class SyncOrchestrator {
         try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
 
         interventionRepository.truncateInterventions();
-
         syncStateRepository.deleteAll();
 
         totalRadarProcessed = 0;
@@ -199,6 +197,13 @@ public class SyncOrchestrator {
         }
         log.info("Smart Clean terminé : {} doublons supprimés.", totalDeleted);
         addAlert("[MAINTENANCE] Smart Clean terminé. " + totalDeleted + " doublons.");
+    }
+
+    // 🚀 L'FIX HNA : La méthode pour réparer les fantômes
+    public int retryFailedHeals() {
+        int count = interventionRepository.resetFailedHeals();
+        addAlert("[HEALER] " + count + " EPS Fantômes remis en file d'attente.");
+        return count;
     }
 
     private void circularRadarLoop() {
@@ -449,16 +454,15 @@ public class SyncOrchestrator {
 
                 List<Intervention> chunk;
                 if ("TIME_MACHINE".equals(healerMode)) {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc(); // Jbed 60
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc();
                 } else {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc(); // Jbed 60
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc();
                 }
 
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
                 healerStatus = "Récupération détails (" + chunk.size() + " EPS en parallèle)";
 
-                // 🚀 L'FIX HNA : On divise les 60 en 3 lots de 20
                 List<List<Intervention>> batches = partition(chunk, 20);
 
                 healerThreadPool.submit(() -> {
@@ -503,7 +507,6 @@ public class SyncOrchestrator {
                     });
                 }).get();
 
-                // 🚀 L'FIX HNA : On sauvegarde les 60 d'un coup !
                 interventionRepository.saveAll(chunk);
                 healCurrent += chunk.size();
                 totalHealerProcessed += chunk.size();

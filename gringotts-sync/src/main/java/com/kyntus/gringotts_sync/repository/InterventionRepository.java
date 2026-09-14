@@ -15,25 +15,28 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
+    // 🚀 L'FIX HNA : Ajout de la recherche dans dateModificationEtat si le JSON est vide
     @Query(value = "SELECT i FROM Intervention i WHERE " +
             "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
             "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period IS NULL OR :period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) " +
+            "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR CAST(i.dateModificationEtat AS text) LIKE CONCAT('%', CAST(:period AS text), '%')) " +
             "ORDER BY i.id DESC",
             countQuery = "SELECT count(i) FROM Intervention i WHERE " +
                     "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
                     "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-                    "(:period IS NULL OR :period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%'))")
+                    "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR CAST(i.dateModificationEtat AS text) LIKE CONCAT('%', CAST(:period AS text), '%'))")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
             @Param("source") String source,
             @Param("period") String period,
+            @Param("dbPeriod") String dbPeriod,
             Pageable pageable
     );
 
+    // 🚀 L'FIX HNA : Même chose pour l'export Excel
     @Query("SELECT i.id FROM Intervention i WHERE " +
             "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period IS NULL OR :period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
+            "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR CAST(i.dateModificationEtat AS text) LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
             "(:type IS NULL OR :type = 'ALL' OR i.typeIntervention = :type OR " +
             "(:type = 'RACC' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationRaccordement%') OR " +
             "(:type = 'SAV' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationSAV%') OR " +
@@ -42,6 +45,7 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     List<Long> findIdsForExport(
             @Param("source") String source,
             @Param("period") String period,
+            @Param("dbPeriod") String dbPeriod,
             @Param("type") String type
     );
 
@@ -75,14 +79,18 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    // 🚀 L'FIX HNA : LIMIT 60 bach n-lanciou 3 threads (3 x 20)
     @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 60", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsDesc();
 
-    // 🚀 L'FIX HNA : LIMIT 60
     @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 60", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsAsc();
 
     @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
     long countInterventionsWithMissingDetails();
+
+    // 🚀 L'FIX HNA : La requête magique pour remettre les fantômes dans la file d'attente du Healer
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE interventions SET detail_intervention = NULL WHERE detail_intervention = '{}'", nativeQuery = true)
+    int resetFailedHeals();
 }

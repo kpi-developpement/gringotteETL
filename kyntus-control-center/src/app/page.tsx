@@ -2,12 +2,9 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, cleanDuplicates, setManualOffset, startHealer, stopHealer, SyncStats } from '../services/api';
+import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, SyncStats } from '../services/api';
 import styles from './page.module.css';
 
-// ==========================================
-// 🚀 ICONS
-// ==========================================
 const IconActivity = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>;
 const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
 const IconHealer = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>;
@@ -19,12 +16,13 @@ const IconAlert = () => <svg width="18" height="18" fill="none" stroke="currentC
 const IconDatabase = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
 const IconTerminal = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
 const IconEdit = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
+const IconRefresh = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.45 5.45"></path></svg>;
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
   
   const [activeTab, setActiveTab] = useState<'standard' | 'timemachine'>('standard');
-  const [healerMode, setHealerMode] = useState('RADAR'); // 🛡️ L'FIX HNA : Sélecteur Healer
+  const [healerMode, setHealerMode] = useState('RADAR'); 
 
   const [radarHistory, setRadarHistory] = useState<number[]>(Array(12).fill(0));
   const [periodHistory, setPeriodHistory] = useState<number[]>(Array(12).fill(0));
@@ -90,7 +88,6 @@ export default function DashboardPage() {
     setSelectedPeriods(selectedPeriods.filter(item => item !== p));
   };
 
-  // 🚀 ACTIONS DU MOTEUR
   const handleStartStandard = async () => { await startSync(); loadStats(); };
   const handleStop = async () => { await stopSync(); loadStats(); };
   
@@ -100,7 +97,6 @@ export default function DashboardPage() {
     loadStats();
   };
 
-  // 🛡️ L'FIX HNA : Actions Healer
   const handleStartHealer = async () => { await startHealer(healerMode); loadStats(); };
   const handleStopHealer = async () => { await stopHealer(); loadStats(); };
 
@@ -133,6 +129,15 @@ export default function DashboardPage() {
       } else {
         alert("Valeur invalide.");
       }
+    }
+  };
+
+  // 🚀 L'FIX HNA : Appel de la fonction de réparation
+  const handleRetryFailedHeals = async () => {
+    if (window.confirm("Voulez-vous remettre les EPS Fantômes ({}) dans la file d'attente du Healer pour une nouvelle tentative ?")) {
+      const msg = await retryFailedHeals();
+      alert(msg);
+      loadStats();
     }
   };
 
@@ -185,7 +190,6 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {/* TABS SWITCHER */}
         <div className={styles.tabContainer}>
           <button 
             className={`${styles.tabBtn} ${activeTab === 'standard' ? styles.tabActiveStandard : ''}`}
@@ -205,7 +209,6 @@ export default function DashboardPage() {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
             
-            {/* VUE STANDARD */}
             {activeTab === 'standard' && (
               <div className={styles.glassCard}>
                 <div className={styles.cardHeader}>
@@ -261,7 +264,6 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* VUE TIME MACHINE */}
             {activeTab === 'timemachine' && (
               <div className={styles.glassCard}>
                 <div className={styles.cardHeader}>
@@ -345,7 +347,6 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* 🛡️ L'FIX HNA : HEALER INDÉPENDANT */}
             <div className={styles.glassCard}>
               <div className={styles.cardHeader}>
                 <h2 className={styles.cardTitle}>
@@ -401,9 +402,6 @@ export default function DashboardPage() {
 
           </div>
 
-          {/* =========================================================
-              COLONNE DE DROITE : OUTILS ET CONSOLE
-              ========================================================= */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
             
             <div className={styles.glassCard}>
@@ -420,6 +418,11 @@ export default function DashboardPage() {
                 
                 <button className={styles.btnSecondary} onClick={handleForceOffset}>
                   <IconEdit /> Forcer l'Offset (Reprise Manuelle)
+                </button>
+
+                {/* 🚀 L'FIX HNA : Le bouton pour réessayer les fantômes */}
+                <button className={styles.btnSecondary} style={{ color: '#8b5cf6', borderColor: '#ddd6fe' }} onClick={handleRetryFailedHeals}>
+                  <IconRefresh /> Réparer les EPS Fantômes
                 </button>
 
                 <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca' }} onClick={handleReset}>

@@ -84,8 +84,10 @@ public class DashboardController {
             @RequestParam(defaultValue = "50") int size) {
 
         String cleanPeriod = "";
+        String dbPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
             cleanPeriod = period.replace("_", "-").replace("-M", "-M");
+            dbPeriod = period.replace("-M", "_M");
         }
 
         String cleanSearch = "";
@@ -94,7 +96,7 @@ public class DashboardController {
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                cleanSearch, source, cleanPeriod, PageRequest.of(page, size)
+                cleanSearch, source, cleanPeriod, dbPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
@@ -190,5 +192,12 @@ public class DashboardController {
             syncStateRepository.save(state);
         }
         return ResponseEntity.ok(Map.of("ok", true, "message", "Offset forcé à " + value));
+    }
+
+    // 🚀 L'FIX HNA : Endpoint pour réparer les EPS Fantômes
+    @PostMapping("/retry-failed-heals")
+    public ResponseEntity<Map<String, Object>> retryFailedHeals() {
+        int count = syncOrchestrator.retryFailedHeals();
+        return ResponseEntity.ok(Map.of("ok", true, "message", count + " EPS Fantômes remis en file d'attente pour le Healer."));
     }
 }
