@@ -15,22 +15,27 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    @Query("SELECT i FROM Intervention i WHERE " +
-            "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
-            "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) " +
-            "ORDER BY i.id DESC")
+    @Query(value = "SELECT i FROM Intervention i WHERE " +
+            "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
+            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
+            "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) " +
+            "ORDER BY i.id DESC",
+            countQuery = "SELECT count(i) FROM Intervention i WHERE " +
+                    "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
+                    "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
+                    "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%'))")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
             @Param("source") String source,
             @Param("period") String period,
+            @Param("dbPeriod") String dbPeriod,
             Pageable pageable
     );
 
     @Query("SELECT i.id FROM Intervention i WHERE " +
-            "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
-            "(:type = 'ALL' OR i.typeIntervention = :type OR " +
+            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
+            "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
+            "(:type IS NULL OR :type = 'ALL' OR i.typeIntervention = :type OR " +
             "(:type = 'RACC' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationRaccordement%') OR " +
             "(:type = 'SAV' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationSAV%') OR " +
             "(:type = 'RZO' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationReseau%')) " +
@@ -38,6 +43,7 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     List<Long> findIdsForExport(
             @Param("source") String source,
             @Param("period") String period,
+            @Param("dbPeriod") String dbPeriod,
             @Param("type") String type
     );
 
@@ -71,12 +77,12 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    // 🚀 L'FIX HNA : LIMIT 15 au lieu de 40. Requête plus légère = 0 plantage côté Bouygues.
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 15", nativeQuery = true)
+    // 🚀 L'FIX HNA : LIMIT 20 au lieu de 15. Le Sweet Spot parfait pour la vitesse et la stabilité.
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 20", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsDesc();
 
-    // 🚀 L'FIX HNA : LIMIT 15 au lieu de 40.
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 15", nativeQuery = true)
+    // 🚀 L'FIX HNA : LIMIT 20 au lieu de 15.
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 20", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsAsc();
 
     @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
