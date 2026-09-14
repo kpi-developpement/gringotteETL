@@ -417,6 +417,15 @@ public class SyncOrchestrator {
         radarStatus = "Arrêté";
     }
 
+    // 🚀 L'FIX HNA : Fonction utilitaire pour diviser la liste de 100 en 5 listes de 20
+    private <T> List<List<T>> partition(List<T> list, int size) {
+        List<List<T>> partitions = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += size) {
+            partitions.add(list.subList(i, Math.min(i + size, list.size())));
+        }
+        return partitions;
+    }
+
     private void backgroundHealerLoop() {
         healerStatus = "En veille";
         log.info("Thread Background Healer Démarré en mode : {}", healerMode);
@@ -437,70 +446,67 @@ public class SyncOrchestrator {
 
                 List<Intervention> chunk;
                 if ("TIME_MACHINE".equals(healerMode)) {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc();
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc(); // Jbed 100
                 } else {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc();
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc(); // Jbed 100
                 }
 
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
-                List<String> idsToHeal = chunk.stream().map(Intervention::getIdIntervention).toList();
-                boolean success = false;
+                healerStatus = "Récupération détails (" + chunk.size() + " EPS en parallèle)";
 
-                for (int attempt = 1; attempt <= 3; attempt++) {
-                    try {
-                        healerStatus = "Récupération détails (" + idsToHeal.size() + " EPS)";
-                        Map<String, Object> response = phpApiClient.healData(idsToHeal);
+                // 🚀 L'FIX HNA : On divise les 100 en 5 lots de 20
+                List<List<Intervention>> batches = partition(chunk, 20);
 
-                        if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
-                            Object rawData = response.get("data");
-                            Map<String, String> healedData = new HashMap<>();
-                            if (rawData instanceof Map) healedData = (Map<String, String>) rawData;
+                // 🚀 L'FIX HNA : On lance les 5 lots en PARALLÈLE (Multi-threading)
+                batches.parallelStream().forEach(batch -> {
+                    List<String> idsToHeal = batch.stream().map(Intervention::getIdIntervention).toList();
+                    boolean success = false;
 
-                            for (Intervention inv : chunk) {
-                                String detailStr = healedData.get(inv.getIdIntervention());
-                                if (detailStr != null) inv.setDetailIntervention(detailStr);
-                                else inv.setDetailIntervention("{}");
+                    for (int attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                            Map<String, Object> response = phpApiClient.healData(idsToHeal);
+
+                            if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                                Object rawData = response.get("data");
+                                Map<String, String> healedData = new HashMap<>();
+                                if (rawData instanceof Map) healedData = (Map<String, String>) rawData;
+
+                                for (Intervention inv : batch) {
+                                    String detailStr = healedData.get(inv.getIdIntervention());
+                                    if (detailStr != null) inv.setDetailIntervention(detailStr);
+                                    else inv.setDetailIntervention("{}");
+                                }
+                                success = true;
+                                break; // Sortir de la boucle des tentatives si ça marche
                             }
-
-                            interventionRepository.saveAll(chunk);
-                            healCurrent += chunk.size();
-                            totalHealerProcessed += chunk.size();
-                            success = true;
-                            healerStatus = "Lot sauvegardé avec succès";
-
-                            sleep(300);
-                            break;
+                        } catch (RestClientResponseException e) {
+                            if (e.getStatusCode().value() == 403 || e.getResponseBodyAsString().contains("Access Denied")) {
+                                addAlert("[HEALER] Pare-feu Bouygues déclenché. Veille 15m.");
+                                sleep(15 * 60 * 1000);
+                            } else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504) {
+                                sleep(5000); // Pause en cas de surcharge
+                            } else {
+                                sleep(2000);
+                            }
+                        } catch (Exception e) {
+                            sleep(2000);
                         }
-                    } catch (RestClientResponseException e) {
-                        String body = e.getResponseBodyAsString();
-                        log.error("Erreur Healer HTTP {} : {}", e.getStatusCode(), body);
-
-                        if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
-                            addAlert("[HEALER] Pare-feu Bouygues déclenché. Veille 15m.");
-                            healerStatus = "Banni (Pause 15 min)";
-                            sleep(15 * 60 * 1000);
-                        }
-                        else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504) {
-                            addAlert("[HEALER] Serveur Bouygues Surchargé. Pause 10s.");
-                            healerStatus = "Surcharge (Pause 10s)";
-                            sleep(10000);
-                        }
-                        else {
-                            healerStatus = "Erreur HTTP " + e.getStatusCode();
-                            sleep(5000);
-                        }
-                    } catch (Exception e) {
-                        log.error("Erreur connexion Healer", e);
-                        healerStatus = "Erreur Connexion";
-                        sleep(5000);
                     }
-                }
 
-                if (!success && isHealing) {
-                    for (Intervention inv : chunk) inv.setDetailIntervention("{}");
-                    interventionRepository.saveAll(chunk);
-                }
+                    // Si après 3 tentatives ça échoue toujours, on met un JSON vide pour ne pas bloquer
+                    if (!success && isHealing) {
+                        for (Intervention inv : batch) inv.setDetailIntervention("{}");
+                    }
+                });
+
+                // 🚀 L'FIX HNA : Une fois que les 5 threads ont fini, on sauvegarde les 100 d'un coup !
+                interventionRepository.saveAll(chunk);
+                healCurrent += chunk.size();
+                totalHealerProcessed += chunk.size();
+                healerStatus = "Lot de " + chunk.size() + " sauvegardé (Vitesse Max)";
+
+                sleep(200); // Petite pause de courtoisie avant le prochain lot de 100
 
             } catch (Exception e) {
                 log.error("Exception critique Healer", e);

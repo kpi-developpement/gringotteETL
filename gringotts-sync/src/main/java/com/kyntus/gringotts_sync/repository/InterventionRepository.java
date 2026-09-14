@@ -75,12 +75,12 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    // 🚀 L'FIX HNA : LIMIT 20 pour la vitesse du Healer
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 20", nativeQuery = true)
+    // 🚀 L'FIX HNA : LIMIT 100 bach njebdo chunk kbir w n-traitiwh en parallèle (Multi-threading)
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 100", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsDesc();
 
-    // 🚀 L'FIX HNA : LIMIT 20 pour la vitesse du Healer
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 20", nativeQuery = true)
+    // 🚀 L'FIX HNA : LIMIT 100
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 100", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsAsc();
 
     @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
