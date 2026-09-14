@@ -63,8 +63,8 @@ public class SyncOrchestrator {
     private Thread radarThread;
     private Thread healerThread;
 
-    // 🚀 L'FIX HNA : Pool de 10 Threads dédiés uniquement au Healer
-    private final ForkJoinPool healerThreadPool = new ForkJoinPool(10);
+    // 🚀 L'FIX HNA : Pool de 3 Threads (Équilibre parfait pour ne pas bloquer PHP)
+    private final ForkJoinPool healerThreadPool = new ForkJoinPool(3);
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -449,19 +449,18 @@ public class SyncOrchestrator {
 
                 List<Intervention> chunk;
                 if ("TIME_MACHINE".equals(healerMode)) {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc(); // Jbed 200
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc(); // Jbed 60
                 } else {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc(); // Jbed 200
+                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc(); // Jbed 60
                 }
 
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
                 healerStatus = "Récupération détails (" + chunk.size() + " EPS en parallèle)";
 
-                // 🚀 L'FIX HNA : On divise les 200 en 10 lots de 20
+                // 🚀 L'FIX HNA : On divise les 60 en 3 lots de 20
                 List<List<Intervention>> batches = partition(chunk, 20);
 
-                // 🚀 L'FIX HNA : On force l'utilisation de notre Pool de 10 Threads
                 healerThreadPool.submit(() -> {
                     batches.parallelStream().forEach(batch -> {
                         List<String> idsToHeal = batch.stream().map(Intervention::getIdIntervention).toList();
@@ -502,15 +501,15 @@ public class SyncOrchestrator {
                             for (Intervention inv : batch) inv.setDetailIntervention("{}");
                         }
                     });
-                }).get(); // On attend que les 10 threads finissent leur travail
+                }).get();
 
-                // 🚀 L'FIX HNA : On sauvegarde les 200 d'un coup !
+                // 🚀 L'FIX HNA : On sauvegarde les 60 d'un coup !
                 interventionRepository.saveAll(chunk);
                 healCurrent += chunk.size();
                 totalHealerProcessed += chunk.size();
                 healerStatus = "Lot de " + chunk.size() + " sauvegardé (Vitesse Max)";
 
-                sleep(300); // Petite pause de 0.3s avant le prochain lot de 200
+                sleep(300);
 
             } catch (Exception e) {
                 log.error("Exception critique Healer", e);
