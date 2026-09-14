@@ -96,7 +96,6 @@ public class SyncOrchestrator {
         currentPeriod = periodQueue.poll();
         totalPeriodProcessed = 0;
 
-        // 🛡️ L'FIX HNA : On vérifie l'offset spécifique de CE mois
         int savedOffset = getSavedState("offset_" + currentPeriod);
 
         if (savedOffset > 0) {
@@ -171,7 +170,6 @@ public class SyncOrchestrator {
 
         interventionRepository.truncateInterventions();
 
-        // 🛡️ L'FIX HNA : On supprime TOUS les offsets de la base de données
         syncStateRepository.deleteAll();
 
         totalRadarProcessed = 0;
@@ -203,7 +201,6 @@ public class SyncOrchestrator {
         radarStatus = "En cours d'aspiration";
         log.info("Thread Radar Circulaire Démarré.");
 
-        // 🛡️ L'FIX HNA : On charge l'offset spécifique au mois en cours
         int localOffset = currentPeriod != null ? getSavedState("offset_" + currentPeriod) : getSavedState(OFFSET_KEY);
         int localTotalApi = currentPeriod != null ? getSavedState("total_" + currentPeriod) : getSavedState(TOTAL_KEY);
 
@@ -302,7 +299,6 @@ public class SyncOrchestrator {
                             log.info("Passage à la période suivante: {}", currentPeriod);
                             addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
 
-                            // 🛡️ L'FIX HNA : On charge l'offset du NOUVEAU mois
                             localOffset = getSavedState("offset_" + currentPeriod);
                             localTotalApi = getSavedState("total_" + currentPeriod);
                             totalProcessedSinceStart = 0;
@@ -472,7 +468,10 @@ public class SyncOrchestrator {
                             totalHealerProcessed += chunk.size();
                             success = true;
                             healerStatus = "Lot sauvegardé avec succès";
-                            sleep(1000);
+
+                            // 🚀 L'FIX HNA : Micro-batching. On dort juste 300ms au lieu de 1000ms.
+                            // Comme on demande moins d'items, on peut faire plus de requêtes par seconde.
+                            sleep(300);
                             break;
                         }
                     } catch (RestClientResponseException e) {
@@ -483,7 +482,14 @@ public class SyncOrchestrator {
                             addAlert("[HEALER] Pare-feu Bouygues déclenché. Veille 15m.");
                             healerStatus = "Banni (Pause 15 min)";
                             sleep(15 * 60 * 1000);
-                        } else {
+                        }
+                        // 🚀 L'FIX HNA : Gestion intelligente du 500/504
+                        else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504) {
+                            addAlert("[HEALER] Serveur Bouygues Surchargé. Pause 10s.");
+                            healerStatus = "Surcharge (Pause 10s)";
+                            sleep(10000); // On laisse le serveur Bouygues respirer 10 secondes
+                        }
+                        else {
                             healerStatus = "Erreur HTTP " + e.getStatusCode();
                             sleep(5000);
                         }

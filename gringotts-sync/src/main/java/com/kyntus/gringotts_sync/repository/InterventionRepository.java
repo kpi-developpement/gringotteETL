@@ -15,11 +15,10 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    // 🛡️ L'FIX HNA : Ajout de "IS NULL" pour rendre la requête SQL bulletproof
     @Query("SELECT i FROM Intervention i WHERE " +
-            "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
-            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period IS NULL OR :period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) " +
+            "(:search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))) AND " +
+            "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
+            "(:period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) " +
             "ORDER BY i.id DESC")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
@@ -28,11 +27,10 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
             Pageable pageable
     );
 
-    // 🛡️ L'FIX HNA : Même chose pour l'export Excel !
     @Query("SELECT i.id FROM Intervention i WHERE " +
-            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
-            "(:period IS NULL OR :period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
-            "(:type IS NULL OR :type = 'ALL' OR i.typeIntervention = :type OR " +
+            "(:source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
+            "(:period = '' OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', CAST(:period AS text), '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', CAST(:period AS text), '%')) AND " +
+            "(:type = 'ALL' OR i.typeIntervention = :type OR " +
             "(:type = 'RACC' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationRaccordement%') OR " +
             "(:type = 'SAV' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationSAV%') OR " +
             "(:type = 'RZO' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationReseau%')) " +
@@ -73,10 +71,12 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 40", nativeQuery = true)
+    // 🚀 L'FIX HNA : LIMIT 15 au lieu de 40. Requête plus légère = 0 plantage côté Bouygues.
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 15", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsDesc();
 
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 40", nativeQuery = true)
+    // 🚀 L'FIX HNA : LIMIT 15 au lieu de 40.
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 15", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsAsc();
 
     @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
