@@ -37,7 +37,6 @@ public class DashboardController {
         stats.put("current_bt_offset", syncStateRepository.findById("bt_api_offset").map(SyncState::getStateValue).orElse(0));
         stats.put("total_api", syncStateRepository.findById("bt_total_api").map(SyncState::getStateValue).orElse(0));
 
-        // 🛡️ L'FIX HNA : On récupère l'offset du mois en cours de traitement
         String currentPeriod = syncOrchestrator.getCurrentPeriod();
         if (currentPeriod != null) {
             stats.put("period_offset", syncStateRepository.findById("offset_" + currentPeriod).map(SyncState::getStateValue).orElse(0));
@@ -65,7 +64,6 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
-    // 🛡️ NOUVEL ENDPOINT : Permet au frontend de savoir où en est un mois spécifique avant de le lancer
     @GetMapping("/period-info")
     public ResponseEntity<Map<String, Object>> getPeriodInfo(@RequestParam String period) {
         int offset = syncStateRepository.findById("offset_" + period).map(SyncState::getStateValue).orElse(0);
@@ -85,20 +83,20 @@ public class DashboardController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        // 🛡️ L'FIX HNA : On initialise avec "" au lieu de null pour éviter le bug SQL (NULL = '')
         String cleanPeriod = "";
+        String dbPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
-            cleanPeriod = period.replace("_", "-").replace("-M", "-M");
+            cleanPeriod = period.replace("_", "-").replace("-M", "-M"); // Ex: 2026-M02
+            dbPeriod = period.replace("-M", "_M"); // Ex: 2026_M02 (format de la DB)
         }
 
-        // 🛡️ L'FIX HNA : On initialise avec "" au lieu de null
         String cleanSearch = "";
         if (search != null && !search.trim().isEmpty()) {
             cleanSearch = search.trim();
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                cleanSearch, source, cleanPeriod, PageRequest.of(page, size)
+                cleanSearch, source, cleanPeriod, dbPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }

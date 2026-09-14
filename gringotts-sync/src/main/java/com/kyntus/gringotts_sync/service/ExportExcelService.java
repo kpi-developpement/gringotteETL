@@ -23,7 +23,6 @@ public class ExportExcelService {
     private final InterventionRepository interventionRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // 🛡️ Dictionnaire de traduction pour corriger les fautes du JSON Bouygues
     private String mapColumnName(String original) {
         if (original == null) return "";
         switch (original) {
@@ -35,7 +34,6 @@ public class ExportExcelService {
         }
     }
 
-    // 🛡️ LISTES EXHAUSTIVES DES COLONNES PAR TYPE
     private static final List<String> RACC_COLUMNS = Arrays.asList(
             "A1_CLES_CTRL", "A2_DOUBLONS", "A3_FIN_CMD", "ANALYSE_PHOTO", "B1_FORMAT_CHAMPS", "C1_NOK_POSE", "C1_PHOTO", "C2_DOUTE_POSE", "C3_DEPORT",
             "categorie", "categorieRaccordementLogementAnalyse", "CHAMP_1", "CHAMP_2", "CHAMP_3", "CHAMP_4", "CHAMP_5", "CHAMP_6", "codeCloture", "CODE_DECHARGE_TECH",
@@ -88,11 +86,12 @@ public class ExportExcelService {
         log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Période: {} | Type: {}", source, period, type);
 
         String cleanPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("_", "-").replace("-M", "-M") : "";
+        String dbPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("-M", "_M") : "";
         String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
         String cleanType = (type == null || type.trim().isEmpty()) ? "ALL" : type;
 
         log.info("🔍 Recherche des IDs correspondants...");
-        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, cleanType);
+        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, dbPeriod, cleanType);
 
         if (interventionIds.isEmpty()) {
             throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");
@@ -104,7 +103,6 @@ public class ExportExcelService {
             chunks.add(interventionIds.subList(i, Math.min(i + 500, interventionIds.size())));
         }
 
-        // 🚀 CRÉATION DE L'EN-TÊTE EXACT
         Set<String> columnsToUse = new HashSet<>();
         if (cleanType.equals("RACC")) columnsToUse.addAll(RACC_COLUMNS);
         else if (cleanType.equals("SAV")) columnsToUse.addAll(SAV_COLUMNS);
@@ -115,17 +113,13 @@ public class ExportExcelService {
             columnsToUse.addAll(RZO_COLUMNS);
         }
 
-        // 1. On trie tout par ordre alphabétique
         List<String> sortedColumns = new ArrayList<>(columnsToUse);
         sortedColumns.sort(String.CASE_INSENSITIVE_ORDER);
 
-        // 2. On force les 5 premières colonnes.
-        // 🛡️ L'FIX HNA : On utilise "typeIntervention_1" en interne pour la 2ème colonne
         List<String> finalHeaders = new ArrayList<>(Arrays.asList(
                 "idIntervention", "typeIntervention_1", "etat", "commentaire", "loginAnalysteQu"
         ));
 
-        // 3. On ajoute le reste trié
         for (String col : sortedColumns) {
             if (!finalHeaders.contains(col)) {
                 finalHeaders.add(col);
@@ -148,7 +142,6 @@ public class ExportExcelService {
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < finalHeaders.size(); i++) {
                 Cell cell = headerRow.createCell(i);
-                // 🛡️ L'FIX HNA : Si c'est "typeIntervention_1", on écrit "typeIntervention" dans l'Excel
                 String headerName = finalHeaders.get(i).equals("typeIntervention_1") ? "typeIntervention" : finalHeaders.get(i);
                 cell.setCellValue(headerName);
                 cell.setCellStyle(headerStyle);
@@ -179,14 +172,12 @@ public class ExportExcelService {
                             }
                         }
 
-                        // 🛡️ INVERSION : V1 en premier
                         Collections.reverse(versions);
 
                         if (versions.isEmpty()) {
                             versions.add(objectMapper.createObjectNode());
                         }
 
-                        // 🛡️ SAUVEGARDE DE LA V1 POUR LES COLONNES _BRUT
                         JsonNode v1 = versions.get(0);
                         String v1Total = v1.path("coutIntervention").path("montant").asText("0");
                         String v1TypeRacc = v1.path("typePrestation").asText("");
@@ -210,12 +201,10 @@ public class ExportExcelService {
                             Row row = sheet.createRow(rowIdx++);
                             Map<String, String> rowData = new HashMap<>();
 
-                            // 1. Base Infos
                             rowData.put("idIntervention", root.path("identifiant").asText(inv.getIdIntervention()));
                             rowData.put("identifiant", root.path("identifiant").asText(inv.getIdIntervention()));
                             rowData.put("mainteneurIdentifiant", root.path("mainteneur").path("identifiant").asText(""));
 
-                            // Root fields
                             rowData.put("codeCloture", root.path("codeCloture").asText(""));
                             rowData.put("codeInsee", root.path("codeInsee").asText(""));
                             rowData.put("dateIntervention", root.path("dateIntervention").asText(""));
@@ -230,7 +219,6 @@ public class ExportExcelService {
                             rowData.put("periode", root.path("periode").asText(""));
                             rowData.put("sousTraitant", root.path("sousTraitant").asText(""));
 
-                            // 2. Propriétés (Avec correction des fautes de frappe)
                             if (root.has("proprietes")) {
                                 for (JsonNode p : root.get("proprietes")) {
                                     String mappedName = mapColumnName(p.path("nom").asText(""));
@@ -239,7 +227,6 @@ public class ExportExcelService {
                             }
 
                             if (!version.isEmpty()) {
-                                // 🛡️ L'FIX HNA : Le Domaine (RACC/SAV/RZO) va dans typeIntervention_1
                                 String domain = "INCONNU";
                                 if (version.has("_type")) {
                                     String t = version.get("_type").asText("");
@@ -255,18 +242,15 @@ public class ExportExcelService {
                                 rowData.put("commentaire", etape.path("commentaire").asText(""));
                                 rowData.put("loginAnalysteQu", etape.path("acteur").path("login").asText(""));
 
-                                // 3. Champs dynamiques (Normal + BRUT)
                                 Iterator<String> fieldNames = version.fieldNames();
                                 while (fieldNames.hasNext()) {
                                     String fieldName = fieldNames.next();
-                                    // 🛡️ L'FIX HNA : On garde le 2ème typeIntervention (NOK, BRASSAGE_PM)
                                     if (!Arrays.asList("_type", "coutIntervention", "date", "elementsFacturationCalcule", "etapeTraitementFacturation", "etat", "identifiant", "typePrestation").contains(fieldName)) {
                                         rowData.put(fieldName, version.path(fieldName).asText(""));
                                         rowData.put(fieldName + "_BRUT", v1QualifMap.getOrDefault(fieldName, ""));
                                     }
                                 }
 
-                                // 4. Facturation (Normal + BRUT)
                                 rowData.put("TOTAL", version.path("coutIntervention").path("montant").asText("0"));
                                 rowData.put("TOTAL_BRUT", v1Total);
                                 rowData.put("D1_TYPE_RACC", v1TypeRacc);
@@ -280,7 +264,6 @@ public class ExportExcelService {
                                 }
                             }
 
-                            // 5. Écriture dans les cellules Excel
                             for (int i = 0; i < finalHeaders.size(); i++) {
                                 String colName = finalHeaders.get(i);
                                 String value = rowData.getOrDefault(colName, "");
