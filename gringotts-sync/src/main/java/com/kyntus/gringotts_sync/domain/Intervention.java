@@ -71,13 +71,13 @@ public class Intervention {
     @Column(name = "detail_intervention", columnDefinition = "TEXT")
     private String detailIntervention;
 
-    // 🛡️ L'FIX HNA : Ajout de la source d'ingestion (RADAR ou TIME_MACHINE)
     @JsonProperty("source_ingestion")
     @Column(name = "source_ingestion")
     private String sourceIngestion;
 
+    // 🛡️ L'FIX HNA : FetchType.LAZY bach n-evitiw l'bug dyal la pagination Hibernate li kay-truncati les 58k
     @JsonProperty("actions_log")
-    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JoinColumn(name = "intervention_id")
     private List<ActionLog> actionsLog;
 }

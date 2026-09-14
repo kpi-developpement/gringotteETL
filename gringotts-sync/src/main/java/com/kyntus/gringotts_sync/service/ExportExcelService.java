@@ -86,12 +86,11 @@ public class ExportExcelService {
         log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Période: {} | Type: {}", source, period, type);
 
         String cleanPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("_", "-").replace("-M", "-M") : "";
-        String dbPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("-M", "_M") : "";
         String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
         String cleanType = (type == null || type.trim().isEmpty()) ? "ALL" : type;
 
         log.info("🔍 Recherche des IDs correspondants...");
-        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, dbPeriod, cleanType);
+        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, cleanType);
 
         if (interventionIds.isEmpty()) {
             throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");

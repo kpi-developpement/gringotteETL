@@ -469,8 +469,6 @@ public class SyncOrchestrator {
                             success = true;
                             healerStatus = "Lot sauvegardé avec succès";
 
-                            // 🚀 L'FIX HNA : Micro-batching. On dort juste 300ms au lieu de 1000ms.
-                            // Comme on demande moins d'items, on peut faire plus de requêtes par seconde.
                             sleep(300);
                             break;
                         }
@@ -483,11 +481,10 @@ public class SyncOrchestrator {
                             healerStatus = "Banni (Pause 15 min)";
                             sleep(15 * 60 * 1000);
                         }
-                        // 🚀 L'FIX HNA : Gestion intelligente du 500/504
                         else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504) {
                             addAlert("[HEALER] Serveur Bouygues Surchargé. Pause 10s.");
                             healerStatus = "Surcharge (Pause 10s)";
-                            sleep(10000); // On laisse le serveur Bouygues respirer 10 secondes
+                            sleep(10000);
                         }
                         else {
                             healerStatus = "Erreur HTTP " + e.getStatusCode();

@@ -84,10 +84,8 @@ public class DashboardController {
             @RequestParam(defaultValue = "50") int size) {
 
         String cleanPeriod = "";
-        String dbPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
-            cleanPeriod = period.replace("_", "-").replace("-M", "-M"); // Ex: 2026-M02
-            dbPeriod = period.replace("-M", "_M"); // Ex: 2026_M02 (format de la DB)
+            cleanPeriod = period.replace("_", "-").replace("-M", "-M");
         }
 
         String cleanSearch = "";
@@ -96,7 +94,7 @@ public class DashboardController {
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                cleanSearch, source, cleanPeriod, dbPeriod, PageRequest.of(page, size)
+                cleanSearch, source, cleanPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
