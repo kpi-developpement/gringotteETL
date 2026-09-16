@@ -90,8 +90,9 @@ export default function DashboardPage() {
   const handleStartHealer = async () => { await startHealer(healerMode); loadStats(); };
   const handleStopHealer = async () => { await stopHealer(); loadStats(); };
 
+  // 🚀 L'FIX HNA : Bouton Reset & Purge Totale
   const handleReset = async () => {
-    if (window.confirm("ATTENTION : Purge Totale de la base de données. Confirmer ?")) {
+    if (window.confirm("ATTENTION : Purge Totale de la base de données (IONOS + Java). Confirmer ?")) {
       await resetSync();
       setPeriodHistory(Array(12).fill(0));
       loadStats();
@@ -157,7 +158,7 @@ export default function DashboardPage() {
     return { text: status, css: 'statusGood', icon: <IconCheckCircle /> };
   };
 
-  const rStatus = getStatusInfo(stats?.radar_status);
+  const rStatus = getStatusInfo(stats?.time_machine_status);
   const hStatus = getStatusInfo(stats?.healer_status);
 
   const getStatusCssClass = (type: string) => {
@@ -377,8 +378,9 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca', marginTop: '10px' }} onClick={handleReset}>
-                  Reset & Purge Totale
+                {/* 🚀 L'FIX HNA : Bouton Reset & Purge Totale bien visible */}
+                <button className={styles.btnPrimary} style={{ background: '#ef4444', marginTop: '10px' }} onClick={handleReset}>
+                  <IconTrash /> Reset & Purge Totale
                 </button>
               </div>
             </div>

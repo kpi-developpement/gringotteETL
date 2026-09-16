@@ -3,6 +3,7 @@ package com.kyntus.gringotts_sync.service;
 import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
+import com.kyntus.gringotts_sync.dto.ExportResponse;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
 import com.kyntus.gringotts_sync.integration.PhpApiClient;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
@@ -48,7 +49,7 @@ public class SyncOrchestrator {
     private volatile long totalHealerProcessed = 0;
     private volatile long totalPeriodProcessed = 0;
 
-    // 🚀 L'FIX HNA : Overclocking à 250 items par requête
+    private static final int IONOS_EXPORT_BATCH = 500;
     private static final int TIME_MACHINE_BATCH = 250;
 
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
@@ -146,8 +147,17 @@ public class SyncOrchestrator {
         stopSync();
         stopHealer();
         sleep(2000);
-        try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
 
+        // 🚀 L'FIX HNA : On vide IONOS en premier
+        try {
+            phpApiClient.resetIonos();
+            addAlert("[MAINTENANCE] Base IONOS (PHP) vidée avec succès.");
+        } catch (Exception e) {
+            log.error("Erreur reset IONOS", e);
+            addAlert("[MAINTENANCE] Erreur lors du vidage de IONOS.");
+        }
+
+        // 🚀 Puis on vide notre Data Warehouse (Java)
         interventionRepository.truncateInterventions();
         syncStateRepository.deleteAll();
 
@@ -157,7 +167,7 @@ public class SyncOrchestrator {
         periodQueue.clear();
 
         log.warn("PURGE TOTALE effectuée.");
-        addAlert("[MAINTENANCE] Base de données purgée avec succès.");
+        addAlert("[MAINTENANCE] Data Warehouse (Java) purgé avec succès.");
     }
 
     public synchronized int purgePeriod(String period) {
@@ -232,10 +242,78 @@ public class SyncOrchestrator {
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
                         log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", localOffset, TIME_MACHINE_BATCH, activePeriod);
+
+                        // 1. On demande à IONOS de fetcher depuis Bouygues
                         ImportResponse importResp = phpApiClient.triggerImport(localOffset, TIME_MACHINE_BATCH, activePeriod);
 
                         if (importResp != null && importResp.isOk()) {
 
+                            // 🚀 L'FIX HNA : 2. On vide IONOS IMMÉDIATEMENT vers notre Data Warehouse
+                            boolean bufferHasData = true;
+                            while (bufferHasData && isRunning) {
+                                try {
+                                    ExportResponse exportResp = phpApiClient.export(IONOS_EXPORT_BATCH);
+                                    if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
+                                        List<Intervention> incomingData = exportResp.getData();
+                                        List<Long> idsToAck = incomingData.stream().map(Intervention::getId).filter(id -> id != null && id > 0).collect(Collectors.toList());
+
+                                        transactionTemplate.executeWithoutResult(status -> {
+                                            List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).filter(id -> id != null && !id.isEmpty()).toList();
+                                            List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
+                                            Map<String, Intervention> existingMap = existingData.stream().collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
+
+                                            for (Intervention incoming : incomingData) {
+                                                if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
+                                                Intervention existing = existingMap.get(incoming.getIdIntervention());
+
+                                                if (existing == null) {
+                                                    existing = incoming;
+                                                    existing.setId(null);
+                                                    existing.setSourceIngestion("TIME_MACHINE");
+                                                    existing.setPeriode(activePeriod);
+
+                                                    if (existing.getActionsLog() != null) {
+                                                        for (ActionLog l : existing.getActionsLog()) l.setId(null);
+                                                    }
+                                                    existingMap.put(existing.getIdIntervention(), existing);
+                                                } else {
+                                                    existing.setEtat(incoming.getEtat());
+                                                    existing.setDateModificationEtat(incoming.getDateModificationEtat());
+                                                    existing.setTypeIntervention(incoming.getTypeIntervention());
+                                                    existing.setMainteneur(incoming.getMainteneur());
+                                                    if (incoming.getDetailIntervention() != null && !incoming.getDetailIntervention().isEmpty() && !incoming.getDetailIntervention().equals("null")) {
+                                                        existing.setDetailIntervention(incoming.getDetailIntervention());
+                                                    }
+                                                    existing.setPayloadRecu(incoming.getPayloadRecu());
+                                                    existing.setPeriode(activePeriod);
+
+                                                    if (existing.getActionsLog() != null) existing.getActionsLog().clear();
+                                                    else existing.setActionsLog(new ArrayList<>());
+                                                    if (incoming.getActionsLog() != null) {
+                                                        for (ActionLog newLog : incoming.getActionsLog()) {
+                                                            newLog.setId(null);
+                                                            existing.getActionsLog().add(newLog);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            interventionRepository.saveAll(existingMap.values());
+                                        });
+
+                                        // 3. On Acknowledge pour supprimer de IONOS et libérer les 2GB
+                                        if (!idsToAck.isEmpty()) {
+                                            phpApiClient.acknowledge(idsToAck);
+                                        }
+                                    } else {
+                                        bufferHasData = false;
+                                    }
+                                } catch (Exception e) {
+                                    log.error("Erreur Vidage IONOS", e);
+                                    bufferHasData = false;
+                                }
+                            }
+
+                            // 4. Mise à jour des Offsets
                             if (importResp.getBatchCount() == 0) {
                                 log.warn("Bouygues a retourné 0 résultat. Avancement forcé de la zone.");
                                 localTotalApi = importResp.getTotalApi() > 0 ? importResp.getTotalApi() : 1;
@@ -249,16 +327,14 @@ public class SyncOrchestrator {
                             int newOffset = importResp.getNextOffset();
                             int newTotal = importResp.getTotalApi();
 
-                            // 🚀 L'FIX HNA : TOTAL LOCK (On verrouille le total s'il est déjà connu)
                             if (localTotalApi == 0 || (newTotal > 0 && Math.abs(newTotal - localTotalApi) < 10000)) {
                                 localTotalApi = newTotal;
                             }
 
-                            // 🚀 L'FIX HNA : OFFSET SHIELD (Bouclier Anti-Glitch)
                             if (newOffset > 0 && newOffset <= localOffset) {
                                 log.error("🚨 GLITCH BOUYGUES DETECTE : L'API a tenté de ramener l'offset de {} à {}. On force la continuité !", localOffset, newOffset);
                                 addAlert("⚠️ Glitch Bouygues ignoré (Offset protégé à " + localOffset + ")");
-                                localOffset += TIME_MACHINE_BATCH; // On avance manuellement
+                                localOffset += TIME_MACHINE_BATCH;
                             } else {
                                 localOffset = newOffset;
                             }
@@ -276,8 +352,6 @@ public class SyncOrchestrator {
                             }
                             importSuccess = true;
                             timeMachineStatus = "Vitesse: " + TIME_MACHINE_BATCH + " EPS (Offset: " + localOffset + ")";
-
-                            // 🚀 L'FIX HNA : Zéro Sleep ! On enchaîne direct pour la vitesse max.
                             break;
                         }
                     } catch (RestClientResponseException e) {
