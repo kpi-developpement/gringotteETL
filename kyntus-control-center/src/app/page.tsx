@@ -90,7 +90,6 @@ export default function DashboardPage() {
   const handleStartHealer = async () => { await startHealer(healerMode); loadStats(); };
   const handleStopHealer = async () => { await stopHealer(); loadStats(); };
 
-  // 🚀 L'FIX HNA : Bouton Reset & Purge Totale
   const handleReset = async () => {
     if (window.confirm("ATTENTION : Purge Totale de la base de données (IONOS + Java). Confirmer ?")) {
       await resetSync();
@@ -378,7 +377,6 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                {/* 🚀 L'FIX HNA : Bouton Reset & Purge Totale bien visible */}
                 <button className={styles.btnPrimary} style={{ background: '#ef4444', marginTop: '10px' }} onClick={handleReset}>
                   <IconTrash /> Reset & Purge Totale
                 </button>
