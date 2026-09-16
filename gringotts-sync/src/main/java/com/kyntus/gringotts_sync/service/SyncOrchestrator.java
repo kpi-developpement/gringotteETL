@@ -3,7 +3,6 @@ package com.kyntus.gringotts_sync.service;
 import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
-import com.kyntus.gringotts_sync.dto.ExportResponse;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
 import com.kyntus.gringotts_sync.integration.PhpApiClient;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
@@ -42,25 +41,20 @@ public class SyncOrchestrator {
     private volatile int totalProcessedSinceStart = 0;
     private volatile String currentEta = "En attente...";
 
-    private volatile String radarStatus = "En veille";
+    private volatile String timeMachineStatus = "En veille";
     private volatile String healerStatus = "En veille";
     private final List<String> recentAlerts = new CopyOnWriteArrayList<>();
 
-    private volatile long totalRadarProcessed = 0;
     private volatile long totalHealerProcessed = 0;
     private volatile long totalPeriodProcessed = 0;
 
-    private static final String OFFSET_KEY = "bt_api_offset";
-    private static final String TOTAL_KEY = "bt_total_api";
-
-    // 🚀 L'FIX HNA : Overclocking des Batches
-    private static final int IONOS_EXPORT_BATCH = 500; // Khwi IONOS b zerba
-    private static final int TIME_MACHINE_BATCH = 250; // Le Sweet Spot (Max vitesse sans Crash)
+    // 🚀 L'FIX HNA : Overclocking à 250 items par requête
+    private static final int TIME_MACHINE_BATCH = 250;
 
     private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
     private volatile String currentPeriod = null;
 
-    private Thread radarThread;
+    private Thread timeMachineThread;
     private Thread healerThread;
 
     private final ForkJoinPool healerThreadPool = new ForkJoinPool(3);
@@ -71,10 +65,9 @@ public class SyncOrchestrator {
     public int getHealTotal() { return healTotal; }
     public int getHealCurrent() { return healCurrent; }
     public String getCurrentEta() { return currentEta; }
-    public String getRadarStatus() { return radarStatus; }
+    public String getTimeMachineStatus() { return timeMachineStatus; }
     public String getHealerStatus() { return healerStatus; }
     public List<String> getRecentAlerts() { return recentAlerts; }
-    public long getTotalRadarProcessed() { return totalRadarProcessed; }
     public long getTotalHealerProcessed() { return totalHealerProcessed; }
     public long getTotalPeriodProcessed() { return totalPeriodProcessed; }
     public String getCurrentPeriod() { return currentPeriod; }
@@ -89,8 +82,8 @@ public class SyncOrchestrator {
     }
 
     public synchronized void startPeriodSync(List<String> periods) {
-        if (isRunning || (radarThread != null && radarThread.isAlive())) {
-            log.warn("🚨 Tentative de démarrage bloquée : Un processus Radar est déjà en cours !");
+        if (isRunning || (timeMachineThread != null && timeMachineThread.isAlive())) {
+            log.warn("🚨 Tentative de démarrage bloquée : Un processus est déjà en cours !");
             return;
         }
 
@@ -109,36 +102,20 @@ public class SyncOrchestrator {
             addAlert("[TIME MACHINE] Démarrage de la période " + currentPeriod);
         }
 
-        startSyncInternal();
-    }
-
-    public synchronized void startSync() {
-        if (isRunning || (radarThread != null && radarThread.isAlive())) {
-            log.warn("🚨 Tentative de démarrage bloquée : Un processus Radar est déjà en cours !");
-            return;
-        }
-        currentPeriod = null;
-        periodQueue.clear();
-        log.info("Démarrage STANDARD (Offset Global).");
-        addAlert("[SYSTEM] Démarrage Standard (Radar Global)");
-        startSyncInternal();
-    }
-
-    private void startSyncInternal() {
         isRunning = true;
         currentEta = "Initialisation...";
-        radarStatus = "Démarrage en cours";
+        timeMachineStatus = "Démarrage en cours";
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
 
-        radarThread = new Thread(this::circularRadarLoop);
-        radarThread.start();
+        timeMachineThread = new Thread(this::timeMachineLoop);
+        timeMachineThread.start();
     }
 
     public synchronized void stopSync() {
         isRunning = false;
         currentEta = "Arrêté";
-        radarStatus = "Arrêt demandé";
+        timeMachineStatus = "Arrêt demandé";
         log.info("Arrêt du Daemon demandé.");
         addAlert("[SYSTEM] Arrêt du système demandé");
     }
@@ -174,7 +151,6 @@ public class SyncOrchestrator {
         interventionRepository.truncateInterventions();
         syncStateRepository.deleteAll();
 
-        totalRadarProcessed = 0;
         totalHealerProcessed = 0;
         totalPeriodProcessed = 0;
         currentPeriod = null;
@@ -219,142 +195,44 @@ public class SyncOrchestrator {
         return count;
     }
 
-    private void circularRadarLoop() {
-        radarStatus = "En cours d'aspiration";
-        log.info("Thread Radar Circulaire Démarré.");
+    private void timeMachineLoop() {
+        timeMachineStatus = "En cours d'aspiration";
+        log.info("Thread Time Machine Démarré.");
 
-        int localOffset = currentPeriod != null ? getSavedState("offset_" + currentPeriod) : getSavedState(OFFSET_KEY);
-        int localTotalApi = currentPeriod != null ? getSavedState("total_" + currentPeriod) : getSavedState(TOTAL_KEY);
-
-        while (isRunning) {
+        while (isRunning && currentPeriod != null) {
             try {
                 final String activePeriod = currentPeriod;
-
-                boolean bufferHasData = true;
-                while (bufferHasData && isRunning) {
-                    try {
-                        ExportResponse exportResp = phpApiClient.export(IONOS_EXPORT_BATCH);
-                        if (exportResp != null && exportResp.isOk() && exportResp.getCount() > 0) {
-                            List<Intervention> incomingData = exportResp.getData();
-                            List<Long> idsToAck = incomingData.stream().map(Intervention::getId).filter(id -> id != null && id > 0).collect(Collectors.toList());
-
-                            transactionTemplate.executeWithoutResult(status -> {
-                                List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).filter(id -> id != null && !id.isEmpty()).toList();
-                                List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
-                                Map<String, Intervention> existingMap = existingData.stream().collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
-
-                                for (Intervention incoming : incomingData) {
-                                    if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
-                                    Intervention existing = existingMap.get(incoming.getIdIntervention());
-
-                                    if (existing == null) {
-                                        existing = incoming;
-                                        existing.setId(null);
-                                        existing.setSourceIngestion(activePeriod != null ? "TIME_MACHINE" : "RADAR");
-
-                                        if (activePeriod != null) {
-                                            existing.setPeriode(activePeriod);
-                                        }
-
-                                        if (existing.getActionsLog() != null) {
-                                            for (ActionLog l : existing.getActionsLog()) l.setId(null);
-                                        }
-                                        existingMap.put(existing.getIdIntervention(), existing);
-                                    } else {
-                                        existing.setEtat(incoming.getEtat());
-                                        existing.setDateModificationEtat(incoming.getDateModificationEtat());
-                                        existing.setTypeIntervention(incoming.getTypeIntervention());
-                                        existing.setMainteneur(incoming.getMainteneur());
-                                        if (incoming.getDetailIntervention() != null && !incoming.getDetailIntervention().isEmpty() && !incoming.getDetailIntervention().equals("null")) {
-                                            existing.setDetailIntervention(incoming.getDetailIntervention());
-                                        }
-                                        existing.setPayloadRecu(incoming.getPayloadRecu());
-
-                                        if (activePeriod != null) {
-                                            existing.setPeriode(activePeriod);
-                                        }
-
-                                        if (existing.getActionsLog() != null) existing.getActionsLog().clear();
-                                        else existing.setActionsLog(new ArrayList<>());
-                                        if (incoming.getActionsLog() != null) {
-                                            for (ActionLog newLog : incoming.getActionsLog()) {
-                                                newLog.setId(null);
-                                                existing.getActionsLog().add(newLog);
-                                            }
-                                        }
-                                    }
-                                }
-                                interventionRepository.saveAll(existingMap.values());
-                            });
-
-                            if (!idsToAck.isEmpty()) {
-                                try {
-                                    phpApiClient.acknowledge(idsToAck);
-                                } catch (Exception e) {
-                                    log.warn("⚠️ Le serveur PHP a rejeté l'ACK. On continue.");
-                                }
-                            } else {
-                                bufferHasData = false;
-                            }
-                        } else {
-                            bufferHasData = false;
-                        }
-                    } catch (Exception e) {
-                        radarStatus = "Erreur Vidage IONOS";
-                        bufferHasData = false;
-                        sleep(5000);
-                    }
-                }
-
-                if (!isRunning) break;
-
-                int dbOffset = currentPeriod != null ? getSavedState("offset_" + currentPeriod) : getSavedState(OFFSET_KEY);
-                if (Math.abs(dbOffset - localOffset) > 1000) {
-                    localOffset = dbOffset;
-                    log.warn("🔄 Offset forcé détecté. Mise à jour de la RAM vers : {}", localOffset);
-                }
+                int localOffset = getSavedState("offset_" + activePeriod);
+                int localTotalApi = getSavedState("total_" + activePeriod);
 
                 if (localTotalApi > 0 && localOffset >= localTotalApi) {
-                    if (currentPeriod != null) {
-                        log.info("Période {} terminée à 100%.", currentPeriod);
-                        addAlert("✅ [TIME MACHINE] Période " + currentPeriod + " terminée.");
+                    log.info("Période {} terminée à 100%.", activePeriod);
+                    addAlert("✅ [TIME MACHINE] Période " + activePeriod + " terminée.");
 
-                        currentPeriod = periodQueue.poll();
+                    currentPeriod = periodQueue.poll();
 
-                        if (currentPeriod == null) {
-                            log.info("Toutes les périodes ont été traitées. Arrêt.");
-                            addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées !");
-                            stopSync();
-                            break;
-                        } else {
-                            log.info("Passage à la période suivante: {}", currentPeriod);
-                            addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
-
-                            localOffset = getSavedState("offset_" + currentPeriod);
-                            localTotalApi = getSavedState("total_" + currentPeriod);
-                            totalProcessedSinceStart = 0;
-                            syncStartTime = System.currentTimeMillis();
-                            sleep(2000);
-                        }
+                    if (currentPeriod == null) {
+                        log.info("Toutes les périodes ont été traitées. Arrêt.");
+                        addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées !");
+                        stopSync();
+                        break;
                     } else {
-                        log.info("Cycle Standard terminé. Retour à l'offset 0.");
-                        saveState(OFFSET_KEY, 0);
-                        localOffset = 0;
-                        currentEta = "Nouveau Cycle";
-                        radarStatus = "Cycle 100% terminé. Pause 30s.";
-                        sleep(30000);
+                        log.info("Passage à la période suivante: {}", currentPeriod);
+                        addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
+                        totalProcessedSinceStart = 0;
+                        syncStartTime = System.currentTimeMillis();
+                        sleep(2000);
+                        continue;
                     }
-                } else {
-                    radarStatus = currentPeriod != null
-                            ? "Scan [" + currentPeriod + "] en cours..."
-                            : "Scan Bouygues en cours...";
                 }
+
+                timeMachineStatus = "Scan [" + activePeriod + "] en cours...";
 
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
-                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", localOffset, TIME_MACHINE_BATCH, currentPeriod);
-                        ImportResponse importResp = phpApiClient.triggerImport(localOffset, TIME_MACHINE_BATCH, currentPeriod);
+                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", localOffset, TIME_MACHINE_BATCH, activePeriod);
+                        ImportResponse importResp = phpApiClient.triggerImport(localOffset, TIME_MACHINE_BATCH, activePeriod);
 
                         if (importResp != null && importResp.isOk()) {
 
@@ -362,14 +240,8 @@ public class SyncOrchestrator {
                                 log.warn("Bouygues a retourné 0 résultat. Avancement forcé de la zone.");
                                 localTotalApi = importResp.getTotalApi() > 0 ? importResp.getTotalApi() : 1;
                                 localOffset = localTotalApi;
-
-                                if (currentPeriod != null) {
-                                    saveState("offset_" + currentPeriod, localOffset);
-                                    saveState("total_" + currentPeriod, localTotalApi);
-                                } else {
-                                    saveState(OFFSET_KEY, localOffset);
-                                    saveState(TOTAL_KEY, localTotalApi);
-                                }
+                                saveState("offset_" + activePeriod, localOffset);
+                                saveState("total_" + activePeriod, localTotalApi);
                                 importSuccess = true;
                                 break;
                             }
@@ -377,28 +249,23 @@ public class SyncOrchestrator {
                             int newOffset = importResp.getNextOffset();
                             int newTotal = importResp.getTotalApi();
 
+                            // 🚀 L'FIX HNA : TOTAL LOCK (On verrouille le total s'il est déjà connu)
                             if (localTotalApi == 0 || (newTotal > 0 && Math.abs(newTotal - localTotalApi) < 10000)) {
                                 localTotalApi = newTotal;
                             }
 
+                            // 🚀 L'FIX HNA : OFFSET SHIELD (Bouclier Anti-Glitch)
                             if (newOffset > 0 && newOffset <= localOffset) {
                                 log.error("🚨 GLITCH BOUYGUES DETECTE : L'API a tenté de ramener l'offset de {} à {}. On force la continuité !", localOffset, newOffset);
                                 addAlert("⚠️ Glitch Bouygues ignoré (Offset protégé à " + localOffset + ")");
-                                localOffset += TIME_MACHINE_BATCH;
+                                localOffset += TIME_MACHINE_BATCH; // On avance manuellement
                             } else {
                                 localOffset = newOffset;
                             }
 
-                            if (currentPeriod != null) {
-                                saveState("offset_" + currentPeriod, localOffset);
-                                saveState("total_" + currentPeriod, localTotalApi);
-                                totalPeriodProcessed += importResp.getBatchCount();
-                            } else {
-                                saveState(OFFSET_KEY, localOffset);
-                                saveState(TOTAL_KEY, localTotalApi);
-                                totalRadarProcessed += importResp.getBatchCount();
-                            }
-
+                            saveState("offset_" + activePeriod, localOffset);
+                            saveState("total_" + activePeriod, localTotalApi);
+                            totalPeriodProcessed += importResp.getBatchCount();
                             totalProcessedSinceStart += importResp.getBatchCount();
 
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
@@ -408,10 +275,9 @@ public class SyncOrchestrator {
                                 currentEta = formatDuration(remainingItems * millisPerItem);
                             }
                             importSuccess = true;
-                            radarStatus = "Vitesse: " + TIME_MACHINE_BATCH + " EPS (Offset: " + localOffset + ")";
+                            timeMachineStatus = "Vitesse: " + TIME_MACHINE_BATCH + " EPS (Offset: " + localOffset + ")";
 
-                            // 🚀 L'FIX HNA : On a supprimé le sleep(1000) et sleep(300).
-                            // L'API Bouygues prend déjà 4s+, donc on enchaîne direct !
+                            // 🚀 L'FIX HNA : Zéro Sleep ! On enchaîne direct pour la vitesse max.
                             break;
                         }
                     } catch (RestClientResponseException e) {
@@ -419,45 +285,45 @@ public class SyncOrchestrator {
                         log.error("Erreur API PHP (HTTP {}): {}", e.getStatusCode(), body);
 
                         if (e.getStatusCode().value() == 404) {
-                            addAlert("[RADAR] Erreur 404 (URL introuvable) - Vérifiez AppConfig");
-                            radarStatus = "Erreur HTTP 404 (URL introuvable)";
+                            addAlert("[TIME MACHINE] Erreur 404 (URL introuvable)");
+                            timeMachineStatus = "Erreur HTTP 404";
                             sleep(15000);
                         }
                         else if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
-                            addAlert("[RADAR] Bloqué par le Pare-feu Bouygues (Akamai). Veille 15m.");
-                            radarStatus = "Banni (Pause 15 min)";
+                            addAlert("[TIME MACHINE] Bloqué par le Pare-feu Bouygues (Akamai). Veille 15m.");
+                            timeMachineStatus = "Banni (Pause 15 min)";
                             sleep(15 * 60 * 1000);
                         }
                         else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504 || body.contains("Timeout")) {
-                            addAlert("[RADAR] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ")");
-                            radarStatus = "Erreur HTTP " + e.getStatusCode() + " - Retry...";
+                            addAlert("[TIME MACHINE] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ")");
+                            timeMachineStatus = "Surcharge - Retry...";
                             sleep(15000);
                         }
                         else {
-                            addAlert("[RADAR] Erreur HTTP " + e.getStatusCode());
-                            radarStatus = "Erreur HTTP " + e.getStatusCode();
+                            addAlert("[TIME MACHINE] Erreur HTTP " + e.getStatusCode());
+                            timeMachineStatus = "Erreur HTTP " + e.getStatusCode();
                             sleep(10000);
                         }
                     } catch (Exception e) {
                         log.error("Erreur de connexion inattendue", e);
-                        radarStatus = "Erreur Connexion";
+                        timeMachineStatus = "Erreur Connexion";
                         sleep(10000);
                     }
                 }
 
                 if (!importSuccess && isRunning) {
-                    radarStatus = "Échecs répétés, pause 30s";
+                    timeMachineStatus = "Échecs répétés, pause 30s";
                     sleep(30000);
                 }
 
             } catch (Exception e) {
-                log.error("Exception critique dans la boucle Radar", e);
-                radarStatus = "Erreur Critique";
+                log.error("Exception critique dans la boucle Time Machine", e);
+                timeMachineStatus = "Erreur Critique";
                 sleep(5000);
             }
         }
-        log.info("Thread Radar Circulaire Arrêté.");
-        radarStatus = "Arrêté";
+        log.info("Thread Time Machine Arrêté.");
+        timeMachineStatus = "Arrêté";
     }
 
     private <T> List<List<T>> partition(List<T> list, int size) {
