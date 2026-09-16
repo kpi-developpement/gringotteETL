@@ -84,10 +84,10 @@ public class DashboardController {
             @RequestParam(defaultValue = "50") int size) {
 
         String cleanPeriod = "";
-        String dbPeriod = "";
+        String datePeriod = "";
         if (period != null && !period.trim().isEmpty()) {
-            cleanPeriod = period.replace("_", "-").replace("-M", "-M");
-            dbPeriod = period.replace("-M", "_M");
+            cleanPeriod = period.replace("_", "-"); // Ex: 2026-M02 (Pour chercher dans le JSON)
+            datePeriod = period.replace("_", "-").replace("-M", "-"); // Ex: 2026-02 (Pour chercher dans la date)
         }
 
         String cleanSearch = "";
@@ -96,7 +96,7 @@ public class DashboardController {
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                cleanSearch, source, cleanPeriod, dbPeriod, PageRequest.of(page, size)
+                cleanSearch, source, cleanPeriod, datePeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
@@ -194,7 +194,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", "Offset forcé à " + value));
     }
 
-    // 🚀 L'FIX HNA : Endpoint pour réparer les EPS Fantômes
     @PostMapping("/retry-failed-heals")
     public ResponseEntity<Map<String, Object>> retryFailedHeals() {
         int count = syncOrchestrator.retryFailedHeals();
