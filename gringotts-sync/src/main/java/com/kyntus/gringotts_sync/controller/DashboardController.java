@@ -86,8 +86,8 @@ public class DashboardController {
         String cleanPeriod = "";
         String datePeriod = "";
         if (period != null && !period.trim().isEmpty()) {
-            cleanPeriod = period.replace("_", "-"); // Ex: 2026-M02 (Pour chercher dans le JSON)
-            datePeriod = period.replace("_", "-").replace("-M", "-"); // Ex: 2026-02 (Pour chercher dans la date)
+            cleanPeriod = period.replace("_", "-");
+            datePeriod = period.replace("_", "-").replace("-M", "-");
         }
 
         String cleanSearch = "";
@@ -165,6 +165,17 @@ public class DashboardController {
     public ResponseEntity<Map<String, String>> resetSync() {
         new Thread(syncOrchestrator::purgeDatabase).start();
         return ResponseEntity.ok(Map.of("message", "Purge en cours..."));
+    }
+
+    // 🚀 L'FIX HNA : L'endpoint pour purger une période ciblée
+    @PostMapping("/purge-period")
+    public ResponseEntity<Map<String, Object>> purgePeriod(@RequestBody Map<String, String> body) {
+        String period = body.get("period");
+        if (period == null || period.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Période invalide."));
+        }
+        int deleted = syncOrchestrator.purgePeriod(period);
+        return ResponseEntity.ok(Map.of("ok", true, "message", deleted + " interventions supprimées pour la période " + period));
     }
 
     @PostMapping("/clean-duplicates")

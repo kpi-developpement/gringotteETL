@@ -184,6 +184,21 @@ public class SyncOrchestrator {
         addAlert("[MAINTENANCE] Base de données purgée avec succès.");
     }
 
+    // 🚀 L'FIX HNA : La méthode pour purger une période ciblée
+    public synchronized int purgePeriod(String period) {
+        String cleanPeriod = period.replace("_", "-"); // 2026-M08
+        String datePeriod = period.replace("_", "-").replace("-M", "-"); // 2026-08
+
+        interventionRepository.deleteLogsByPeriodNative(cleanPeriod, datePeriod);
+        int deletedCount = interventionRepository.deleteInterventionsByPeriodNative(cleanPeriod, datePeriod);
+
+        syncStateRepository.deleteById("offset_" + period);
+        syncStateRepository.deleteById("total_" + period);
+
+        addAlert("[MAINTENANCE] Période " + period + " purgée (" + deletedCount + " supprimées).");
+        return deletedCount;
+    }
+
     public void cleanDuplicatesTask() {
         log.info("Smart Clean (Dédoublonnage) démarré.");
         addAlert("[MAINTENANCE] Smart Clean lancé");
@@ -199,7 +214,6 @@ public class SyncOrchestrator {
         addAlert("[MAINTENANCE] Smart Clean terminé. " + totalDeleted + " doublons.");
     }
 
-    // 🚀 L'FIX HNA : La méthode pour réparer les fantômes
     public int retryFailedHeals() {
         int count = interventionRepository.resetFailedHeals();
         addAlert("[HEALER] " + count + " EPS Fantômes remis en file d'attente.");

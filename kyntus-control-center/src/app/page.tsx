@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, SyncStats } from '../services/api';
+import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, SyncStats } from '../services/api';
 import styles from './page.module.css';
 
 const IconActivity = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>;
@@ -32,6 +32,10 @@ export default function DashboardPage() {
 
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
+  
+  // 🚀 L'FIX HNA : State pour la sélection de la période à purger
+  const [purgeSelection, setPurgeSelection] = useState('2026_M01');
+
   const availableYears = ['2026', '2025', '2024'];
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
 
@@ -109,6 +113,15 @@ export default function DashboardPage() {
     }
   };
 
+  // 🚀 L'FIX HNA : Fonction pour purger une période ciblée
+  const handlePurgePeriod = async () => {
+    if (window.confirm(`Voulez-vous vraiment supprimer TOUTES les données de la période ${purgeSelection} ? L'offset sera remis à zéro.`)) {
+      const msg = await purgePeriod(purgeSelection);
+      alert(msg);
+      loadStats();
+    }
+  };
+
   const handleSmartClean = async () => {
     if (window.confirm("Lancer un nettoyage des doublons ?")) {
       await cleanDuplicates();
@@ -132,9 +145,8 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 L'FIX HNA : Appel de la fonction de réparation
   const handleRetryFailedHeals = async () => {
-    if (window.confirm("Voulez-vous remettre les EPS Fantômes ({}) dans la file d'attente du Healer pour une nouvelle tentative ?")) {
+    if (window.confirm("Voulez-vous remettre les EPS Fantômes dans la file d'attente du Healer pour une nouvelle tentative ?")) {
       const msg = await retryFailedHeals();
       alert(msg);
       loadStats();
@@ -420,12 +432,34 @@ export default function DashboardPage() {
                   <IconEdit /> Forcer l'Offset (Reprise Manuelle)
                 </button>
 
-                {/* 🚀 L'FIX HNA : Le bouton pour réessayer les fantômes */}
                 <button className={styles.btnSecondary} style={{ color: '#8b5cf6', borderColor: '#ddd6fe' }} onClick={handleRetryFailedHeals}>
                   <IconRefresh /> Réparer les EPS Fantômes
                 </button>
 
-                <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca' }} onClick={handleReset}>
+                {/* 🚀 L'FIX HNA : Le sélecteur pour purger une période ciblée */}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                  <select 
+                    className={styles.btnSecondary} 
+                    style={{ flex: 1, padding: '10px', textAlign: 'left' }} 
+                    value={purgeSelection} 
+                    onChange={e => setPurgeSelection(e.target.value)}
+                  >
+                    {availableYears.map(year => (
+                      <optgroup key={year} label={`Année ${year}`}>
+                        {availableMonths.map(month => (
+                          <option key={`${year}_${month}`} value={`${year}_${month}`}>
+                            {year} - Mois {month.replace('M', '')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca', width: 'auto', padding: '0 15px' }} onClick={handlePurgePeriod}>
+                    <IconTrash /> Purger
+                  </button>
+                </div>
+
+                <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca', marginTop: '10px' }} onClick={handleReset}>
                   Reset & Purge Totale
                 </button>
               </div>

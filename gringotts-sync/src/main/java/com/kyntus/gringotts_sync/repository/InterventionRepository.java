@@ -15,7 +15,6 @@ import java.util.List;
 @Repository
 public interface InterventionRepository extends JpaRepository<Intervention, Long> {
 
-    // 🚀 L'FIX HNA : Syntaxe HQL propre (sans CAST AS text) et ajout de :datePeriod
     @Query(value = "SELECT i FROM Intervention i WHERE " +
             "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
             "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
@@ -91,4 +90,15 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Transactional
     @Query(value = "UPDATE interventions SET detail_intervention = NULL WHERE detail_intervention = '{}'", nativeQuery = true)
     int resetFailedHeals();
+
+    // 🚀 L'FIX HNA : Requêtes pour supprimer une période ciblée
+    @Modifying
+    @Transactional
+    @Query(value = "DELETE FROM actions_log WHERE intervention_id IN (SELECT id FROM interventions WHERE detail_intervention LIKE CONCAT('%', :period, '%') OR payload_recu LIKE CONCAT('%', :period, '%') OR CAST(date_modification_etat AS text) LIKE CONCAT('%', :datePeriod, '%'))", nativeQuery = true)
+    void deleteLogsByPeriodNative(@Param("period") String period, @Param("datePeriod") String datePeriod);
+
+    @Modifying
+    @Transactional
+    @Query(value = "DELETE FROM interventions WHERE detail_intervention LIKE CONCAT('%', :period, '%') OR payload_recu LIKE CONCAT('%', :period, '%') OR CAST(date_modification_etat AS text) LIKE CONCAT('%', :datePeriod, '%')", nativeQuery = true)
+    int deleteInterventionsByPeriodNative(@Param("period") String period, @Param("datePeriod") String datePeriod);
 }

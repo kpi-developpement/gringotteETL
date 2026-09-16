@@ -95,6 +95,19 @@ export const resetSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/reset`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
+// 🚀 L'FIX HNA : Appel à l'API pour purger une période ciblée
+export const purgePeriod = async (period: string): Promise<string> => {
+  try {
+    const res = await fetch(`${API_URL}/purge-period`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period })
+    });
+    const data = await res.json();
+    return data.message || "Opération terminée.";
+  } catch (e) { return "Erreur lors de la purge de la période."; }
+};
+
 export const setManualOffset = async (value: number): Promise<boolean> => {
   try {
     const res = await fetch(`${API_URL}/offset/${value}`, { method: 'POST' });
@@ -118,7 +131,6 @@ export const trimDatabase = async (keepCount: number): Promise<string> => {
   } catch (e) { return "Erreur lors de la suppression."; }
 };
 
-// 🚀 L'FIX HNA : Appel pour réparer les fantômes
 export const retryFailedHeals = async (): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/retry-failed-heals`, { method: 'POST' });
