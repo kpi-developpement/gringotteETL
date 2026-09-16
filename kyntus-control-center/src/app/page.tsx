@@ -33,7 +33,6 @@ export default function DashboardPage() {
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
   
-  // 🚀 L'FIX HNA : State pour la sélection de la période à purger
   const [purgeSelection, setPurgeSelection] = useState('2026_M01');
 
   const availableYears = ['2026', '2025', '2024'];
@@ -113,7 +112,6 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 L'FIX HNA : Fonction pour purger une période ciblée
   const handlePurgePeriod = async () => {
     if (window.confirm(`Voulez-vous vraiment supprimer TOUTES les données de la période ${purgeSelection} ? L'offset sera remis à zéro.`)) {
       const msg = await purgePeriod(purgeSelection);
@@ -436,7 +434,6 @@ export default function DashboardPage() {
                   <IconRefresh /> Réparer les EPS Fantômes
                 </button>
 
-                {/* 🚀 L'FIX HNA : Le sélecteur pour purger une période ciblée */}
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                   <select 
                     className={styles.btnSecondary} 

@@ -184,13 +184,12 @@ public class SyncOrchestrator {
         addAlert("[MAINTENANCE] Base de données purgée avec succès.");
     }
 
-    // 🚀 L'FIX HNA : La méthode pour purger une période ciblée
     public synchronized int purgePeriod(String period) {
-        String cleanPeriod = period.replace("_", "-"); // 2026-M08
-        String datePeriod = period.replace("_", "-").replace("-M", "-"); // 2026-08
+        String cleanPeriod = period.replace("_", "-");
+        String dbPeriod = period;
 
-        interventionRepository.deleteLogsByPeriodNative(cleanPeriod, datePeriod);
-        int deletedCount = interventionRepository.deleteInterventionsByPeriodNative(cleanPeriod, datePeriod);
+        interventionRepository.deleteLogsByPeriodNative(cleanPeriod, dbPeriod);
+        int deletedCount = interventionRepository.deleteInterventionsByPeriodNative(cleanPeriod, dbPeriod);
 
         syncStateRepository.deleteById("offset_" + period);
         syncStateRepository.deleteById("total_" + period);
@@ -253,6 +252,11 @@ public class SyncOrchestrator {
                                         existing.setId(null);
                                         existing.setSourceIngestion(activePeriod != null ? "TIME_MACHINE" : "RADAR");
 
+                                        // 🚀 L'FIX ABSOLU : Tagging de la période
+                                        if (activePeriod != null) {
+                                            existing.setPeriode(activePeriod);
+                                        }
+
                                         if (existing.getActionsLog() != null) {
                                             for (ActionLog l : existing.getActionsLog()) l.setId(null);
                                         }
@@ -266,6 +270,12 @@ public class SyncOrchestrator {
                                             existing.setDetailIntervention(incoming.getDetailIntervention());
                                         }
                                         existing.setPayloadRecu(incoming.getPayloadRecu());
+
+                                        // 🚀 L'FIX ABSOLU : Tagging de la période même en cas d'update
+                                        if (activePeriod != null) {
+                                            existing.setPeriode(activePeriod);
+                                        }
+
                                         if (existing.getActionsLog() != null) existing.getActionsLog().clear();
                                         else existing.setActionsLog(new ArrayList<>());
                                         if (incoming.getActionsLog() != null) {

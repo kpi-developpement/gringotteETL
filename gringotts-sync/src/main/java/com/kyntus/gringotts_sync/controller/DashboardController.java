@@ -84,10 +84,10 @@ public class DashboardController {
             @RequestParam(defaultValue = "50") int size) {
 
         String cleanPeriod = "";
-        String datePeriod = "";
+        String dbPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
             cleanPeriod = period.replace("_", "-");
-            datePeriod = period.replace("_", "-").replace("-M", "-");
+            dbPeriod = period; // Ex: 2026_M01
         }
 
         String cleanSearch = "";
@@ -96,7 +96,7 @@ public class DashboardController {
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                cleanSearch, source, cleanPeriod, datePeriod, PageRequest.of(page, size)
+                cleanSearch, source, cleanPeriod, dbPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
@@ -167,7 +167,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Purge en cours..."));
     }
 
-    // 🚀 L'FIX HNA : L'endpoint pour purger une période ciblée
     @PostMapping("/purge-period")
     public ResponseEntity<Map<String, Object>> purgePeriod(@RequestBody Map<String, String> body) {
         String period = body.get("period");

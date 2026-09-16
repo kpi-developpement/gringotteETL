@@ -131,6 +131,7 @@ export const trimDatabase = async (keepCount: number): Promise<string> => {
   } catch (e) { return "Erreur lors de la suppression."; }
 };
 
+// 🚀 L'FIX HNA : Appel pour réparer les fantômes
 export const retryFailedHeals = async (): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/retry-failed-heals`, { method: 'POST' });
