@@ -8,8 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -82,16 +80,15 @@ public class ExportExcelService {
             "typeIntervention", "typeIntervention_BRUT", "D1_TYPE_RACC", "estDeplacementFacturable", "estDeplacementFacturable_BRUT", "DEPLACEMENT", "DEPLACEMENT_BRUT"
     );
 
-    public byte[] generateExcelExport(String source, String period, String type) {
-        log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Période: {} | Type: {}", source, period, type);
+    public byte[] generateExcelExport(String period, String type) {
+        log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Période: {} | Type: {}", period, type);
 
         String cleanPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("_", "-") : "";
         String dbPeriod = (period != null && !period.trim().isEmpty()) ? period : "";
-        String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
         String cleanType = (type == null || type.trim().isEmpty()) ? "ALL" : type;
 
         log.info("🔍 Recherche des IDs correspondants...");
-        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, dbPeriod, cleanType);
+        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanPeriod, dbPeriod, cleanType);
 
         if (interventionIds.isEmpty()) {
             throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");

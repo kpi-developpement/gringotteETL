@@ -2,10 +2,9 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startSync, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, SyncStats } from '../services/api';
+import { fetchStats, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, fetchPeriodInfo, SyncStats } from '../services/api';
 import styles from './page.module.css';
 
-const IconActivity = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>;
 const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
 const IconHealer = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>;
 const IconPlay = () => <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
@@ -20,18 +19,14 @@ const IconRefresh = () => <svg width="16" height="16" fill="none" stroke="curren
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
-  
-  const [activeTab, setActiveTab] = useState<'standard' | 'timemachine'>('standard');
-  const [healerMode, setHealerMode] = useState('RADAR'); 
+  const [healerMode, setHealerMode] = useState('TIME_MACHINE'); 
 
-  const [radarHistory, setRadarHistory] = useState<number[]>(Array(12).fill(0));
   const [periodHistory, setPeriodHistory] = useState<number[]>(Array(12).fill(0));
-  
-  const [currentRadarSpeed, setCurrentRadarSpeed] = useState(0);
   const [currentPeriodSpeed, setCurrentPeriodSpeed] = useState(0);
 
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
+  const [periodInfo, setPeriodInfo] = useState<{offset: number, total: number} | null>(null);
   
   const [purgeSelection, setPurgeSelection] = useState('2026_M01');
 
@@ -39,7 +34,6 @@ export default function DashboardPage() {
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
 
   const tickCount = useRef(0);
-  const lastRadarTotal = useRef(0);
   const lastPeriodTotal = useRef(0);
 
   const loadStats = async () => {
@@ -47,28 +41,14 @@ export default function DashboardPage() {
     if (data) {
       setStats(data);
       
-      if (data.is_running && data.current_period !== null) {
-        setActiveTab('timemachine');
-      } else if (data.is_running && data.current_period === null) {
-        setActiveTab('standard');
-      }
-      
-      if (data.radar_processed_total < lastRadarTotal.current) lastRadarTotal.current = data.radar_processed_total;
       if (data.period_processed_total < lastPeriodTotal.current) lastPeriodTotal.current = data.period_processed_total;
 
       tickCount.current += 1;
       
       if (tickCount.current >= 4) {
-        const rDelta = Math.max(0, data.radar_processed_total - lastRadarTotal.current);
         const pDelta = Math.max(0, data.period_processed_total - lastPeriodTotal.current);
-
-        setCurrentRadarSpeed(rDelta);
         setCurrentPeriodSpeed(pDelta);
-
-        setRadarHistory(prev => [...prev.slice(1), rDelta]);
         setPeriodHistory(prev => [...prev.slice(1), pDelta]);
-
-        lastRadarTotal.current = data.radar_processed_total;
         lastPeriodTotal.current = data.period_processed_total;
         tickCount.current = 0;
       }
@@ -81,6 +61,14 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const checkPeriod = async () => {
+      const info = await fetchPeriodInfo(currentSelection);
+      setPeriodInfo(info);
+    };
+    checkPeriod();
+  }, [currentSelection]);
+
   const addPeriod = () => {
     if (!selectedPeriods.includes(currentSelection)) {
       setSelectedPeriods([...selectedPeriods, currentSelection]);
@@ -91,22 +79,20 @@ export default function DashboardPage() {
     setSelectedPeriods(selectedPeriods.filter(item => item !== p));
   };
 
-  const handleStartStandard = async () => { await startSync(); loadStats(); };
-  const handleStop = async () => { await stopSync(); loadStats(); };
-  
   const handleStartTimeMachine = async () => {
     if (selectedPeriods.length === 0) return alert('Veuillez ajouter au moins une période à la liste.');
     await startPeriodSync(selectedPeriods.join(','));
     loadStats();
   };
 
+  const handleStop = async () => { await stopSync(); loadStats(); };
+  
   const handleStartHealer = async () => { await startHealer(healerMode); loadStats(); };
   const handleStopHealer = async () => { await stopHealer(); loadStats(); };
 
   const handleReset = async () => {
     if (window.confirm("ATTENTION : Purge Totale de la base de données. Confirmer ?")) {
       await resetSync();
-      setRadarHistory(Array(12).fill(0));
       setPeriodHistory(Array(12).fill(0));
       loadStats();
     }
@@ -128,7 +114,7 @@ export default function DashboardPage() {
   };
 
   const handleForceOffset = async () => {
-    const currentVal = activeTab === 'standard' ? stats?.current_bt_offset : stats?.period_offset;
+    const currentVal = stats?.period_offset;
     const newOffset = prompt(`L'offset actuel est de ${currentVal}.\nEntrez la nouvelle valeur (ex: 16000) :`, currentVal?.toString());
     
     if (newOffset !== null) {
@@ -153,10 +139,6 @@ export default function DashboardPage() {
 
   const isRunning = stats?.is_running || false;
   const isHealing = stats?.is_healing || false;
-
-  const totalApi = stats?.total_api || 0;
-  const currentOffset = stats?.current_bt_offset || 0;
-  const progressRadar = totalApi > 0 ? Math.min(100, Math.round((currentOffset / totalApi) * 100)) : 0;
 
   const periodTotal = stats?.period_total || 0;
   const periodOffset = stats?.period_offset || 0;
@@ -192,170 +174,109 @@ export default function DashboardPage() {
         <header className={styles.header}>
           <div>
             <h1 className={styles.pageTitle}>Gringotts Control Center</h1>
-            <p className={styles.pageSubtitle}>Supervision et Orchestration API</p>
+            <p className={styles.pageSubtitle}>Extracteur Historique Spécialisé (Time Machine)</p>
           </div>
           <div className={`${styles.statusBadge} ${isRunning ? styles.statusOnline : styles.statusOffline}`}>
             {isRunning && <span className={styles.pulse}></span>}
-            {isRunning ? 'DAEMON ACTIF' : 'DAEMON ARRÊTÉ'}
+            {isRunning ? 'MOTEUR ACTIF' : 'MOTEUR ARRÊTÉ'}
           </div>
         </header>
-
-        <div className={styles.tabContainer}>
-          <button 
-            className={`${styles.tabBtn} ${activeTab === 'standard' ? styles.tabActiveStandard : ''}`}
-            onClick={() => setActiveTab('standard')}
-          >
-            <IconActivity /> Mode Standard (Global)
-          </button>
-          <button 
-            className={`${styles.tabBtn} ${activeTab === 'timemachine' ? styles.tabActiveTimeMachine : ''}`}
-            onClick={() => setActiveTab('timemachine')}
-          >
-            <IconClock /> Mode Time Machine (Périodes)
-          </button>
-        </div>
 
         <div className={styles.mainGrid}>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
             
-            {activeTab === 'standard' && (
-              <div className={styles.glassCard}>
-                <div className={styles.cardHeader}>
-                  <h2 className={styles.cardTitle}>
-                    <div className={`${styles.iconBox} ${styles.iconStandard}`}><IconActivity /></div>
-                    Radar d'Aspiration (Global)
-                  </h2>
-                  <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>{rStatus.icon} {rStatus.text}</span>
-                </div>
-
-                <div className={styles.metricsGrid}>
-                  <div className={styles.metricBox}>
-                    <span className={styles.metricLabel}>Cible API Bouygues</span>
-                    <span className={styles.metricValue}>{totalApi.toLocaleString()}</span>
-                  </div>
-                  <div className={styles.metricBox}>
-                    <span className={styles.metricLabel}>Dossiers Téléchargés</span>
-                    <span className={styles.metricValue}>{currentOffset.toLocaleString()}</span>
-                  </div>
-                </div>
-
-                <div className={styles.progressSection}>
-                  <div className={styles.progressHeader}>
-                    <span>Progression du Scan</span>
-                    <span>{progressRadar}%</span>
-                  </div>
-                  <div className={styles.progressTrack}>
-                    <div className={styles.progressFillStandard} style={{ width: `${progressRadar}%` }}></div>
-                  </div>
-                  <div className={styles.progressFooter}>
-                    <span>Vitesse: {currentRadarSpeed} EPS</span>
-                    <span>ETA: {stats?.eta || '---'}</span>
-                  </div>
-                </div>
-
-                <div className={styles.sparkline}>
-                  {radarHistory.map((val, i) => (
-                    <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(5, (val / 300) * 100))}%`, background: '#3b82f6' }}></div>
-                  ))}
-                </div>
-
-                <div className={styles.controlsGroup}>
-                  {!isRunning ? (
-                    <button className={`${styles.btnPrimary} ${styles.bgBlue}`} onClick={handleStartStandard}>
-                      <IconPlay /> Lancer le Radar Standard
-                    </button>
-                  ) : (
-                    <button className={`${styles.btnPrimary} ${styles.bgRed}`} onClick={handleStop}>
-                      <IconStop /> Stopper le Processus
-                    </button>
-                  )}
-                </div>
+            <div className={styles.glassCard}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>
+                  <div className={`${styles.iconBox} ${styles.iconTime}`}><IconClock /></div>
+                  Time Machine (Aspiration Mensuelle)
+                </h2>
+                <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>{rStatus.icon} {rStatus.text}</span>
               </div>
-            )}
 
-            {activeTab === 'timemachine' && (
-              <div className={styles.glassCard}>
-                <div className={styles.cardHeader}>
-                  <h2 className={styles.cardTitle}>
-                    <div className={`${styles.iconBox} ${styles.iconTime}`}><IconClock /></div>
-                    Time Machine (Mensuel)
-                  </h2>
-                  <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>{rStatus.icon} {rStatus.text}</span>
-                </div>
-
-                {!isRunning && (
-                  <div className={styles.controlsGroup}>
-                    <div className={styles.tmSelector}>
-                      <select className={styles.tmSelect} value={currentSelection} onChange={e => setCurrentSelection(e.target.value)}>
-                        {availableYears.map(year => (
-                          <optgroup key={year} label={`Année ${year}`}>
-                            {availableMonths.map(month => (
-                              <option key={`${year}_${month}`} value={`${year}_${month}`}>
-                                {year} - Mois {month.replace('M', '')}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                      <button className={styles.btnSecondary} style={{ width: 'auto' }} onClick={addPeriod}>Ajouter</button>
-                    </div>
-                    
-                    <div className={styles.tmList}>
-                      {selectedPeriods.length === 0 && <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto' }}>Aucune période sélectionnée</span>}
-                      {selectedPeriods.map(p => (
-                        <div key={p} className={styles.tmTag}>
-                          {p}
-                          <button onClick={() => removePeriod(p)}><IconTrash /></button>
-                        </div>
+              {!isRunning && (
+                <div className={styles.controlsGroup}>
+                  <div className={styles.tmSelector}>
+                    <select className={styles.tmSelect} value={currentSelection} onChange={e => setCurrentSelection(e.target.value)}>
+                      {availableYears.map(year => (
+                        <optgroup key={year} label={`Année ${year}`}>
+                          {availableMonths.map(month => (
+                            <option key={`${year}_${month}`} value={`${year}_${month}`}>
+                              {year} - Mois {month.replace('M', '')}
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
+                    </select>
+                    <button className={styles.btnSecondary} style={{ width: 'auto' }} onClick={addPeriod}>Ajouter</button>
+                  </div>
+                  
+                  {periodInfo && (
+                    <div style={{ padding: '10px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold',
+                      background: (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#ecfdf5' : (periodInfo.offset > 0 ? '#fffbeb' : '#f8fafc'),
+                      color: (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#059669' : (periodInfo.offset > 0 ? '#d97706' : '#64748b'),
+                      border: `1px solid ${(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#a7f3d0' : (periodInfo.offset > 0 ? '#fde68a' : '#e2e8f0')}`
+                    }}>
+                      {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '✅ Terminé :' : (periodInfo.offset > 0 ? '⚠️ À reprendre :' : '🆕 Nouveau :')}
+                      <span style={{ color: '#0f172a', marginLeft: '5px' }}>{periodInfo.offset.toLocaleString()} / {periodInfo.total > 0 ? periodInfo.total.toLocaleString() : '?'} EPS</span>
                     </div>
-                  </div>
-                )}
-
-                <div className={styles.metricsGrid}>
-                  <div className={styles.metricBox}>
-                    <span className={styles.metricLabel}>Période Active</span>
-                    <span className={styles.metricValue}>{stats?.current_period || '---'}</span>
-                  </div>
-                  <div className={styles.metricBox}>
-                    <span className={styles.metricLabel}>Téléchargés (Ce mois)</span>
-                    <span className={styles.metricValue}>{periodOffset.toLocaleString()} / {periodTotal.toLocaleString()}</span>
-                  </div>
-                </div>
-
-                <div className={styles.progressSection}>
-                  <div className={styles.progressHeader}>
-                    <span>Progression du Mois</span>
-                    <span>{progressPeriod}%</span>
-                  </div>
-                  <div className={styles.progressTrack}>
-                    <div className={styles.progressFillTime} style={{ width: `${progressPeriod}%` }}></div>
-                  </div>
-                  <div className={styles.progressFooter}>
-                    <span>Vitesse: {currentPeriodSpeed} EPS</span>
-                  </div>
-                </div>
-
-                <div className={styles.sparkline}>
-                  {periodHistory.map((val, i) => (
-                    <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(5, (val / 300) * 100))}%`, background: '#8b5cf6' }}></div>
-                  ))}
-                </div>
-
-                <div className={styles.controlsGroup}>
-                  {!isRunning ? (
-                    <button className={`${styles.btnPrimary} ${styles.bgPurple}`} onClick={handleStartTimeMachine} disabled={selectedPeriods.length === 0}>
-                      <IconPlay /> Démarrer la Time Machine
-                    </button>
-                  ) : (
-                    <button className={`${styles.btnPrimary} ${styles.bgRed}`} onClick={handleStop}>
-                      <IconStop /> Stopper la Time Machine
-                    </button>
                   )}
+
+                  <div className={styles.tmList}>
+                    {selectedPeriods.length === 0 && <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto' }}>Aucune période sélectionnée</span>}
+                    {selectedPeriods.map(p => (
+                      <div key={p} className={styles.tmTag}>
+                        {p}
+                        <button onClick={() => removePeriod(p)}><IconTrash /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className={styles.metricsGrid}>
+                <div className={styles.metricBox}>
+                  <span className={styles.metricLabel}>Période Active</span>
+                  <span className={styles.metricValue}>{stats?.current_period || '---'}</span>
+                </div>
+                <div className={styles.metricBox}>
+                  <span className={styles.metricLabel}>Téléchargés (Ce mois)</span>
+                  <span className={styles.metricValue}>{periodOffset.toLocaleString()} / {periodTotal.toLocaleString()}</span>
                 </div>
               </div>
-            )}
+
+              <div className={styles.progressSection}>
+                <div className={styles.progressHeader}>
+                  <span>Progression du Mois</span>
+                  <span>{progressPeriod}%</span>
+                </div>
+                <div className={styles.progressTrack}>
+                  <div className={styles.progressFillTime} style={{ width: `${progressPeriod}%` }}></div>
+                </div>
+                <div className={styles.progressFooter}>
+                  <span>Vitesse: {currentPeriodSpeed} EPS</span>
+                </div>
+              </div>
+
+              <div className={styles.sparkline}>
+                {periodHistory.map((val, i) => (
+                  <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(5, (val / 300) * 100))}%`, background: '#8b5cf6' }}></div>
+                ))}
+              </div>
+
+              <div className={styles.controlsGroup}>
+                {!isRunning ? (
+                  <button className={`${styles.btnPrimary} ${styles.bgPurple}`} onClick={handleStartTimeMachine} disabled={selectedPeriods.length === 0}>
+                    <IconPlay /> Démarrer la Time Machine
+                  </button>
+                ) : (
+                  <button className={`${styles.btnPrimary} ${styles.bgRed}`} onClick={handleStop}>
+                    <IconStop /> Stopper la Time Machine
+                  </button>
+                )}
+              </div>
+            </div>
 
             <div className={styles.glassCard}>
               <div className={styles.cardHeader}>
@@ -373,8 +294,8 @@ export default function DashboardPage() {
                   disabled={isHealing}
                   style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontWeight: 'bold', color: '#334155' }}
                 >
-                  <option value="RADAR">Priorité RADAR (Plus Récents d'abord)</option>
                   <option value="TIME_MACHINE">Priorité TIME MACHINE (Plus Anciens d'abord)</option>
+                  <option value="RADAR">Priorité RADAR (Plus Récents d'abord)</option>
                 </select>
                 
                 {!isHealing ? (

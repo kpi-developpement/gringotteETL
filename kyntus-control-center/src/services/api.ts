@@ -57,10 +57,6 @@ export const fetchPeriodInfo = async (period: string): Promise<{ offset: number,
   } catch (error) { return null; }
 };
 
-export const startSync = async (): Promise<boolean> => {
-  try { const res = await fetch(`${API_URL}/start`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
-};
-
 export const startPeriodSync = async (periodsStr: string): Promise<boolean> => {
   try {
     const res = await fetch(`${API_URL}/start-periods`, {
@@ -95,7 +91,6 @@ export const resetSync = async (): Promise<boolean> => {
   try { const res = await fetch(`${API_URL}/reset`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
-// 🚀 L'FIX HNA : Appel à l'API pour purger une période ciblée
 export const purgePeriod = async (period: string): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/purge-period`, {
@@ -131,7 +126,6 @@ export const trimDatabase = async (keepCount: number): Promise<string> => {
   } catch (e) { return "Erreur lors de la suppression."; }
 };
 
-// 🚀 L'FIX HNA : Appel pour réparer les fantômes
 export const retryFailedHeals = async (): Promise<string> => {
   try {
     const res = await fetch(`${API_URL}/retry-failed-heals`, { method: 'POST' });

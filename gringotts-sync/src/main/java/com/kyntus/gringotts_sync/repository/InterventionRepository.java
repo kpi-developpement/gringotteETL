@@ -17,23 +17,19 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
 
     @Query(value = "SELECT i FROM Intervention i WHERE " +
             "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
-            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
             "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', :period, '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', :period, '%')) " +
             "ORDER BY i.id DESC",
             countQuery = "SELECT count(i) FROM Intervention i WHERE " +
                     "(:search IS NULL OR :search = '' OR LOWER(i.idIntervention) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
-                    "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
                     "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', :period, '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', :period, '%'))")
     Page<Intervention> findFilteredInterventions(
             @Param("search") String search,
-            @Param("source") String source,
             @Param("period") String period,
             @Param("dbPeriod") String dbPeriod,
             Pageable pageable
     );
 
     @Query("SELECT i.id FROM Intervention i WHERE " +
-            "(:source IS NULL OR :source = 'ALL' OR i.sourceIngestion = :source OR (:source = 'INCONNUE' AND i.sourceIngestion IS NULL)) AND " +
             "(:period IS NULL OR :period = '' OR i.periode = :dbPeriod OR COALESCE(i.detailIntervention, '') LIKE CONCAT('%', :period, '%') OR COALESCE(i.payloadRecu, '') LIKE CONCAT('%', :period, '%')) AND " +
             "(:type IS NULL OR :type = 'ALL' OR i.typeIntervention = :type OR " +
             "(:type = 'RACC' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationRaccordement%') OR " +
@@ -41,7 +37,6 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
             "(:type = 'RZO' AND COALESCE(i.detailIntervention, '') LIKE '%QualificationReseau%')) " +
             "ORDER BY i.id DESC")
     List<Long> findIdsForExport(
-            @Param("source") String source,
             @Param("period") String period,
             @Param("dbPeriod") String dbPeriod,
             @Param("type") String type

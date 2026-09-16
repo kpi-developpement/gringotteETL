@@ -34,9 +34,6 @@ public class DashboardController {
         Map<String, Object> stats = new HashMap<>();
         stats.put("total_interventions_local", interventionRepository.count());
 
-        stats.put("current_bt_offset", syncStateRepository.findById("bt_api_offset").map(SyncState::getStateValue).orElse(0));
-        stats.put("total_api", syncStateRepository.findById("bt_total_api").map(SyncState::getStateValue).orElse(0));
-
         String currentPeriod = syncOrchestrator.getCurrentPeriod();
         if (currentPeriod != null) {
             stats.put("period_offset", syncStateRepository.findById("offset_" + currentPeriod).map(SyncState::getStateValue).orElse(0));
@@ -55,10 +52,9 @@ public class DashboardController {
         stats.put("healer_mode", syncOrchestrator.getHealerMode());
         stats.put("heal_total", syncOrchestrator.getHealTotal());
         stats.put("heal_current", syncOrchestrator.getHealCurrent());
-        stats.put("radar_status", syncOrchestrator.getRadarStatus());
+        stats.put("time_machine_status", syncOrchestrator.getTimeMachineStatus());
         stats.put("healer_status", syncOrchestrator.getHealerStatus());
         stats.put("alerts", syncOrchestrator.getRecentAlerts());
-        stats.put("radar_processed_total", syncOrchestrator.getTotalRadarProcessed());
         stats.put("healer_processed_total", syncOrchestrator.getTotalHealerProcessed());
 
         return ResponseEntity.ok(stats);
@@ -78,7 +74,6 @@ public class DashboardController {
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(required = false) String search,
-            @RequestParam(required = false, defaultValue = "ALL") String source,
             @RequestParam(required = false) String period,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
@@ -87,7 +82,7 @@ public class DashboardController {
         String dbPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
             cleanPeriod = period.replace("_", "-");
-            dbPeriod = period; // Ex: 2026_M01
+            dbPeriod = period;
         }
 
         String cleanSearch = "";
@@ -96,21 +91,19 @@ public class DashboardController {
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                cleanSearch, source, cleanPeriod, dbPeriod, PageRequest.of(page, size)
+                cleanSearch, cleanPeriod, dbPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
 
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportExcel(
-            @RequestParam(required = false, defaultValue = "ALL") String source,
             @RequestParam(required = false) String period,
             @RequestParam(required = false, defaultValue = "ALL") String type) {
 
         try {
-            byte[] excelData = exportExcelService.generateExcelExport(source, period, type);
+            byte[] excelData = exportExcelService.generateExcelExport(period, type);
             String filename = "Export_Gringotts_" + (type.equals("ALL") ? "Global" : type) +
-                    "_" + (source.equals("ALL") ? "ToutesSources" : source) +
                     ((period == null || period.isEmpty()) ? "" : "_" + period) + ".xlsx";
 
             return ResponseEntity.ok()
@@ -122,12 +115,6 @@ public class DashboardController {
             t.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
-    }
-
-    @PostMapping("/start")
-    public ResponseEntity<Map<String, String>> startSync() {
-        syncOrchestrator.startSync();
-        return ResponseEntity.ok(Map.of("message", "Démarré."));
     }
 
     @PostMapping("/start-periods")
@@ -150,7 +137,7 @@ public class DashboardController {
 
     @PostMapping("/start-healer")
     public ResponseEntity<Map<String, String>> startHealer(@RequestBody Map<String, String> body) {
-        String mode = body.getOrDefault("mode", "RADAR");
+        String mode = body.getOrDefault("mode", "TIME_MACHINE");
         syncOrchestrator.startHealer(mode);
         return ResponseEntity.ok(Map.of("message", "Healer démarré en mode " + mode));
     }
@@ -196,12 +183,9 @@ public class DashboardController {
             SyncState state = syncStateRepository.findById("offset_" + currentPeriod).orElse(new SyncState("offset_" + currentPeriod, value, null));
             state.setStateValue(value);
             syncStateRepository.save(state);
-        } else {
-            SyncState state = syncStateRepository.findById("bt_api_offset").orElse(new SyncState("bt_api_offset", value, null));
-            state.setStateValue(value);
-            syncStateRepository.save(state);
+            return ResponseEntity.ok(Map.of("ok", true, "message", "Offset forcé à " + value));
         }
-        return ResponseEntity.ok(Map.of("ok", true, "message", "Offset forcé à " + value));
+        return ResponseEntity.badRequest().body(Map.of("error", "Aucune période en cours."));
     }
 
     @PostMapping("/retry-failed-heals")
