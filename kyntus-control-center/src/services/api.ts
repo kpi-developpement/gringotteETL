@@ -16,7 +16,7 @@ export interface SyncStats {
   healer_mode: string; 
   heal_total: number;
   heal_current: number;
-  time_machine_status: string; // 🚀 L'FIX HNA : Rje3naha time_machine_status
+  time_machine_status: string; // 🚀 L'FIX HNA : Rje3naha time_machine_status bach y-buildi Next.js
   healer_status: string;
   alerts: string[];
   healer_processed_total: number;
@@ -54,10 +54,6 @@ export const fetchPeriodInfo = async (period: string): Promise<{ offset: number,
     if (!response.ok) throw new Error('Erreur réseau');
     return await response.json();
   } catch (error) { return null; }
-};
-
-export const startSync = async (): Promise<boolean> => {
-  try { const res = await fetch(`${API_URL}/start`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
 };
 
 export const startPeriodSync = async (periodsStr: string): Promise<boolean> => {

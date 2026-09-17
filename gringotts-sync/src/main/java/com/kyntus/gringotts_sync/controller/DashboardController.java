@@ -74,6 +74,7 @@ public class DashboardController {
     @GetMapping("/interventions")
     public ResponseEntity<Page<Intervention>> getInterventions(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "ALL") String source,
             @RequestParam(required = false) String period,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
@@ -91,19 +92,21 @@ public class DashboardController {
         }
 
         Page<Intervention> result = interventionRepository.findFilteredInterventions(
-                cleanSearch, cleanPeriod, dbPeriod, PageRequest.of(page, size)
+                cleanSearch, source, cleanPeriod, dbPeriod, PageRequest.of(page, size)
         );
         return ResponseEntity.ok(result);
     }
 
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportExcel(
+            @RequestParam(required = false, defaultValue = "ALL") String source,
             @RequestParam(required = false) String period,
             @RequestParam(required = false, defaultValue = "ALL") String type) {
 
         try {
-            byte[] excelData = exportExcelService.generateExcelExport(period, type);
+            byte[] excelData = exportExcelService.generateExcelExport(source, period, type);
             String filename = "Export_Gringotts_" + (type.equals("ALL") ? "Global" : type) +
+                    "_" + (source.equals("ALL") ? "ToutesSources" : source) +
                     ((period == null || period.isEmpty()) ? "" : "_" + period) + ".xlsx";
 
             return ResponseEntity.ok()

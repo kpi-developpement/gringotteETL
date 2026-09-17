@@ -75,12 +75,10 @@ public class Intervention {
     @Column(name = "source_ingestion")
     private String sourceIngestion;
 
-    // 🚀 L'FIX ABSOLU : Colonne dédiée à la période
     @JsonProperty("periode")
     @Column(name = "periode")
     private String periode;
 
-    // 🚀 L'FIX ABSOLU : LAZY pour ne pas exploser la RAM avec 58k+ lignes
     @JsonProperty("actions_log")
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JoinColumn(name = "intervention_id")

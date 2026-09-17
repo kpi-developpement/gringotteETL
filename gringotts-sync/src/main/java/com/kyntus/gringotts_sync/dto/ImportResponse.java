@@ -1,7 +1,9 @@
 package com.kyntus.gringotts_sync.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.kyntus.gringotts_sync.domain.Intervention;
 import lombok.Data;
+import java.util.List;
 
 @Data
 public class ImportResponse {
@@ -17,9 +19,11 @@ public class ImportResponse {
     @JsonProperty("next_offset")
     private int nextOffset;
 
-    // 🛡️ L'FIX HNA : Zedna l'champ total_api bach Java y-fhem l'JSON
     @JsonProperty("total_api")
     private int totalApi;
 
     private boolean done;
+
+    // 🚀 L'FIX HNA : Récupération directe des données depuis le Proxy PHP
+    private List<Intervention> data;
 }
