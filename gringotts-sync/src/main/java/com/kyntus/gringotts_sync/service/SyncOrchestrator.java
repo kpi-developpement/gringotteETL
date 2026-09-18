@@ -56,7 +56,8 @@ public class SyncOrchestrator {
     private Thread timeMachineThread;
     private Thread healerThread;
 
-    private final ForkJoinPool healerThreadPool = new ForkJoinPool(3);
+    // 🛡️ L'FIX HNA : Radina thread pool l 2 bach mankhen9ouch serveur dyal Bytel w Ionos
+    private final ForkJoinPool healerThreadPool = new ForkJoinPool(2);
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -233,7 +234,6 @@ public class SyncOrchestrator {
                     try {
                         log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", localOffset, TIME_MACHINE_BATCH, activePeriod);
 
-                        // 🚀 L'FIX HNA : Le Proxy PHP nous donne la data directement
                         ImportResponse importResp = phpApiClient.triggerImport(localOffset, TIME_MACHINE_BATCH, activePeriod);
 
                         if (importResp != null && importResp.isOk()) {
@@ -248,7 +248,6 @@ public class SyncOrchestrator {
                                 break;
                             }
 
-                            // 🚀 L'FIX HNA : On sauvegarde la donnée reçue directement dans PostgreSQL
                             List<Intervention> incomingData = importResp.getData();
                             if (incomingData != null && !incomingData.isEmpty()) {
                                 transactionTemplate.executeWithoutResult(status -> {
@@ -308,7 +307,8 @@ public class SyncOrchestrator {
                             importSuccess = true;
                             timeMachineStatus = "Vitesse: " + TIME_MACHINE_BATCH + " EPS (Offset: " + localOffset + ")";
 
-                            // Zéro Sleep pour la vitesse maximale !
+                            // 🛡️ L'FIX HNA : Sleep d'or! 1.2s bin kol batch bach nkhdaw Akamai w nbdaw njebdo mzyan bla may3i9o bina
+                            sleep(1200);
                             break;
                         }
                     } catch (RestClientResponseException e) {
@@ -392,9 +392,10 @@ public class SyncOrchestrator {
 
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
-                healerStatus = "Récupération détails (" + chunk.size() + " EPS en parallèle)";
+                healerStatus = "Récupération détails (" + chunk.size() + " EPS en cours)";
 
-                List<List<Intervention>> batches = partition(chunk, 20);
+                // 🛡️ L'FIX HNA : Bytel makat7melch data details kbira, n9esnaha l 10 b 10 bach mayt-rejectawch
+                List<List<Intervention>> batches = partition(chunk, 10);
 
                 healerThreadPool.submit(() -> {
                     batches.parallelStream().forEach(batch -> {
@@ -435,15 +436,18 @@ public class SyncOrchestrator {
                         if (!success && isHealing) {
                             for (Intervention inv : batch) inv.setDetailIntervention("{}");
                         }
+
+                        // 🛡️ L'FIX HNA : Pause sghira dyal 1.5s wraya kol requête details bach mandiroch overload
+                        sleep(1500);
                     });
                 }).get();
 
                 interventionRepository.saveAll(chunk);
                 healCurrent += chunk.size();
                 totalHealerProcessed += chunk.size();
-                healerStatus = "Lot de " + chunk.size() + " sauvegardé (Vitesse Max)";
+                healerStatus = "Lot de " + chunk.size() + " sauvegardé (Vitesse Contrôlée)";
 
-                sleep(300);
+                sleep(500); // Pause finale 9bel chunk jdid
 
             } catch (Exception e) {
                 log.error("Exception critique Healer", e);
