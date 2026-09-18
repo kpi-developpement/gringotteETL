@@ -132,6 +132,20 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Sync par période démarrée"));
     }
 
+    // 🚀 NEW: Endpoint dyal Smart Rescan
+    @PostMapping("/rescan-period")
+    public ResponseEntity<Map<String, Object>> rescanPeriod(@RequestBody Map<String, String> body) {
+        String period = body.get("period");
+        if (period == null || period.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Période invalide."));
+        }
+        if (syncOrchestrator.isRunning()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Arrêtez d'abord la Time Machine."));
+        }
+        syncOrchestrator.rescanPeriod(period);
+        return ResponseEntity.ok(Map.of("ok", true, "message", "Smart Rescan lancé pour la période " + period));
+    }
+
     @PostMapping("/stop")
     public ResponseEntity<Map<String, String>> stopSync() {
         syncOrchestrator.stopSync();

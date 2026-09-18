@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, fetchPeriodInfo, SyncStats } from '../services/api';
+import { fetchStats, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, fetchPeriodInfo, rescanPeriod, SyncStats } from '../services/api';
 import styles from './page.module.css';
 
 const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
@@ -16,6 +16,7 @@ const IconDatabase = () => <svg width="18" height="18" fill="none" stroke="curre
 const IconTerminal = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
 const IconEdit = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
 const IconRefresh = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.45 5.45"></path></svg>;
+const IconSearch = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
@@ -29,6 +30,7 @@ export default function DashboardPage() {
   const [periodInfo, setPeriodInfo] = useState<{offset: number, total: number} | null>(null);
   
   const [purgeSelection, setPurgeSelection] = useState('2026_M01');
+  const [rescanSelection, setRescanSelection] = useState('2026_M02');
 
   const availableYears = ['2026', '2025', '2024'];
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
@@ -101,6 +103,15 @@ export default function DashboardPage() {
   const handlePurgePeriod = async () => {
     if (window.confirm(`Voulez-vous vraiment supprimer TOUTES les données de la période ${purgeSelection} ? L'offset sera remis à zéro.`)) {
       const msg = await purgePeriod(purgeSelection);
+      alert(msg);
+      loadStats();
+    }
+  };
+
+  // 🚀 NEW: Button Rescan
+  const handleRescanPeriod = async () => {
+    if (window.confirm(`Voulez-vous faire un SMART RESCAN de ${rescanSelection} ? Cela récupérera les ${rescanSelection} EPS manquants sans supprimer vos données actuelles.`)) {
+      const msg = await rescanPeriod(rescanSelection);
       alert(msg);
       loadStats();
     }
@@ -354,6 +365,29 @@ export default function DashboardPage() {
                 <button className={styles.btnSecondary} style={{ color: '#8b5cf6', borderColor: '#ddd6fe' }} onClick={handleRetryFailedHeals}>
                   <IconRefresh /> Réparer les EPS Fantômes
                 </button>
+
+                {/* 🚀 NEW: Smart Rescan UI */}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                  <select 
+                    className={styles.btnSecondary} 
+                    style={{ flex: 1, padding: '10px', textAlign: 'left', background: '#eff6ff', borderColor: '#bfdbfe', color: '#1e40af' }} 
+                    value={rescanSelection} 
+                    onChange={e => setRescanSelection(e.target.value)}
+                  >
+                    {availableYears.map(year => (
+                      <optgroup key={year} label={`Année ${year}`}>
+                        {availableMonths.map(month => (
+                          <option key={`${year}_${month}`} value={`${year}_${month}`}>
+                            {year} - Mois {month.replace('M', '')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button className={styles.btnSecondary} style={{ color: '#ffffff', background: '#3b82f6', borderColor: '#2563eb', width: 'auto', padding: '0 15px' }} onClick={handleRescanPeriod} disabled={isRunning}>
+                    <IconSearch /> Smart Rescan
+                  </button>
+                </div>
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                   <select 

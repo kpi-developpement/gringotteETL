@@ -1,5 +1,6 @@
 package com.kyntus.gringotts_sync.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
@@ -30,6 +31,7 @@ public class SyncOrchestrator {
     private final InterventionRepository interventionRepository;
     private final SyncStateRepository syncStateRepository;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile boolean isRunning = false;
     private volatile boolean isHealing = false;
@@ -56,7 +58,6 @@ public class SyncOrchestrator {
     private Thread timeMachineThread;
     private Thread healerThread;
 
-    // 🛡️ L'FIX HNA : Radina thread pool l 2 bach mankhen9ouch serveur dyal Bytel w Ionos
     private final ForkJoinPool healerThreadPool = new ForkJoinPool(2);
 
     public boolean isRunning() { return isRunning; }
@@ -110,6 +111,20 @@ public class SyncOrchestrator {
 
         timeMachineThread = new Thread(this::timeMachineLoop);
         timeMachineThread.start();
+    }
+
+    // 🚀 NEW: L'moteur dyal l'Patching (Smart Rescan)
+    public synchronized void rescanPeriod(String period) {
+        if (isRunning) {
+            addAlert("⚠️ Veuillez stopper la synchronisation en cours avant de lancer un Rescan.");
+            return;
+        }
+        log.info("Lancement du Smart Rescan pour la période: {}", period);
+        addAlert("[SMART RESCAN] Repassage sur " + period + " pour récupérer les EPS manquants...");
+
+        saveState("offset_" + period, 0);
+
+        startPeriodSync(Collections.singletonList(period));
     }
 
     public synchronized void stopSync() {
@@ -239,11 +254,13 @@ public class SyncOrchestrator {
                         if (importResp != null && importResp.isOk()) {
 
                             if (importResp.getBatchCount() == 0) {
-                                log.warn("Bouygues a retourné 0 résultat. Avancement forcé de la zone.");
-                                localTotalApi = importResp.getTotalApi() > 0 ? importResp.getTotalApi() : 1;
-                                localOffset = localTotalApi;
+                                log.warn("Bouygues a retourné 0 résultat. Avancement manuel de la page pour ne pas rater de données.");
+                                localOffset += TIME_MACHINE_BATCH;
                                 saveState("offset_" + activePeriod, localOffset);
-                                saveState("total_" + activePeriod, localTotalApi);
+                                if (importResp.getTotalApi() > 0) {
+                                    localTotalApi = importResp.getTotalApi();
+                                    saveState("total_" + activePeriod, localTotalApi);
+                                }
                                 importSuccess = true;
                                 break;
                             }
@@ -307,7 +324,6 @@ public class SyncOrchestrator {
                             importSuccess = true;
                             timeMachineStatus = "Vitesse: " + TIME_MACHINE_BATCH + " EPS (Offset: " + localOffset + ")";
 
-                            // 🛡️ L'FIX HNA : Sleep d'or! 1.2s bin kol batch bach nkhdaw Akamai w nbdaw njebdo mzyan bla may3i9o bina
                             sleep(1200);
                             break;
                         }
@@ -394,7 +410,6 @@ public class SyncOrchestrator {
 
                 healerStatus = "Récupération détails (" + chunk.size() + " EPS en cours)";
 
-                // 🛡️ L'FIX HNA : Bytel makat7melch data details kbira, n9esnaha l 10 b 10 bach mayt-rejectawch
                 List<List<Intervention>> batches = partition(chunk, 10);
 
                 healerThreadPool.submit(() -> {
@@ -408,13 +423,25 @@ public class SyncOrchestrator {
 
                                 if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
                                     Object rawData = response.get("data");
-                                    Map<String, String> healedData = new HashMap<>();
-                                    if (rawData instanceof Map) healedData = (Map<String, String>) rawData;
+
+                                    Map<String, Object> healedData = new HashMap<>();
+                                    if (rawData instanceof Map) healedData = (Map<String, Object>) rawData;
 
                                     for (Intervention inv : batch) {
-                                        String detailStr = healedData.get(inv.getIdIntervention());
-                                        if (detailStr != null) inv.setDetailIntervention(detailStr);
-                                        else inv.setDetailIntervention("{}");
+                                        Object detailObj = healedData.get(inv.getIdIntervention());
+                                        if (detailObj != null) {
+                                            if (detailObj instanceof String) {
+                                                inv.setDetailIntervention((String) detailObj);
+                                            } else {
+                                                try {
+                                                    inv.setDetailIntervention(objectMapper.writeValueAsString(detailObj));
+                                                } catch (Exception ex) {
+                                                    inv.setDetailIntervention("{}");
+                                                }
+                                            }
+                                        } else {
+                                            inv.setDetailIntervention("{}");
+                                        }
                                     }
                                     success = true;
                                     break;
@@ -437,7 +464,6 @@ public class SyncOrchestrator {
                             for (Intervention inv : batch) inv.setDetailIntervention("{}");
                         }
 
-                        // 🛡️ L'FIX HNA : Pause sghira dyal 1.5s wraya kol requête details bach mandiroch overload
                         sleep(1500);
                     });
                 }).get();
@@ -447,7 +473,7 @@ public class SyncOrchestrator {
                 totalHealerProcessed += chunk.size();
                 healerStatus = "Lot de " + chunk.size() + " sauvegardé (Vitesse Contrôlée)";
 
-                sleep(500); // Pause finale 9bel chunk jdid
+                sleep(500);
 
             } catch (Exception e) {
                 log.error("Exception critique Healer", e);

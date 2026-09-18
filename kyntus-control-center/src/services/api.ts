@@ -1,170 +1,205 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://10.10.10.25:8117/api/dashboard';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8117/api/dashboard';
 
 export interface SyncStats {
   total_interventions_local: number;
-  current_bt_offset: number;
-  total_api: number;
-  
   period_offset: number;
   period_total: number;
   period_processed_total: number;
   current_period: string | null;
-
   is_running: boolean;
   eta: string;
   is_healing: boolean;
-  healer_mode: string; 
+  healer_mode: string;
   heal_total: number;
   heal_current: number;
-  time_machine_status: string; // 🚀 L'FIX HNA : Rje3naha time_machine_status bach y-buildi Next.js
+  time_machine_status: string;
   healer_status: string;
   alerts: string[];
   healer_processed_total: number;
 }
 
-export interface Intervention {
-  id: number;
-  id_intervention: string;
-  environment: string;
-  etat: string;
-  type_intervention: string;
-  date_modification_etat: string;
-  detail_intervention: string; 
-  source_ingestion: string;
-}
-
 export interface PageResponse {
-  content: Intervention[];
+  content: any[];
+  number: number;
   totalPages: number;
   totalElements: number;
-  number: number;
+  size: number;
 }
 
 export const fetchStats = async (): Promise<SyncStats | null> => {
   try {
-    const response = await fetch(`${API_URL}/stats`, { method: 'GET', cache: 'no-store' });
-    if (!response.ok) throw new Error('Erreur réseau');
-    return await response.json();
-  } catch (error) { return null; }
+    const res = await fetch(`${API_URL}/stats`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
 };
 
-export const fetchPeriodInfo = async (period: string): Promise<{ offset: number, total: number } | null> => {
+export const fetchPeriodInfo = async (period: string) => {
   try {
-    const response = await fetch(`${API_URL}/period-info?period=${period}`, { method: 'GET', cache: 'no-store' });
-    if (!response.ok) throw new Error('Erreur réseau');
-    return await response.json();
-  } catch (error) { return null; }
+    const res = await fetch(`${API_URL}/period-info?period=${period}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
 };
 
-export const startPeriodSync = async (periodsStr: string): Promise<boolean> => {
+export const startPeriodSync = async (periods: string) => {
   try {
     const res = await fetch(`${API_URL}/start-periods`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ periods: periodsStr })
+      body: JSON.stringify({ periods }),
     });
-    return res.ok;
-  } catch (e) { return false; }
+    const data = await res.json();
+    return data.message || data.error;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const stopSync = async (): Promise<boolean> => {
-  try { const res = await fetch(`${API_URL}/stop`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
+export const stopSync = async () => {
+  try {
+    const res = await fetch(`${API_URL}/stop`, { method: 'POST' });
+    const data = await res.json();
+    return data.message;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const startHealer = async (mode: string): Promise<boolean> => {
+export const startHealer = async (mode: string) => {
   try {
     const res = await fetch(`${API_URL}/start-healer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode })
+      body: JSON.stringify({ mode }),
     });
-    return res.ok;
-  } catch (e) { return false; }
+    const data = await res.json();
+    return data.message;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const stopHealer = async (): Promise<boolean> => {
-  try { const res = await fetch(`${API_URL}/stop-healer`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
+export const stopHealer = async () => {
+  try {
+    const res = await fetch(`${API_URL}/stop-healer`, { method: 'POST' });
+    const data = await res.json();
+    return data.message;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const resetSync = async (): Promise<boolean> => {
-  try { const res = await fetch(`${API_URL}/reset`, { method: 'POST' }); return res.ok; } catch (e) { return false; }
+export const resetSync = async () => {
+  try {
+    const res = await fetch(`${API_URL}/reset`, { method: 'POST' });
+    const data = await res.json();
+    return data.message;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const purgePeriod = async (period: string): Promise<string> => {
+export const purgePeriod = async (period: string) => {
   try {
     const res = await fetch(`${API_URL}/purge-period`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ period })
+      body: JSON.stringify({ period }),
     });
     const data = await res.json();
-    return data.message || "Opération terminée.";
-  } catch (e) { return "Erreur lors de la purge de la période."; }
+    return data.message || data.error;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const setManualOffset = async (value: number): Promise<boolean> => {
-  try {
-    const res = await fetch(`${API_URL}/offset/${value}`, { method: 'POST' });
-    return res.ok;
-  } catch (e) { return false; }
-};
-
-export const cleanDuplicates = async (): Promise<string> => {
+export const cleanDuplicates = async () => {
   try {
     const res = await fetch(`${API_URL}/clean-duplicates`, { method: 'POST' });
     const data = await res.json();
-    return data.message || "Opération terminée.";
-  } catch (e) { return "Erreur lors du nettoyage."; }
+    return data.message;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const trimDatabase = async (keepCount: number): Promise<string> => {
+export const setManualOffset = async (value: number) => {
   try {
-    const res = await fetch(`${API_URL}/trim/${keepCount}`, { method: 'POST' });
+    const res = await fetch(`${API_URL}/offset/${value}`, { method: 'POST' });
     const data = await res.json();
-    return data.message || "Opération terminée.";
-  } catch (e) { return "Erreur lors de la suppression."; }
+    return data.message || data.error;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const retryFailedHeals = async (): Promise<string> => {
+export const retryFailedHeals = async () => {
   try {
     const res = await fetch(`${API_URL}/retry-failed-heals`, { method: 'POST' });
     const data = await res.json();
-    return data.message || "Opération terminée.";
-  } catch (e) { return "Erreur lors de la réparation."; }
+    return data.message;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
 };
 
-export const fetchInterventions = async (
-  search: string, 
-  source: string, 
-  period: string, 
-  page: number, 
-  size: number = 50
-): Promise<PageResponse | null> => {
+export const rescanPeriod = async (period: string) => {
   try {
-    const queryParams = new URLSearchParams({
-      search,
-      source,
+    const res = await fetch(`${API_URL}/rescan-period`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period }),
+    });
+    const data = await res.json();
+    return data.message || data.error;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
+};
+
+export const fetchInterventions = async (search: string, source: string, period: string, page: number, size: number = 50): Promise<PageResponse | null> => {
+  try {
+    const params = new URLSearchParams({
       page: page.toString(),
       size: size.toString()
     });
-    if (period) queryParams.append('period', period);
+    
+    if (search) params.append('search', search);
+    if (source && source !== 'ALL') params.append('source', source);
+    if (period) params.append('period', period);
 
-    const res = await fetch(`${API_URL}/interventions?${queryParams.toString()}`, { cache: 'no-store' });
-    if (!res.ok) throw new Error('Erreur réseau');
+    const res = await fetch(`${API_URL}/interventions?${params.toString()}`);
+    if (!res.ok) return null;
     return await res.json();
-  } catch (error) { return null; }
+  } catch (err) {
+    return null;
+  }
 };
 
-export const exportInterventionsExcel = async (source: string, period: string, type: string): Promise<void> => {
+export const trimDatabase = async (keepCount: number) => {
   try {
-    const queryParams = new URLSearchParams();
-    if (source && source !== 'ALL') queryParams.append('source', source);
-    if (period) queryParams.append('period', period);
-    if (type && type !== 'ALL') queryParams.append('type', type);
+    const res = await fetch(`${API_URL}/trim/${keepCount}`, { method: 'POST' });
+    const data = await res.json();
+    return data.message || data.error;
+  } catch (err) {
+    return 'Erreur de connexion';
+  }
+};
 
-    const res = await fetch(`${API_URL}/export?${queryParams.toString()}`, { method: 'GET' });
-    
-    if (!res.ok) throw new Error('Erreur lors de la génération du fichier Excel');
+export const exportInterventionsExcel = async (source: string, period: string, type: string) => {
+  try {
+    const params = new URLSearchParams();
+    if (source && source !== 'ALL') params.append('source', source);
+    if (period) params.append('period', period);
+    if (type && type !== 'ALL') params.append('type', type);
+
+    const res = await fetch(`${API_URL}/export?${params.toString()}`);
+    if (!res.ok) throw new Error('Erreur lors de l\'export');
     
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
@@ -178,7 +213,8 @@ export const exportInterventionsExcel = async (source: string, period: string, t
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
-  } catch (error) {
-    alert("Erreur lors de l'exportation. Vérifiez qu'il y a bien des données pour ces filtres.");
+  } catch (err) {
+    console.error(err);
+    alert('Erreur lors du téléchargement du fichier Excel.');
   }
 };
