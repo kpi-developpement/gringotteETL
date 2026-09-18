@@ -1,5 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8117/api/dashboard';
-
+const API_URL = typeof window !== 'undefined' 
+  ? `http://${window.location.hostname}:8117/api/dashboard`
+  : 'http://10.10.10.25:8117/api/dashboard';
 export interface SyncStats {
   total_interventions_local: number;
   period_offset: number;
