@@ -155,10 +155,22 @@ export const rescanPeriod = async (period: string) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ period }),
     });
-    const data = await res.json();
-    return data.message || data.error;
-  } catch (err) {
-    return 'Erreur de connexion';
+
+    // 🚀 N9raw la réponse ka text b3da bach nchoufo chno fiha
+    const text = await res.text(); 
+
+    try {
+      // N7awlo nparsiwha JSON
+      const data = JSON.parse(text); 
+      return data.message || data.error;
+    } catch (e) {
+      // Ila mabghatch t-parsa (ya3ni Spring rje3 HTML 404 wla 500)
+      return `❌ ERREUR SERVEUR (${res.status}): ${text.substring(0, 150)}...`;
+    }
+
+  } catch (err: any) {
+    // Hadi yla l'Frontend ga3ma 9der ywssel l'serveur (serveur tafe awla port ghalat)
+    return `❌ ERREUR FRONTEND: ${err.message}`;
   }
 };
 
