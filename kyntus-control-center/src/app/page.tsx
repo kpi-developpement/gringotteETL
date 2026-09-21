@@ -31,6 +31,9 @@ export default function DashboardPage() {
   
   const [purgeSelection, setPurgeSelection] = useState('2026_M01');
   const [rescanSelection, setRescanSelection] = useState('2026_M02');
+  
+  // 🚀 L'FIX HNA: Zidna state dyal l'mois d nettoyage lkhelta
+  const [fixSelection, setFixSelection] = useState('2026_M02');
 
   const availableYears = ['2026', '2025', '2024'];
   const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
@@ -123,10 +126,10 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 NEW: Button li ghadi yn9i la base de données mn l'khelta
+  // 🚀 L'FIX HNA: Zidna parameter fixSelection bash t'passi l'mois
   const handleFixPeriods = async () => {
-    if (window.confirm("Voulez-vous vraiment vérifier tous les EPS et corriger automatiquement la période de ceux qui ont été mal classés (ex: 2025-M06 dans 2026_M02) ?")) {
-      const msg = await fixPeriods();
+    if (window.confirm(`Voulez-vous vraiment vérifier tous les EPS de ${fixSelection} et déplacer les intrus vers leur vrai mois ?`)) {
+      const msg = await fixPeriods(fixSelection);
       alert(msg);
       loadStats();
     }
@@ -358,17 +361,35 @@ export default function DashboardPage() {
               <h2 className={styles.cardTitle} style={{ marginBottom: '15px' }}><IconDatabase /> Outils Système</h2>
               <div className={styles.controlsGroup}>
                 
+                <button className={styles.btnSecondary} style={{ flex: 1 }} onClick={handleSmartClean}>
+                  Nettoyer les doublons
+                </button>
+                
+                {/* 🚀 L'FIX HNA: Zidna Dropdown d Nettoyer Les Intrus m3a select */}
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <button className={styles.btnSecondary} style={{ flex: 1 }} onClick={handleSmartClean}>
-                    Nettoyer les doublons
-                  </button>
-                  <button className={styles.btnSecondary} style={{ flex: 1, color: '#f59e0b', borderColor: '#fde68a' }} onClick={handleFixPeriods}>
+                  <select 
+                    className={styles.btnSecondary} 
+                    style={{ flex: 1, padding: '10px', textAlign: 'left', background: '#fffbeb', borderColor: '#fde68a', color: '#d97706' }} 
+                    value={fixSelection} 
+                    onChange={e => setFixSelection(e.target.value)}
+                  >
+                    {availableYears.map(year => (
+                      <optgroup key={year} label={`Année ${year}`}>
+                        {availableMonths.map(month => (
+                          <option key={`${year}_${month}`} value={`${year}_${month}`}>
+                            {year} - Mois {month.replace('M', '')}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button className={styles.btnSecondary} style={{ color: '#d97706', borderColor: '#fde68a', width: 'auto', padding: '0 15px' }} onClick={handleFixPeriods}>
                     <IconRefresh /> Nettoyer les intrus
                   </button>
                 </div>
                 
                 <Link href="/interventions" style={{ textDecoration: 'none' }}>
-                  <button className={styles.btnSecondary}>
+                  <button className={styles.btnSecondary} style={{ width: '100%' }}>
                      Explorer les données brutes
                   </button>
                 </Link>

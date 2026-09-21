@@ -49,6 +49,9 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
 
     List<Intervention> findByIdInterventionIn(List<String> idInterventions);
 
+    // 🚀 L'FIX HNA: Fonction jdida bach njbdo ga3 les EPS dyal chi mois
+    List<Intervention> findByPeriode(String periode);
+
     @Modifying
     @Transactional
     @Query(value = "TRUNCATE TABLE interventions CASCADE", nativeQuery = true)
@@ -100,10 +103,4 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Transactional
     @Query(value = "DELETE FROM interventions WHERE periode = :dbPeriod OR detail_intervention LIKE CONCAT('%', :period, '%') OR payload_recu LIKE CONCAT('%', :period, '%')", nativeQuery = true)
     int deleteInterventionsByPeriodNative(@Param("period") String period, @Param("dbPeriod") String dbPeriod);
-
-    // 🚀 L'FIX HNA: Requête magique bash trejje3 kol EPS l'mois dyalo l7a9i9i mn west l'JSON !
-    @Modifying
-    @Transactional
-    @Query(value = "UPDATE interventions SET periode = REPLACE(SUBSTRING(payload_recu FROM '\"periode\":\"([^\"]+)\"'), '-', '_') WHERE payload_recu LIKE '%\"periode\":\"%' AND periode != REPLACE(SUBSTRING(payload_recu FROM '\"periode\":\"([^\"]+)\"'), '-', '_')", nativeQuery = true)
-    int fixMismatchedPeriods();
 }

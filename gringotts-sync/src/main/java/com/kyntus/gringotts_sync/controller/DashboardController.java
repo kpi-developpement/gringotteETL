@@ -210,10 +210,14 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", count + " EPS Fantômes remis en file d'attente pour le Healer."));
     }
 
-    // 🚀 NEW: Bouton magique bash tfariwha m3a les EPS li tghaltou f les mois !
+    // 🚀 L'FIX HNA: Zidna String period f request body bash Java ydirha 3la l'mois li 3zelti nti b dbt
     @PostMapping("/fix-periods")
-    public ResponseEntity<Map<String, Object>> fixPeriods() {
-        int fixed = interventionRepository.fixMismatchedPeriods();
-        return ResponseEntity.ok(Map.of("ok", true, "message", fixed + " EPS intrus ont été corrigés et replacés dans leur vrai mois."));
+    public ResponseEntity<Map<String, Object>> fixPeriods(@RequestBody Map<String, String> body) {
+        String period = body.get("period");
+        if (period == null || period.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Période invalide."));
+        }
+        int fixed = syncOrchestrator.fixPeriodsForMonth(period);
+        return ResponseEntity.ok(Map.of("ok", true, "message", fixed + " EPS intrus ont été trouvés dans " + period + " et déplacés vers leur vrai mois."));
     }
 }

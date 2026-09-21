@@ -164,10 +164,14 @@ export const rescanPeriod = async (period: string) => {
   }
 };
 
-// 🚀 NEW: Button bach nrglou les EPS lmtghaltin fihom
-export const fixPeriods = async () => {
+// 🚀 L'FIX HNA: Zidna l'period bash tsift l'API
+export const fixPeriods = async (period: string) => {
   try {
-    const res = await fetch(`${API_URL}/fix-periods`, { method: 'POST' });
+    const res = await fetch(`${API_URL}/fix-periods`, { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period }),
+    });
     const data = await res.json();
     return data.message || data.error;
   } catch (err) {

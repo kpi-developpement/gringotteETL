@@ -1,5 +1,6 @@
 package com.kyntus.gringotts_sync.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
@@ -80,6 +81,45 @@ public class SyncOrchestrator {
             recentAlerts.remove(recentAlerts.size() - 1);
         }
         log.warn("INTERFACE_ALERT: {}", message);
+    }
+
+    // 🚀 L'FIX HNA: Fonction jdida kaddir scan b dbt 3la l'mois li 3zelna mn React
+    public synchronized int fixPeriodsForMonth(String targetPeriod) {
+        log.info("Lancement du nettoyage des intrus pour la période: {}", targetPeriod);
+        addAlert("[MAINTENANCE] Scan de " + targetPeriod + " pour trouver les EPS intrus...");
+
+        List<Intervention> interventions = interventionRepository.findByPeriode(targetPeriod);
+        int fixedCount = 0;
+        List<Intervention> toUpdate = new ArrayList<>();
+
+        for (Intervention inv : interventions) {
+            if (inv.getDetailIntervention() != null && !inv.getDetailIntervention().equals("{}")) {
+                try {
+                    JsonNode root = objectMapper.readTree(inv.getDetailIntervention());
+                    if (root.has("periode")) {
+                        String realPeriodRaw = root.get("periode").asText("");
+                        if (!realPeriodRaw.isEmpty()) {
+                            String realPeriod = realPeriodRaw.replace("-", "_");
+                            // Yla l9a l'période l'7a9i9ya mkhtalfa 3la l'mois li rahoum fih, kayrigelha
+                            if (!realPeriod.equals(targetPeriod)) {
+                                inv.setPeriode(realPeriod);
+                                toUpdate.add(inv);
+                                fixedCount++;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // Ignore les JSON lmkhesrin
+                }
+            }
+        }
+
+        if (!toUpdate.isEmpty()) {
+            interventionRepository.saveAll(toUpdate);
+        }
+
+        addAlert("[MAINTENANCE] " + fixedCount + " EPS intrus trouvés et déplacés depuis " + targetPeriod);
+        return fixedCount;
     }
 
     public synchronized void startPeriodSync(List<String> periods) {
@@ -263,9 +303,13 @@ public class SyncOrchestrator {
                                 break;
                             }
 
-                            List<Intervention> incomingData = importResp.getData();
+                            int newOffset = importResp.getNextOffset();
 
-                            // 🚀 L'FIX NADI HNA : Kan-t2ekdou mn l'période dyal l'JSON! Ila kan Bouygues daret l'glitch, kanlo7oha l'exception bash nretryiw
+                            if (newOffset > 0 && newOffset <= localOffset) {
+                                throw new RuntimeException("Glitch API Bouygues (mauvais offset retourné: " + newOffset + "). On force le retry de la page " + localOffset + " !");
+                            }
+
+                            List<Intervention> incomingData = importResp.getData();
                             if (incomingData != null && !incomingData.isEmpty()) {
                                 String expectedPeriod = activePeriod.replace("_", "-");
                                 String firstRecordPeriod = incomingData.get(0).getPeriode();
@@ -304,21 +348,12 @@ public class SyncOrchestrator {
                                 });
                             }
 
-                            int newOffset = importResp.getNextOffset();
                             int newTotal = importResp.getTotalApi();
-
                             if (localTotalApi == 0 || (newTotal > 0 && Math.abs(newTotal - localTotalApi) < 10000)) {
                                 localTotalApi = newTotal;
                             }
 
-                            if (newOffset > 0 && newOffset <= localOffset) {
-                                log.error("🚨 GLITCH BOUYGUES DETECTE : L'API a tenté de ramener l'offset de {} à {}. On force la continuité !", localOffset, newOffset);
-                                addAlert("⚠️ Glitch Bouygues ignoré (Offset protégé à " + localOffset + ")");
-                                localOffset += TIME_MACHINE_BATCH;
-                            } else {
-                                localOffset = newOffset;
-                            }
-
+                            localOffset = newOffset;
                             saveState("offset_" + activePeriod, localOffset);
                             saveState("total_" + activePeriod, localTotalApi);
                             totalPeriodProcessed += importResp.getBatchCount();
