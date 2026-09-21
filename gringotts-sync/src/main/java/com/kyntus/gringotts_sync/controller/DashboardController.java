@@ -83,7 +83,6 @@ public class DashboardController {
         String dbPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
             cleanPeriod = period.replace("_", "-");
-            // 🚀 L'FIX HNA: N-forciw format dyal base de données ikon underscore
             dbPeriod = period.replace("-", "_");
         }
 
@@ -209,5 +208,12 @@ public class DashboardController {
     public ResponseEntity<Map<String, Object>> retryFailedHeals() {
         int count = syncOrchestrator.retryFailedHeals();
         return ResponseEntity.ok(Map.of("ok", true, "message", count + " EPS Fantômes remis en file d'attente pour le Healer."));
+    }
+
+    // 🚀 NEW: Bouton magique bash tfariwha m3a les EPS li tghaltou f les mois !
+    @PostMapping("/fix-periods")
+    public ResponseEntity<Map<String, Object>> fixPeriods() {
+        int fixed = interventionRepository.fixMismatchedPeriods();
+        return ResponseEntity.ok(Map.of("ok", true, "message", fixed + " EPS intrus ont été corrigés et replacés dans leur vrai mois."));
     }
 }

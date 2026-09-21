@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, fetchPeriodInfo, rescanPeriod, SyncStats } from '../services/api';
+import { fetchStats, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, fetchPeriodInfo, rescanPeriod, fixPeriods, SyncStats } from '../services/api';
 import styles from './page.module.css';
 
 const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
@@ -108,7 +108,6 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 NEW: Button Rescan
   const handleRescanPeriod = async () => {
     if (window.confirm(`Voulez-vous faire un SMART RESCAN de ${rescanSelection} ? Cela récupérera les ${rescanSelection} EPS manquants sans supprimer vos données actuelles.`)) {
       const msg = await rescanPeriod(rescanSelection);
@@ -120,6 +119,15 @@ export default function DashboardPage() {
   const handleSmartClean = async () => {
     if (window.confirm("Lancer un nettoyage des doublons ?")) {
       await cleanDuplicates();
+      loadStats();
+    }
+  };
+
+  // 🚀 NEW: Button li ghadi yn9i la base de données mn l'khelta
+  const handleFixPeriods = async () => {
+    if (window.confirm("Voulez-vous vraiment vérifier tous les EPS et corriger automatiquement la période de ceux qui ont été mal classés (ex: 2025-M06 dans 2026_M02) ?")) {
+      const msg = await fixPeriods();
+      alert(msg);
       loadStats();
     }
   };
@@ -349,9 +357,16 @@ export default function DashboardPage() {
             <div className={styles.glassCard}>
               <h2 className={styles.cardTitle} style={{ marginBottom: '15px' }}><IconDatabase /> Outils Système</h2>
               <div className={styles.controlsGroup}>
-                <button className={styles.btnSecondary} onClick={handleSmartClean}>
-                  Nettoyer les doublons
-                </button>
+                
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button className={styles.btnSecondary} style={{ flex: 1 }} onClick={handleSmartClean}>
+                    Nettoyer les doublons
+                  </button>
+                  <button className={styles.btnSecondary} style={{ flex: 1, color: '#f59e0b', borderColor: '#fde68a' }} onClick={handleFixPeriods}>
+                    <IconRefresh /> Nettoyer les intrus
+                  </button>
+                </div>
+                
                 <Link href="/interventions" style={{ textDecoration: 'none' }}>
                   <button className={styles.btnSecondary}>
                      Explorer les données brutes
@@ -366,7 +381,6 @@ export default function DashboardPage() {
                   <IconRefresh /> Réparer les EPS Fantômes
                 </button>
 
-                {/* 🚀 NEW: Smart Rescan UI */}
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                   <select 
                     className={styles.btnSecondary} 

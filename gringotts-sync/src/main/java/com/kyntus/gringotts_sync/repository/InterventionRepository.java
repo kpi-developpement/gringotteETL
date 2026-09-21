@@ -77,13 +77,13 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "DELETE FROM interventions WHERE id IN :ids", nativeQuery = true)
     int deleteInterventionsByIds(@Param("ids") List<Long> ids);
 
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT 60", nativeQuery = true)
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' OR detail_intervention = '{}' ORDER BY id DESC LIMIT 60", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsDesc();
 
-    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 60", nativeQuery = true)
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' OR detail_intervention = '{}' ORDER BY id ASC LIMIT 60", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsAsc();
 
-    @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
+    @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' OR detail_intervention = '{}'", nativeQuery = true)
     long countInterventionsWithMissingDetails();
 
     @Modifying
@@ -100,4 +100,10 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Transactional
     @Query(value = "DELETE FROM interventions WHERE periode = :dbPeriod OR detail_intervention LIKE CONCAT('%', :period, '%') OR payload_recu LIKE CONCAT('%', :period, '%')", nativeQuery = true)
     int deleteInterventionsByPeriodNative(@Param("period") String period, @Param("dbPeriod") String dbPeriod);
+
+    // 🚀 L'FIX HNA: Requête magique bash trejje3 kol EPS l'mois dyalo l7a9i9i mn west l'JSON !
+    @Modifying
+    @Transactional
+    @Query(value = "UPDATE interventions SET periode = REPLACE(SUBSTRING(payload_recu FROM '\"periode\":\"([^\"]+)\"'), '-', '_') WHERE payload_recu LIKE '%\"periode\":\"%' AND periode != REPLACE(SUBSTRING(payload_recu FROM '\"periode\":\"([^\"]+)\"'), '-', '_')", nativeQuery = true)
+    int fixMismatchedPeriods();
 }

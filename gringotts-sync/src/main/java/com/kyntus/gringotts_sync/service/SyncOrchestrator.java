@@ -263,15 +263,17 @@ public class SyncOrchestrator {
                                 break;
                             }
 
-                            int newOffset = importResp.getNextOffset();
-
-                            // 🚀 L'FIX HNA 1: Yla l'API d Bouygues 3tatna offset ghalat (page 1), kanjetiw exception bash l'moteur y3awed yjereb nfss l'offset w maydi3ch l'EPS!
-                            if (newOffset > 0 && newOffset <= localOffset) {
-                                throw new RuntimeException("Glitch API Bouygues (mauvais offset retourné: " + newOffset + "). On force le retry de la page " + localOffset + " !");
-                            }
-
                             List<Intervention> incomingData = importResp.getData();
+
+                            // 🚀 L'FIX NADI HNA : Kan-t2ekdou mn l'période dyal l'JSON! Ila kan Bouygues daret l'glitch, kanlo7oha l'exception bash nretryiw
                             if (incomingData != null && !incomingData.isEmpty()) {
+                                String expectedPeriod = activePeriod.replace("_", "-");
+                                String firstRecordPeriod = incomingData.get(0).getPeriode();
+
+                                if (firstRecordPeriod != null && !firstRecordPeriod.equals(expectedPeriod)) {
+                                    throw new RuntimeException("Glitch API Bouygues détecté : EPS de " + firstRecordPeriod + " reçu au lieu de " + expectedPeriod + ". Retry forcé de la page !");
+                                }
+
                                 transactionTemplate.executeWithoutResult(status -> {
                                     List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).filter(id -> id != null && !id.isEmpty()).toList();
                                     List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
@@ -281,11 +283,13 @@ public class SyncOrchestrator {
                                         if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
                                         Intervention existing = existingMap.get(incoming.getIdIntervention());
 
+                                        String realPeriod = incoming.getPeriode() != null ? incoming.getPeriode().replace("-", "_") : activePeriod;
+
                                         if (existing == null) {
                                             existing = incoming;
                                             existing.setId(null);
                                             existing.setSourceIngestion("TIME_MACHINE");
-                                            existing.setPeriode(activePeriod);
+                                            existing.setPeriode(realPeriod);
                                             existingMap.put(existing.getIdIntervention(), existing);
                                         } else {
                                             existing.setEtat(incoming.getEtat());
@@ -293,19 +297,28 @@ public class SyncOrchestrator {
                                             existing.setTypeIntervention(incoming.getTypeIntervention());
                                             existing.setMainteneur(incoming.getMainteneur());
                                             existing.setPayloadRecu(incoming.getPayloadRecu());
-                                            existing.setPeriode(activePeriod);
+                                            existing.setPeriode(realPeriod);
                                         }
                                     }
                                     interventionRepository.saveAll(existingMap.values());
                                 });
                             }
 
+                            int newOffset = importResp.getNextOffset();
                             int newTotal = importResp.getTotalApi();
+
                             if (localTotalApi == 0 || (newTotal > 0 && Math.abs(newTotal - localTotalApi) < 10000)) {
                                 localTotalApi = newTotal;
                             }
 
-                            localOffset = newOffset;
+                            if (newOffset > 0 && newOffset <= localOffset) {
+                                log.error("🚨 GLITCH BOUYGUES DETECTE : L'API a tenté de ramener l'offset de {} à {}. On force la continuité !", localOffset, newOffset);
+                                addAlert("⚠️ Glitch Bouygues ignoré (Offset protégé à " + localOffset + ")");
+                                localOffset += TIME_MACHINE_BATCH;
+                            } else {
+                                localOffset = newOffset;
+                            }
+
                             saveState("offset_" + activePeriod, localOffset);
                             saveState("total_" + activePeriod, localTotalApi);
                             totalPeriodProcessed += importResp.getBatchCount();
@@ -349,9 +362,9 @@ public class SyncOrchestrator {
                         }
                     } catch (Exception e) {
                         log.error("Erreur de connexion inattendue", e);
-                        timeMachineStatus = "Erreur Connexion / Glitch Retry";
+                        timeMachineStatus = "Glitch Bouygues - Retry";
                         addAlert("⚠️ " + e.getMessage());
-                        sleep(5000);
+                        sleep(2000);
                     }
                 }
 
