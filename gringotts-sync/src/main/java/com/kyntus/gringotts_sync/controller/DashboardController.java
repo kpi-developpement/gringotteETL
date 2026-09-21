@@ -83,7 +83,8 @@ public class DashboardController {
         String dbPeriod = "";
         if (period != null && !period.trim().isEmpty()) {
             cleanPeriod = period.replace("_", "-");
-            dbPeriod = period;
+            // 🚀 L'FIX HNA: N-forciw format dyal base de données ikon underscore
+            dbPeriod = period.replace("-", "_");
         }
 
         String cleanSearch = "";
@@ -132,7 +133,6 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("message", "Sync par période démarrée"));
     }
 
-    // 🚀 NEW: Endpoint dyal Smart Rescan
     @PostMapping("/rescan-period")
     public ResponseEntity<Map<String, Object>> rescanPeriod(@RequestBody Map<String, String> body) {
         String period = body.get("period");

@@ -84,7 +84,8 @@ public class ExportExcelService {
         log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Période: {} | Type: {}", source, period, type);
 
         String cleanPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("_", "-") : "";
-        String dbPeriod = (period != null && !period.trim().isEmpty()) ? period : "";
+        // 🚀 L'FIX HNA: N-forciw format dyal base de données ikon underscore dima
+        String dbPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("-", "_") : "";
         String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
         String cleanType = (type == null || type.trim().isEmpty()) ? "ALL" : type;
 
@@ -115,7 +116,7 @@ public class ExportExcelService {
         sortedColumns.sort(String.CASE_INSENSITIVE_ORDER);
 
         List<String> finalHeaders = new ArrayList<>(Arrays.asList(
-                "idIntervention", "typeIntervention_1", "etat", "commentaire", "loginAnalysteQu"
+                "idIntervention", "Domaine", "etat", "commentaire", "loginAnalysteQu"
         ));
 
         for (String col : sortedColumns) {
@@ -140,8 +141,7 @@ public class ExportExcelService {
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < finalHeaders.size(); i++) {
                 Cell cell = headerRow.createCell(i);
-                String headerName = finalHeaders.get(i).equals("typeIntervention_1") ? "typeIntervention" : finalHeaders.get(i);
-                cell.setCellValue(headerName);
+                cell.setCellValue(finalHeaders.get(i));
                 cell.setCellStyle(headerStyle);
             }
 
@@ -158,7 +158,7 @@ public class ExportExcelService {
                         Row row = sheet.createRow(rowIdx++);
                         row.createCell(finalHeaders.indexOf("idIntervention")).setCellValue(inv.getIdIntervention());
                         row.createCell(finalHeaders.indexOf("etat")).setCellValue(inv.getEtat() != null ? inv.getEtat() : "");
-                        row.createCell(finalHeaders.indexOf("typeIntervention_1")).setCellValue(inv.getTypeIntervention() != null ? inv.getTypeIntervention() : "INCONNU");
+                        row.createCell(finalHeaders.indexOf("Domaine")).setCellValue("INCONNU");
 
                         if (finalHeaders.contains("dateIntervention") && inv.getDateModificationEtat() != null) {
                             row.createCell(finalHeaders.indexOf("dateIntervention")).setCellValue(inv.getDateModificationEtat().toString());
@@ -238,7 +238,7 @@ public class ExportExcelService {
                                     else if (t.contains("SAV")) domain = "SAV";
                                     else if (t.contains("Reseau")) domain = "RZO";
                                 }
-                                rowData.put("typeIntervention_1", domain);
+                                rowData.put("Domaine", domain);
 
                                 rowData.put("etat", version.path("etat").asText(inv.getEtat()));
 

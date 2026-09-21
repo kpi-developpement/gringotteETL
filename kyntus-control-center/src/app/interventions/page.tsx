@@ -10,16 +10,13 @@ export default function InterventionsPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   
-  // 🚀 STATES DES FILTRES
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('ALL');
   const [period, setPeriod] = useState(''); 
   
-  // State pour le Modal JSON
   const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
   const [trimCount, setTrimCount] = useState<string>('711003');
 
-  // 🚀 STATES POUR L'EXPORT
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportSource, setExportSource] = useState('ALL');
   const [exportPeriod, setExportPeriod] = useState('');
@@ -120,7 +117,6 @@ export default function InterventionsPage() {
           </div>
         </div>
 
-        {/* 🚀 MOTEUR DE FILTRAGE */}
         <form onSubmit={handleApplyFilters} className={styles.filtersWrapper}>
           <div className={styles.filterGroup}>
             <label>Recherche EPS</label>
@@ -158,7 +154,8 @@ export default function InterventionsPage() {
               {availableYears.map(year => (
                 <optgroup key={year} label={`Année ${year}`}>
                   {availableMonths.map(month => (
-                    <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                    // 🚀 L'FIX HNA: Redinaha _
+                    <option key={`${year}_${month}`} value={`${year}_${month}`}>
                       {year} — {month}
                     </option>
                   ))}
@@ -230,7 +227,6 @@ export default function InterventionsPage() {
           )}
         </div>
 
-        {/* 🚀 MODAL EXPORT EXCEL */}
         {isExportModalOpen && (
           <div className={styles.modalOverlay} onClick={() => !isExporting && setIsExportModalOpen(false)}>
             <div className={styles.modalExportContent} onClick={e => e.stopPropagation()}>
@@ -267,7 +263,8 @@ export default function InterventionsPage() {
                     {availableYears.map(year => (
                       <optgroup key={year} label={`Année ${year}`}>
                         {availableMonths.map(month => (
-                          <option key={`${year}-${month}`} value={`${year}-${month}`}>
+                          // 🚀 L'FIX HNA
+                          <option key={`${year}_${month}`} value={`${year}_${month}`}>
                             {year} — {month}
                           </option>
                         ))}
@@ -287,7 +284,6 @@ export default function InterventionsPage() {
           </div>
         )}
 
-        {/* 🚀 MODAL JSON DETAILS */}
         {selectedDetails && (
           <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
             <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
