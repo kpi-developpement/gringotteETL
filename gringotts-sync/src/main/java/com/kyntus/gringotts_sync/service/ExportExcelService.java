@@ -80,17 +80,27 @@ public class ExportExcelService {
             "typeIntervention", "typeIntervention_BRUT", "D1_TYPE_RACC", "estDeplacementFacturable", "estDeplacementFacturable_BRUT", "DEPLACEMENT", "DEPLACEMENT_BRUT"
     );
 
-    public byte[] generateExcelExport(String source, String period, String type) {
-        log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Période: {} | Type: {}", source, period, type);
+    public byte[] generateExcelExport(String source, String periodStr, String type) {
+        log.info("🚀 Démarrage de l'export Excel (Format Bouygues) | Source: {} | Périodes: {} | Type: {}", source, periodStr, type);
 
-        String cleanPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("_", "-") : "";
-        // 🚀 L'FIX HNA: N-forciw format dyal base de données ikon underscore dima
-        String dbPeriod = (period != null && !period.trim().isEmpty()) ? period.replace("-", "_") : "";
         String cleanSource = (source == null || source.trim().isEmpty()) ? "ALL" : source;
         String cleanType = (type == null || type.trim().isEmpty()) ? "ALL" : type;
 
+        // 🚀 L'FIX HNA: Parsi l'string li fih bzaf d les mois
+        List<String> dbPeriods = new ArrayList<>();
+        if (periodStr != null && !periodStr.trim().isEmpty()) {
+            for (String p : periodStr.split(",")) {
+                dbPeriods.add(p.trim().replace("-", "_"));
+            }
+        }
+
+        boolean hasPeriods = !dbPeriods.isEmpty();
+        if (dbPeriods.isEmpty()) {
+            dbPeriods.add("DUMMY_EMPTY"); // Bash SQL mayderbch l'erreur f IN clause
+        }
+
         log.info("🔍 Recherche des IDs correspondants...");
-        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, cleanPeriod, dbPeriod, cleanType);
+        List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, hasPeriods, dbPeriods, cleanType);
 
         if (interventionIds.isEmpty()) {
             throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");

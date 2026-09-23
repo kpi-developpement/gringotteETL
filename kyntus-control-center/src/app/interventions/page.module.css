@@ -30,7 +30,7 @@
 .trimBtn { background-color: rgba(245, 158, 11, 0.1); color: #fbbf24; padding: 10px 20px; border-radius: 10px; font-weight: 800; border: 1px solid rgba(245, 158, 11, 0.3); cursor: pointer; transition: all 0.3s; }
 .trimBtn:hover { background-color: #f59e0b; color: #0f172a; box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); }
 
-/* 🚀 BOUTON EXPORT */
+/* BOUTON EXPORT */
 .exportBtn { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 10px 20px; border-radius: 10px; font-weight: 900; border: none; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3); }
 .exportBtn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(16, 185, 129, 0.5); }
 .exportBtn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -46,7 +46,7 @@
 .btnFilter { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; border: none; padding: 0 24px; height: 44px; border-radius: 10px; font-weight: 900; font-size: 14px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .btnFilter:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5); }
 
-/* TABLE (NEON STYLE) */
+/* TABLE */
 .tableContainer { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(20px); border-radius: 16px; border: 1px solid rgba(51, 65, 85, 0.8); overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
 .table { width: 100%; border-collapse: collapse; text-align: left; }
 .table th { background-color: rgba(30, 41, 59, 0.8); padding: 18px 20px; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #94a3b8; border-bottom: 1px solid rgba(51, 65, 85, 0.8); letter-spacing: 1px; }
@@ -70,7 +70,7 @@
 .pageBtn:disabled { opacity: 0.3; cursor: not-allowed; }
 .pageBtn:hover:not(:disabled) { background-color: #38bdf8; color: #0f172a; border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
 
-/* MODAL TERMINAL */
+/* MODALS */
 .modalOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(2, 6, 23, 0.8); backdrop-filter: blur(10px); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
 .modalContent { background: #0f172a; width: 100%; max-width: 800px; max-height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); border: 1px solid #1e293b; overflow: hidden; }
 .modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #1e293b; background: #020617; }
@@ -82,9 +82,17 @@
 .jsonView::-webkit-scrollbar-track { background: #020617; }
 .jsonView::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
 
-/* 🚀 MODAL EXPORT */
-.modalExportContent { background: #0f172a; width: 100%; max-width: 500px; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); border: 1px solid #1e293b; overflow: hidden; }
+/* MODAL EXPORT & MULTI-SELECT TAGS */
+.modalExportContent { background: #0f172a; width: 100%; max-width: 550px; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); border: 1px solid #1e293b; overflow: hidden; }
 .exportForm { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
 .modalActions { display: flex; justify-content: flex-end; gap: 15px; margin-top: 10px; }
 .btnCancel { background: rgba(51, 65, 85, 0.4); color: #cbd5e1; border: 1px solid rgba(71, 85, 105, 0.5); padding: 10px 20px; border-radius: 10px; font-weight: 800; cursor: pointer; transition: all 0.2s; }
 .btnCancel:hover { background: rgba(51, 65, 85, 0.8); color: white; }
+
+.tmSelector { display: flex; gap: 10px; margin-top: 5px; }
+.tmSelect { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid rgba(51, 65, 85, 0.8); font-size: 0.9rem; font-weight: 600; outline: none; background: rgba(15, 23, 42, 0.6); color: #f8fafc; }
+.btnSecondary { background: rgba(51, 65, 85, 0.4); color: #cbd5e1; border: 1px solid rgba(71, 85, 105, 0.5); padding: 10px 20px; border-radius: 10px; font-weight: 800; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.btnSecondary:hover { background: rgba(51, 65, 85, 0.8); color: white; }
+.tmList { display: flex; flex-wrap: wrap; gap: 8px; min-height: 44px; background: rgba(15, 23, 42, 0.4); padding: 10px; border-radius: 10px; border: 1px dashed rgba(71, 85, 105, 0.8); margin-top: 10px; }
+.tmTag { background: rgba(56, 189, 248, 0.1); color: #38bdf8; padding: 6px 12px; border-radius: 99px; font-size: 0.8rem; font-weight: 800; display: flex; align-items: center; gap: 6px; border: 1px solid rgba(56, 189, 248, 0.3); }
+.tmTag button { background: none; border: none; color: #ef4444; cursor: pointer; display: flex; align-items: center; padding: 0; font-weight: bold; font-size: 1rem; }

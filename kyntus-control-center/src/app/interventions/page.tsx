@@ -19,8 +19,12 @@ export default function InterventionsPage() {
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportSource, setExportSource] = useState('ALL');
-  const [exportPeriod, setExportPeriod] = useState('');
   const [exportType, setExportType] = useState('ALL');
+  
+  // 🚀 L'FIX HNA: Périodes dyal l'export welaw List bach t9der tzoumi 3la ch7al ma bghiti
+  const [exportPeriods, setExportPeriods] = useState<string[]>([]);
+  const [exportPeriodInput, setExportPeriodInput] = useState('2026_M01');
+  
   const [isExporting, setIsExporting] = useState(false);
 
   const availableYears = ['2026', '2025', '2024'];
@@ -62,10 +66,18 @@ export default function InterventionsPage() {
     }
   };
 
+  const addExportPeriod = () => {
+    if (!exportPeriods.includes(exportPeriodInput)) {
+      setExportPeriods([...exportPeriods, exportPeriodInput]);
+    }
+  };
+
   const handleExport = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsExporting(true);
-    await exportInterventionsExcel(exportSource, exportPeriod, exportType);
+    // Kanjm3ouhom b comma bach lsiftohom l'backend d9a we7da
+    const joinedPeriods = exportPeriods.join(',');
+    await exportInterventionsExcel(exportSource, joinedPeriods, exportType);
     setIsExporting(false);
     setIsExportModalOpen(false);
   };
@@ -154,7 +166,6 @@ export default function InterventionsPage() {
               {availableYears.map(year => (
                 <optgroup key={year} label={`Année ${year}`}>
                   {availableMonths.map(month => (
-                    // 🚀 L'FIX HNA: Redinaha _
                     <option key={`${year}_${month}`} value={`${year}_${month}`}>
                       {year} — {month}
                     </option>
@@ -227,6 +238,7 @@ export default function InterventionsPage() {
           )}
         </div>
 
+        {/* 🚀 MODAL EXPORT AVEC MULTI-SELECT */}
         {isExportModalOpen && (
           <div className={styles.modalOverlay} onClick={() => !isExporting && setIsExportModalOpen(false)}>
             <div className={styles.modalExportContent} onClick={e => e.stopPropagation()}>
@@ -256,21 +268,39 @@ export default function InterventionsPage() {
                   </select>
                 </div>
 
+                {/* 🚀 SELECTEUR DE PERIODES MULTIPLES */}
                 <div className={styles.filterGroup}>
-                  <label>Période (Mois/Année)</label>
-                  <select value={exportPeriod} onChange={(e) => setExportPeriod(e.target.value)} className={styles.selectInput}>
-                    <option value="">Toutes les périodes</option>
-                    {availableYears.map(year => (
-                      <optgroup key={year} label={`Année ${year}`}>
-                        {availableMonths.map(month => (
-                          // 🚀 L'FIX HNA
-                          <option key={`${year}_${month}`} value={`${year}_${month}`}>
-                            {year} — {month}
-                          </option>
-                        ))}
-                      </optgroup>
+                  <label>Périodes à exporter</label>
+                  <div className={styles.tmSelector}>
+                    <select 
+                      value={exportPeriodInput} 
+                      onChange={(e) => setExportPeriodInput(e.target.value)} 
+                      className={styles.tmSelect}
+                    >
+                      {availableYears.map(year => (
+                        <optgroup key={year} label={`Année ${year}`}>
+                          {availableMonths.map(month => (
+                            <option key={`${year}_${month}`} value={`${year}_${month}`}>
+                              {year} — {month}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <button type="button" className={styles.btnSecondary} onClick={addExportPeriod}>
+                      Ajouter
+                    </button>
+                  </div>
+
+                  <div className={styles.tmList}>
+                    {exportPeriods.length === 0 && <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto' }}>TOUTES LES PÉRIODES (BASE GLOBALE)</span>}
+                    {exportPeriods.map(p => (
+                      <div key={p} className={styles.tmTag}>
+                        {p.replace('_', '-')}
+                        <button type="button" onClick={() => setExportPeriods(exportPeriods.filter(item => item !== p))}>×</button>
+                      </div>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
                 <div className={styles.modalActions}>
