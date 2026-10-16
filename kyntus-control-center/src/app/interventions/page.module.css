@@ -1,11 +1,12 @@
 /* ========================================================================== */
-/* GRINGOTTS DATA EXPLORER (2026 QUANTUM OBSIDIAN EDITION)                    */
+/* GRINGOTTS DATA EXPLORER — 2026 PURE VECTOR & HIGH-FPS MOTION               */
 /* ========================================================================== */
 
 .pageWrapper {
   min-height: 100vh;
   padding: 28px 24px 60px 24px;
   color: #f8fafc;
+  animation: pageFade 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .container {
@@ -24,16 +25,36 @@
   flex-wrap: wrap;
   gap: 16px;
   padding: 16px 24px;
-  background: rgba(9, 13, 22, 0.78);
-  backdrop-filter: blur(20px);
+  background: rgba(9, 13, 22, 0.82);
+  backdrop-filter: blur(22px);
   border: 1px solid rgba(56, 189, 248, 0.22);
   border-bottom: 2px solid #38bdf8;
   border-radius: 20px;
   box-shadow: 0 18px 40px -10px rgba(0, 0, 0, 0.7);
+  animation: slideDown 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.titleIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(124, 58, 237, 0.25));
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
 }
 
 .title {
-  font-size: 1.65rem;
+  font-size: 1.55rem;
   font-weight: 900;
   margin: 0;
   letter-spacing: -0.5px;
@@ -43,22 +64,33 @@
 }
 
 .backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   background: rgba(30, 41, 59, 0.75);
   color: #38bdf8;
   padding: 10px 18px;
   border-radius: 12px;
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   font-weight: 800;
   border: 1px solid rgba(56, 189, 248, 0.35);
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   text-decoration: none;
+}
+
+.backBtn svg {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .backBtn:hover {
   background: #38bdf8;
   color: #030712;
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.45);
-  transform: translateY(-1px);
+  box-shadow: 0 0 22px rgba(56, 189, 248, 0.45);
+  transform: translateY(-2px);
+}
+
+.backBtn:hover svg {
+  transform: translateX(-4px);
 }
 
 /* TOOLS PANEL */
@@ -73,25 +105,29 @@
   border-radius: 20px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   box-shadow: 0 16px 35px -10px rgba(0, 0, 0, 0.6);
+  animation: staggerUp 0.6s 0.08s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .cleanBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   background: rgba(239, 68, 68, 0.12);
   color: #f87171;
   padding: 11px 18px;
   border-radius: 12px;
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   font-weight: 800;
   border: 1px solid rgba(239, 68, 68, 0.4);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .cleanBtn:hover {
   background: #dc2626;
   color: white;
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
-  transform: translateY(-1px);
+  box-shadow: 0 0 22px rgba(239, 68, 68, 0.4);
+  transform: translateY(-2px);
 }
 
 .trimBox {
@@ -111,6 +147,7 @@
   outline: none;
   background: rgba(3, 7, 18, 0.85);
   color: #fde68a;
+  transition: all 0.25s ease;
 }
 
 .trimInput:focus {
@@ -119,33 +156,39 @@
 }
 
 .trimBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   background: rgba(245, 158, 11, 0.14);
   color: #fbbf24;
   padding: 10px 18px;
   border-radius: 12px;
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   font-weight: 800;
   border: 1px solid rgba(245, 158, 11, 0.45);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .trimBtn:hover {
   background: #f59e0b;
   color: #030712;
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.45);
+  box-shadow: 0 0 22px rgba(245, 158, 11, 0.45);
+  transform: translateY(-2px);
 }
 
 .exportBtn {
+  position: relative;
+  overflow: hidden;
   background: linear-gradient(135deg, #059669, #10b981);
   color: white;
   padding: 11px 20px;
   border-radius: 12px;
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   font-weight: 900;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -173,6 +216,7 @@
   border-radius: 20px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   box-shadow: 0 16px 35px -10px rgba(0, 0, 0, 0.55);
+  animation: staggerUp 0.6s 0.15s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .filterGroup {
@@ -195,12 +239,12 @@
   padding: 12px 16px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 12px;
-  font-size: 0.86rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: #f8fafc;
   background: rgba(3, 7, 18, 0.8);
   outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
   width: 100%;
 }
 
@@ -217,9 +261,9 @@
   height: 45px;
   border-radius: 12px;
   font-weight: 900;
-  font-size: 0.86rem;
+  font-size: 0.85rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   box-shadow: 0 6px 20px rgba(2, 132, 199, 0.35);
   display: inline-flex;
   align-items: center;
@@ -241,6 +285,7 @@
   overflow: hidden;
   box-shadow: 0 22px 50px -12px rgba(0, 0, 0, 0.75);
   contain: layout style;
+  animation: staggerUp 0.65s 0.22s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .table {
@@ -266,7 +311,11 @@
   border-bottom: 1px solid rgba(30, 41, 59, 0.65);
   color: #cbd5e1;
   font-weight: 600;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tableRow {
+  transition: transform 0.2s ease;
 }
 
 .tableRow:hover td {
@@ -324,6 +373,9 @@
 }
 
 .detailsBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: rgba(56, 189, 248, 0.12);
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.35);
@@ -332,13 +384,14 @@
   font-size: 0.76rem;
   font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .detailsBtn:hover {
   background: #38bdf8;
   color: #030712;
-  box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.45);
+  transform: translateY(-1px);
 }
 
 .pagination {
@@ -361,7 +414,7 @@
   cursor: pointer;
   font-weight: 800;
   color: #f8fafc;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .pageBtn:disabled {
@@ -374,19 +427,21 @@
   color: #030712;
   border-color: #38bdf8;
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+  transform: translateY(-1px);
 }
 
-/* MODALS */
+/* MODALS WITH SPRING PHYSICS */
 .modalOverlay {
   position: fixed;
   inset: 0;
   background: rgba(3, 7, 18, 0.82);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1000;
   padding: 20px;
+  animation: pageFade 0.25s ease forwards;
 }
 
 .modalContent, .modalExportContent {
@@ -398,8 +453,9 @@
   display: flex;
   flex-direction: column;
   box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.85);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  border: 1px solid rgba(56, 189, 248, 0.35);
   overflow: hidden;
+  animation: modalSpring 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 .modalExportContent {
@@ -416,25 +472,35 @@
 }
 
 .modalHeader h2 {
-  font-size: 1.15rem;
+  font-size: 1.12rem;
   font-weight: 900;
   color: #38bdf8;
   margin: 0;
   letter-spacing: 0.6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .closeBtn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  color: #64748b;
-  font-weight: bold;
-  transition: color 0.2s;
+  color: #94a3b8;
+  transition: all 0.2s ease;
 }
 
 .closeBtn:hover {
-  color: #ef4444;
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: rotate(90deg);
 }
 
 .jsonView {
@@ -496,6 +562,9 @@
 }
 
 .btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: rgba(56, 189, 248, 0.14);
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.35);
@@ -533,7 +602,7 @@
   font-weight: 800;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   border: 1px solid rgba(56, 189, 248, 0.35);
 }
 
@@ -545,6 +614,24 @@
   display: flex;
   align-items: center;
   padding: 0;
-  font-weight: bold;
-  font-size: 1rem;
+}
+
+@keyframes pageFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes staggerUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modalSpring {
+  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }

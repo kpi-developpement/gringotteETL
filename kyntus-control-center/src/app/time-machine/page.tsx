@@ -5,10 +5,16 @@ import Link from 'next/link';
 import { fetchStats, startPeriodSync, stopSync, fetchPeriodInfo } from '../../services/api';
 import styles from '../page.module.css';
 
-const IconClock = () => <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-const IconTrash = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>;
+const IconBolt = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+const IconLayers = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
+const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+const IconFlask = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></svg>;
+const IconClose = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+const IconPlus = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
 const IconStop = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
+const IconCheckCircle = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
+const IconAlert = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
 
 export default function TimeMachinePage() {
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
@@ -90,15 +96,26 @@ export default function TimeMachinePage() {
           </div>
 
           <nav className={styles.navPills}>
-            <Link href="/" className={styles.navPill}>⚡ Command Center</Link>
-            <Link href="/interventions" className={styles.navPill}>🗄️ Explorateur EPS</Link>
-            <Link href="/time-machine" className={`${styles.navPill} ${styles.navPillActive}`}>⏱️ Time Machine</Link>
-            <Link href="/lab" className={styles.navPill}>🧪 API Lab</Link>
+            <Link href="/" className={styles.navPill}>
+              <IconBolt />
+              <span>Command Center</span>
+            </Link>
+            <Link href="/interventions" className={styles.navPill}>
+              <IconLayers />
+              <span>Explorateur EPS</span>
+            </Link>
+            <Link href="/time-machine" className={`${styles.navPill} ${styles.navPillActive}`}>
+              <IconClock />
+              <span>Time Machine</span>
+            </Link>
+            <Link href="/lab" className={styles.navPill}>
+              <IconFlask />
+              <span>API Lab</span>
+            </Link>
           </nav>
         </header>
 
         <div className={styles.mainGrid}>
-          {/* PANNEAU DE SÉLECTION */}
           <div className={styles.glassCard}>
             <div className={styles.cardHeader}>
               <h2 className={styles.cardTitle}>
@@ -129,16 +146,21 @@ export default function TimeMachinePage() {
                 disabled={isRunning}
                 className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnViolet}`}
               >
-                + Ajouter
+                <IconPlus />
+                <span>Ajouter</span>
               </button>
             </div>
 
             {periodInfo && (
               <div className={`${styles.periodScanBanner} ${getPeriodScanClass()}`}>
-                <span>
-                  {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total)
-                    ? '✅ Terminé :'
-                    : (periodInfo.offset > 0 ? '⚠️ À reprendre :' : '🆕 Nouveau :')}
+                <span className={styles.scanLabelGroup}>
+                  {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? (
+                    <><IconCheckCircle /> Terminé :</>
+                  ) : periodInfo.offset > 0 ? (
+                    <><IconAlert /> À reprendre :</>
+                  ) : (
+                    <><IconBolt /> Nouveau :</>
+                  )}
                 </span>
                 <span>
                   {periodInfo.offset.toLocaleString()} / {periodInfo.total > 0 ? periodInfo.total.toLocaleString() : '?'} EPS
@@ -156,16 +178,17 @@ export default function TimeMachinePage() {
               )}
               {selectedPeriods.map(p => (
                 <div key={p} className={styles.tmTag}>
-                  {p}
+                  <span>{p}</span>
                   {!isRunning && (
-                    <button onClick={() => removePeriod(p)}><IconTrash /></button>
+                    <button onClick={() => removePeriod(p)}>
+                      <IconClose />
+                    </button>
                   )}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* PANNEAU D'EXÉCUTION */}
           <div className={styles.glassCard} style={{ justifyContent: 'space-between' }}>
             <div className={styles.cardHeader}>
               <h2 className={styles.cardTitle}>2. Contrôle d&apos;Exécution</h2>
@@ -187,7 +210,8 @@ export default function TimeMachinePage() {
                   disabled={isActionPending}
                   className={`${styles.btnPrimary} ${styles.bgRed}`}
                 >
-                  <IconStop /> Stopper le processus
+                  <IconStop />
+                  <span>Stopper le processus</span>
                 </button>
               </div>
             ) : (
@@ -200,7 +224,8 @@ export default function TimeMachinePage() {
                   disabled={isActionPending || selectedPeriods.length === 0}
                   className={`${styles.btnPrimary} ${styles.bgPurple}`}
                 >
-                  <IconPlay /> DÉMARRER L&apos;ASPIRATION
+                  <IconPlay />
+                  <span>DÉMARRER L&apos;ASPIRATION</span>
                 </button>
               </>
             )}

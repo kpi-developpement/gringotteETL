@@ -2,29 +2,47 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchInterventions, cleanDuplicates, trimDatabase, exportInterventionsExcel, PageResponse } from '../../services/api';
+import {
+  fetchInterventions,
+  cleanDuplicates,
+  trimDatabase,
+  exportInterventionsExcel,
+  PageResponse
+} from '../../services/api';
 import styles from './page.module.css';
+
+/* ========================================================================== */
+/* PURE VECTOR SVG ICONS (ZERO EMOJI SYSTEM)                                  */
+/* ========================================================================== */
+const IconLayers = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
+const IconArrowLeft = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>;
+const IconTrashClean = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+const IconDownload = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+const IconScissors = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>;
+const IconFilter = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
+const IconCode = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
+const IconClose = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+const IconPlus = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 
 export default function InterventionsPage() {
   const [data, setData] = useState<PageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
-  
+
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('ALL');
-  const [period, setPeriod] = useState(''); 
-  
+  const [period, setPeriod] = useState('');
+
   const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
   const [trimCount, setTrimCount] = useState<string>('711003');
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportSource, setExportSource] = useState('ALL');
   const [exportType, setExportType] = useState('ALL');
-  
-  // 🚀 L'FIX HNA: Périodes dyal l'export welaw List bach t9der tzoumi 3la ch7al ma bghiti
+
   const [exportPeriods, setExportPeriods] = useState<string[]>([]);
   const [exportPeriodInput, setExportPeriodInput] = useState('2026_M01');
-  
+
   const [isExporting, setIsExporting] = useState(false);
 
   const availableYears = ['2026', '2025', '2024'];
@@ -43,7 +61,7 @@ export default function InterventionsPage() {
 
   const handleApplyFilters = (e: React.FormEvent) => {
     e.preventDefault();
-    setPage(0); 
+    setPage(0);
     loadData();
   };
 
@@ -75,7 +93,6 @@ export default function InterventionsPage() {
   const handleExport = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsExporting(true);
-    // Kanjm3ouhom b comma bach lsiftohom l'backend d9a we7da
     const joinedPeriods = exportPeriods.join(',');
     await exportInterventionsExcel(exportSource, joinedPeriods, exportType);
     setIsExporting(false);
@@ -102,39 +119,53 @@ export default function InterventionsPage() {
     <div className={styles.pageWrapper}>
       <div className={styles.container}>
         <div className={styles.header}>
-          <h1 className={styles.title}>Explorateur de Données</h1>
-          <Link href="/" className={styles.backBtn}>← Retour au Dashboard</Link>
+          <div className={styles.titleGroup}>
+            <div className={styles.titleIcon}>
+              <IconLayers />
+            </div>
+            <h1 className={styles.title}>EXPLORATEUR DE DONNÉES EPS</h1>
+          </div>
+          <Link href="/" className={styles.backBtn}>
+            <IconArrowLeft />
+            <span>Retour au Dashboard</span>
+          </Link>
         </div>
 
         <div className={styles.toolsPanel}>
-          <div style={{ display: 'flex', gap: '15px' }}>
+          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
             <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
-              🧹 Nettoyer les doublons
+              <IconTrashClean />
+              <span>Nettoyer les doublons</span>
             </button>
             <button onClick={() => setIsExportModalOpen(true)} className={styles.exportBtn}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-              Exporter (Excel)
+              <IconDownload />
+              <span>Exporter (Excel)</span>
             </button>
           </div>
-          
+
           <div className={styles.trimBox}>
-            <span style={{ fontSize: '0.875rem', fontWeight: 800, color: '#94a3b8' }}>Garder uniquement les premiers :</span>
-            <input 
-              type="number" 
-              value={trimCount} 
-              onChange={(e) => setTrimCount(e.target.value)} 
+            <span style={{ fontSize: '0.84rem', fontWeight: 800, color: '#94a3b8' }}>
+              Garder uniquement les premiers :
+            </span>
+            <input
+              type="number"
+              value={trimCount}
+              onChange={(e) => setTrimCount(e.target.value)}
               className={styles.trimInput}
             />
-            <button onClick={handleTrimDatabase} className={styles.trimBtn}>✂️ Couper la base</button>
+            <button onClick={handleTrimDatabase} className={styles.trimBtn}>
+              <IconScissors />
+              <span>Couper la base</span>
+            </button>
           </div>
         </div>
 
         <form onSubmit={handleApplyFilters} className={styles.filtersWrapper}>
           <div className={styles.filterGroup}>
             <label>Recherche EPS</label>
-            <input 
-              type="text" 
-              placeholder="Ex: INC-12345..." 
+            <input
+              type="text"
+              placeholder="Ex: INC-12345..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className={styles.searchInput}
@@ -142,10 +173,10 @@ export default function InterventionsPage() {
           </div>
 
           <div className={styles.filterGroup}>
-            <label>Source d'Ingestion</label>
-            <select 
-              value={sourceFilter} 
-              onChange={(e) => setSourceFilter(e.target.value)} 
+            <label>Source d&apos;Ingestion</label>
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
               className={styles.selectInput}
             >
               <option value="ALL">Toutes les sources</option>
@@ -157,9 +188,9 @@ export default function InterventionsPage() {
 
           <div className={styles.filterGroup}>
             <label>Période (Mois/Année)</label>
-            <select 
-              value={period} 
-              onChange={(e) => setPeriod(e.target.value)} 
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
               className={styles.selectInput}
             >
               <option value="">Toutes les périodes</option>
@@ -176,16 +207,20 @@ export default function InterventionsPage() {
           </div>
 
           <button type="submit" className={styles.btnFilter}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-            Filtrer
+            <IconFilter />
+            <span>Filtrer</span>
           </button>
         </form>
 
         <div className={styles.tableContainer}>
           {loading ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: '#38bdf8', fontWeight: '900', fontSize: '1.2rem', letterSpacing: '2px' }}>SCAN EN COURS...</div>
+            <div style={{ padding: '60px', textAlign: 'center', color: '#38bdf8', fontWeight: 900, fontSize: '1.1rem', letterSpacing: '2px' }}>
+              SCAN QUANTIQUE EN COURS...
+            </div>
           ) : !data || data.content.length === 0 ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>Aucune intervention trouvée pour ces critères.</div>
+            <div style={{ padding: '60px', textAlign: 'center', color: '#64748b', fontWeight: 800 }}>
+              Aucune intervention trouvée pour ces critères.
+            </div>
           ) : (
             <>
               <table className={styles.table}>
@@ -202,10 +237,10 @@ export default function InterventionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.content.map((inv, index) => (
-                    <tr key={inv.id} className={styles.tableRow} style={{ animationDelay: `${index * 0.05}s` }}>
-                      <td style={{ color: '#64748b', fontWeight: 800 }}>#{inv.id}</td>
-                      <td style={{ fontWeight: '900', color: '#f8fafc' }}>{inv.id_intervention}</td>
+                  {data.content.map((inv) => (
+                    <tr key={inv.id} className={styles.tableRow}>
+                      <td style={{ color: '#64748b', fontWeight: 800, fontFamily: 'monospace' }}>#{inv.id}</td>
+                      <td style={{ fontWeight: 900, color: '#f8fafc', fontFamily: 'monospace' }}>{inv.id_intervention}</td>
                       <td><span className={`${styles.badge} ${styles.badgeState}`}>{inv.etat}</span></td>
                       <td>{inv.type_intervention || '-'}</td>
                       <td>{extractInfo(inv.detail_intervention, 'typePrestation')}</td>
@@ -221,7 +256,8 @@ export default function InterventionsPage() {
                       </td>
                       <td>
                         <button onClick={() => openDetails(inv.detail_intervention)} className={styles.detailsBtn}>
-                          Voir Détails
+                          <IconCode />
+                          <span>Inspecter JSON</span>
                         </button>
                       </td>
                     </tr>
@@ -230,26 +266,38 @@ export default function InterventionsPage() {
               </table>
 
               <div className={styles.pagination}>
-                <button disabled={data.number === 0} onClick={() => setPage(p => p - 1)} className={styles.pageBtn}>Précédent</button>
-                <span>Page {data.number + 1} sur {data.totalPages} <span style={{ color: '#38bdf8' }}>({data.totalElements} résultats)</span></span>
-                <button disabled={data.number >= data.totalPages - 1} onClick={() => setPage(p => p + 1)} className={styles.pageBtn}>Suivant</button>
+                <button disabled={data.number === 0} onClick={() => setPage(p => p - 1)} className={styles.pageBtn}>
+                  Précédent
+                </button>
+                <span>
+                  Page {data.number + 1} sur {data.totalPages}{' '}
+                  <span style={{ color: '#38bdf8' }}>({data.totalElements} résultats)</span>
+                </span>
+                <button disabled={data.number >= data.totalPages - 1} onClick={() => setPage(p => p + 1)} className={styles.pageBtn}>
+                  Suivant
+                </button>
               </div>
             </>
           )}
         </div>
 
-        {/* 🚀 MODAL EXPORT AVEC MULTI-SELECT */}
+        {/* MODAL EXPORT AVEC MULTI-SELECT */}
         {isExportModalOpen && (
           <div className={styles.modalOverlay} onClick={() => !isExporting && setIsExportModalOpen(false)}>
             <div className={styles.modalExportContent} onClick={e => e.stopPropagation()}>
               <div className={styles.modalHeader}>
-                <h2>Générer un Export Excel</h2>
-                <button onClick={() => !isExporting && setIsExportModalOpen(false)} className={styles.closeBtn}>×</button>
+                <h2>
+                  <IconDownload />
+                  <span>Générer un Export Excel</span>
+                </h2>
+                <button onClick={() => !isExporting && setIsExportModalOpen(false)} className={styles.closeBtn}>
+                  <IconClose />
+                </button>
               </div>
               <form onSubmit={handleExport} className={styles.exportForm}>
-                
+
                 <div className={styles.filterGroup}>
-                  <label>Type d'Intervention</label>
+                  <label>Type d&apos;Intervention</label>
                   <select value={exportType} onChange={(e) => setExportType(e.target.value)} className={styles.selectInput}>
                     <option value="ALL">Tous les types (Global)</option>
                     <option value="RACC">RACC (Raccordement)</option>
@@ -259,7 +307,7 @@ export default function InterventionsPage() {
                 </div>
 
                 <div className={styles.filterGroup}>
-                  <label>Source d'Ingestion</label>
+                  <label>Source d&apos;Ingestion</label>
                   <select value={exportSource} onChange={(e) => setExportSource(e.target.value)} className={styles.selectInput}>
                     <option value="ALL">Toutes les sources</option>
                     <option value="RADAR">RADAR (Flux Continu)</option>
@@ -268,13 +316,12 @@ export default function InterventionsPage() {
                   </select>
                 </div>
 
-                {/* 🚀 SELECTEUR DE PERIODES MULTIPLES */}
                 <div className={styles.filterGroup}>
                   <label>Périodes à exporter</label>
                   <div className={styles.tmSelector}>
-                    <select 
-                      value={exportPeriodInput} 
-                      onChange={(e) => setExportPeriodInput(e.target.value)} 
+                    <select
+                      value={exportPeriodInput}
+                      onChange={(e) => setExportPeriodInput(e.target.value)}
                       className={styles.tmSelect}
                     >
                       {availableYears.map(year => (
@@ -288,25 +335,35 @@ export default function InterventionsPage() {
                       ))}
                     </select>
                     <button type="button" className={styles.btnSecondary} onClick={addExportPeriod}>
-                      Ajouter
+                      <IconPlus />
+                      <span>Ajouter</span>
                     </button>
                   </div>
 
                   <div className={styles.tmList}>
-                    {exportPeriods.length === 0 && <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto' }}>TOUTES LES PÉRIODES (BASE GLOBALE)</span>}
+                    {exportPeriods.length === 0 && (
+                      <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto', fontWeight: 700 }}>
+                        TOUTES LES PÉRIODES (BASE GLOBALE)
+                      </span>
+                    )}
                     {exportPeriods.map(p => (
                       <div key={p} className={styles.tmTag}>
-                        {p.replace('_', '-')}
-                        <button type="button" onClick={() => setExportPeriods(exportPeriods.filter(item => item !== p))}>×</button>
+                        <span>{p.replace('_', '-')}</span>
+                        <button type="button" onClick={() => setExportPeriods(exportPeriods.filter(item => item !== p))}>
+                          <IconClose />
+                        </button>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 <div className={styles.modalActions}>
-                  <button type="button" className={styles.btnCancel} onClick={() => setIsExportModalOpen(false)} disabled={isExporting}>Annuler</button>
+                  <button type="button" className={styles.btnCancel} onClick={() => setIsExportModalOpen(false)} disabled={isExporting}>
+                    Annuler
+                  </button>
                   <button type="submit" className={styles.exportBtn} disabled={isExporting}>
-                    {isExporting ? 'Génération en cours...' : 'Télécharger le fichier'}
+                    <IconDownload />
+                    <span>{isExporting ? 'Génération en cours...' : 'Télécharger le fichier'}</span>
                   </button>
                 </div>
               </form>
@@ -318,8 +375,13 @@ export default function InterventionsPage() {
           <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
             <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
               <div className={styles.modalHeader}>
-                <h2>CONSOLE JSON</h2>
-                <button onClick={() => setSelectedDetails(null)} className={styles.closeBtn}>×</button>
+                <h2>
+                  <IconCode />
+                  <span>CONSOLE PAYLOAD JSON</span>
+                </h2>
+                <button onClick={() => setSelectedDetails(null)} className={styles.closeBtn}>
+                  <IconClose />
+                </button>
               </div>
               <pre className={styles.jsonView}>{selectedDetails}</pre>
             </div>

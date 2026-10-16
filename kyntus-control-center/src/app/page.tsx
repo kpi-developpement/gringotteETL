@@ -20,18 +20,27 @@ import {
 } from '../services/api';
 import styles from './page.module.css';
 
-const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
-const IconHealer = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>;
-const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
-const IconStop = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
-const IconTrash = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
-const IconCheckCircle = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>;
-const IconAlert = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
-const IconDatabase = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
-const IconTerminal = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
-const IconEdit = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
-const IconRefresh = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.45 5.45"></path></svg>;
-const IconSearch = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
+/* ========================================================================== */
+/* PURE VECTOR SVG ICONS (ZERO EMOJI SYSTEM)                                  */
+/* ========================================================================== */
+const IconBolt = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+const IconLayers = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
+const IconClock = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+const IconFlask = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></svg>;
+const IconHealer = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12h6"/><path d="M12 9v6"/></svg>;
+const IconPlay = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
+const IconStop = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
+const IconTrash = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+const IconClose = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+const IconPlus = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+const IconCheckCircle = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
+const IconAlert = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+const IconDatabase = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
+const IconTerminal = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>;
+const IconEdit = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+const IconRefresh = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.45 5.45"/></svg>;
+const IconSearch = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+const IconFilterClean = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
@@ -213,10 +222,12 @@ export default function DashboardPage() {
     <div className={styles.pageWrapper}>
       <div className={styles.container}>
 
-        {/* TOP NAVIGATION DOCK */}
+        {/* TOP NAVIGATION DOCK (PURE VECTOR ICONS) */}
         <header className={styles.topNavDock}>
           <div className={styles.brandGroup}>
-            <div className={styles.vaultEmblem}>G</div>
+            <div className={styles.vaultEmblem}>
+              <IconBolt />
+            </div>
             <div>
               <h1 className={styles.pageTitle}>GRINGOTTS // QUANTUM SYNC</h1>
               <p className={styles.pageSubtitle}>Extracteur Historique Spécialisé & Enrichissement Temps Réel</p>
@@ -225,16 +236,20 @@ export default function DashboardPage() {
 
           <nav className={styles.navPills}>
             <Link href="/" className={`${styles.navPill} ${styles.navPillActive}`}>
-              ⚡ Command Center
+              <IconBolt />
+              <span>Command Center</span>
             </Link>
             <Link href="/interventions" className={styles.navPill}>
-              🗄️ Explorateur EPS
+              <IconLayers />
+              <span>Explorateur EPS</span>
             </Link>
             <Link href="/time-machine" className={styles.navPill}>
-              ⏱️ Time Machine
+              <IconClock />
+              <span>Time Machine</span>
             </Link>
             <Link href="/lab" className={styles.navPill}>
-              🧪 API Lab
+              <IconFlask />
+              <span>API Lab</span>
             </Link>
           </nav>
 
@@ -247,7 +262,10 @@ export default function DashboardPage() {
         {/* TELEMETRY RIBBON */}
         <section className={styles.telemetryRibbon}>
           <div className={styles.telemetryCard}>
-            <span className={styles.telemetryLabel}>Base Locale Totale</span>
+            <span className={styles.telemetryLabel}>
+              <span>Base Locale Totale</span>
+              <IconDatabase />
+            </span>
             <span className={styles.telemetryValue}>
               {(stats?.total_interventions_local || 0).toLocaleString()}
             </span>
@@ -255,7 +273,10 @@ export default function DashboardPage() {
           </div>
 
           <div className={styles.telemetryCard}>
-            <span className={styles.telemetryLabel}>Période Active</span>
+            <span className={styles.telemetryLabel}>
+              <span>Période Active</span>
+              <IconClock />
+            </span>
             <span className={styles.telemetryValue}>
               {stats?.current_period || 'STANDBY'}
             </span>
@@ -263,7 +284,10 @@ export default function DashboardPage() {
           </div>
 
           <div className={styles.telemetryCard}>
-            <span className={styles.telemetryLabel}>Total Aspiré (Session)</span>
+            <span className={styles.telemetryLabel}>
+              <span>Total Aspiré (Session)</span>
+              <IconBolt />
+            </span>
             <span className={styles.telemetryValue}>
               {(stats?.period_processed_total || 0).toLocaleString()}
             </span>
@@ -271,7 +295,10 @@ export default function DashboardPage() {
           </div>
 
           <div className={styles.telemetryCard}>
-            <span className={styles.telemetryLabel}>Enrichissement Healer</span>
+            <span className={styles.telemetryLabel}>
+              <span>Enrichissement Healer</span>
+              <IconHealer />
+            </span>
             <span className={styles.telemetryValue}>
               {(stats?.healer_processed_total || 0).toLocaleString()}
             </span>
@@ -318,16 +345,21 @@ export default function DashboardPage() {
                       ))}
                     </select>
                     <button className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnViolet}`} onClick={addPeriod}>
-                      + Ajouter
+                      <IconPlus />
+                      <span>Ajouter</span>
                     </button>
                   </div>
 
                   {periodInfo && (
                     <div className={`${styles.periodScanBanner} ${getPeriodScanClass()}`}>
-                      <span>
-                        {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total)
-                          ? '✅ Période Terminée'
-                          : (periodInfo.offset > 0 ? '⚠️ Reprise Disponible' : '🆕 Nouvelle Période')}
+                      <span className={styles.scanLabelGroup}>
+                        {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? (
+                          <><IconCheckCircle /> Période Terminée</>
+                        ) : periodInfo.offset > 0 ? (
+                          <><IconAlert /> Reprise Disponible</>
+                        ) : (
+                          <><IconBolt /> Nouvelle Période</>
+                        )}
                       </span>
                       <span>
                         {periodInfo.offset.toLocaleString()} / {periodInfo.total > 0 ? periodInfo.total.toLocaleString() : '?'} EPS
@@ -341,8 +373,10 @@ export default function DashboardPage() {
                     )}
                     {selectedPeriods.map(p => (
                       <div key={p} className={styles.tmTag}>
-                        {p}
-                        <button onClick={() => removePeriod(p)} title="Retirer"><IconTrash /></button>
+                        <span>{p}</span>
+                        <button onClick={() => removePeriod(p)} title="Retirer">
+                          <IconClose />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -393,11 +427,13 @@ export default function DashboardPage() {
                     onClick={handleStartTimeMachine}
                     disabled={selectedPeriods.length === 0}
                   >
-                    <IconPlay /> Démarrer la Time Machine
+                    <IconPlay />
+                    <span>Démarrer la Time Machine</span>
                   </button>
                 ) : (
                   <button className={`${styles.btnPrimary} ${styles.bgRed}`} onClick={handleStop}>
-                    <IconStop /> Stopper la Time Machine
+                    <IconStop />
+                    <span>Stopper la Time Machine</span>
                   </button>
                 )}
               </div>
@@ -432,7 +468,8 @@ export default function DashboardPage() {
                     className={`${styles.btnPrimary} ${styles.bgEmerald}`}
                     style={{ width: 'auto', padding: '12px 22px' }}
                   >
-                    <IconPlay /> Démarrer
+                    <IconPlay />
+                    <span>Démarrer</span>
                   </button>
                 ) : (
                   <button
@@ -440,7 +477,8 @@ export default function DashboardPage() {
                     className={`${styles.btnPrimary} ${styles.bgRed}`}
                     style={{ width: 'auto', padding: '12px 22px' }}
                   >
-                    <IconStop /> Stopper
+                    <IconStop />
+                    <span>Stopper</span>
                   </button>
                 )}
               </div>
@@ -483,7 +521,8 @@ export default function DashboardPage() {
 
               <div className={styles.controlsGroup}>
                 <button className={styles.btnSecondary} onClick={handleSmartClean}>
-                  🧹 Nettoyer les doublons exacts
+                  <IconFilterClean />
+                  <span>Nettoyer les doublons exacts</span>
                 </button>
 
                 {/* NETTOYER LES INTRUS */}
@@ -507,22 +546,26 @@ export default function DashboardPage() {
                     className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnGold}`}
                     onClick={handleFixPeriods}
                   >
-                    <IconRefresh /> Nettoyer les intrus
+                    <IconRefresh />
+                    <span>Nettoyer les intrus</span>
                   </button>
                 </div>
 
                 <Link href="/interventions">
                   <button className={`${styles.btnSecondary} ${styles.btnCyan}`}>
-                    🗄️ Explorer les données brutes (Interventions)
+                    <IconLayers />
+                    <span>Explorer les données brutes (Interventions)</span>
                   </button>
                 </Link>
 
                 <button className={styles.btnSecondary} onClick={handleForceOffset}>
-                  <IconEdit /> Forcer l&apos;Offset (Reprise Manuelle)
+                  <IconEdit />
+                  <span>Forcer l&apos;Offset (Reprise Manuelle)</span>
                 </button>
 
                 <button className={`${styles.btnSecondary} ${styles.btnViolet}`} onClick={handleRetryFailedHeals}>
-                  <IconRefresh /> Réparer les EPS Fantômes
+                  <IconRefresh />
+                  <span>Réparer les EPS Fantômes</span>
                 </button>
 
                 {/* SMART RESCAN */}
@@ -547,7 +590,8 @@ export default function DashboardPage() {
                     onClick={handleRescanPeriod}
                     disabled={isRunning}
                   >
-                    <IconSearch /> Smart Rescan
+                    <IconSearch />
+                    <span>Smart Rescan</span>
                   </button>
                 </div>
 
@@ -572,7 +616,8 @@ export default function DashboardPage() {
                     className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnCrimson}`}
                     onClick={handlePurgePeriod}
                   >
-                    <IconTrash /> Purger Mois
+                    <IconTrash />
+                    <span>Purger Mois</span>
                   </button>
                 </div>
 
@@ -581,7 +626,8 @@ export default function DashboardPage() {
                   style={{ marginTop: '6px' }}
                   onClick={handleReset}
                 >
-                  <IconTrash /> Reset & Purge Totale
+                  <IconTrash />
+                  <span>Reset & Purge Totale</span>
                 </button>
               </div>
             </div>
@@ -589,7 +635,8 @@ export default function DashboardPage() {
             {/* LIVE TERMINAL CONSOLE */}
             <div className={styles.consoleWrapper}>
               <div className={styles.consoleHeader}>
-                <IconTerminal /> Console d&apos;Alertes Live
+                <IconTerminal />
+                <span>Console d&apos;Alertes Live</span>
               </div>
               {stats?.alerts && stats.alerts.length > 0 ? (
                 <div>
