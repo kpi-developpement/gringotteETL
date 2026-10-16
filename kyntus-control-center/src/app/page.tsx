@@ -2,25 +2,40 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { fetchStats, startPeriodSync, stopSync, resetSync, purgePeriod, cleanDuplicates, setManualOffset, startHealer, stopHealer, retryFailedHeals, fetchPeriodInfo, rescanPeriod, fixPeriods, SyncStats } from '../services/api';
+import {
+  fetchStats,
+  startPeriodSync,
+  stopSync,
+  resetSync,
+  purgePeriod,
+  cleanDuplicates,
+  setManualOffset,
+  startHealer,
+  stopHealer,
+  retryFailedHeals,
+  fetchPeriodInfo,
+  rescanPeriod,
+  fixPeriods,
+  SyncStats
+} from '../services/api';
 import styles from './page.module.css';
 
 const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
 const IconHealer = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>;
-const IconPlay = () => <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
-const IconStop = () => <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
-const IconTrash = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
-const IconCheckCircle = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>;
-const IconAlert = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
+const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
+const IconStop = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
+const IconTrash = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+const IconCheckCircle = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>;
+const IconAlert = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
 const IconDatabase = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
-const IconTerminal = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
+const IconTerminal = () => <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>;
 const IconEdit = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>;
 const IconRefresh = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.45 5.45"></path></svg>;
 const IconSearch = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<SyncStats | null>(null);
-  const [healerMode, setHealerMode] = useState('TIME_MACHINE'); 
+  const [healerMode, setHealerMode] = useState('TIME_MACHINE');
 
   const [periodHistory, setPeriodHistory] = useState<number[]>(Array(12).fill(0));
   const [currentPeriodSpeed, setCurrentPeriodSpeed] = useState(0);
@@ -28,11 +43,9 @@ export default function DashboardPage() {
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [currentSelection, setCurrentSelection] = useState('2026_M01');
   const [periodInfo, setPeriodInfo] = useState<{offset: number, total: number} | null>(null);
-  
+
   const [purgeSelection, setPurgeSelection] = useState('2026_M01');
   const [rescanSelection, setRescanSelection] = useState('2026_M02');
-  
-  // 🚀 L'FIX HNA: Zidna state dyal l'mois d nettoyage lkhelta
   const [fixSelection, setFixSelection] = useState('2026_M02');
 
   const availableYears = ['2026', '2025', '2024'];
@@ -45,11 +58,13 @@ export default function DashboardPage() {
     const data = await fetchStats();
     if (data) {
       setStats(data);
-      
-      if (data.period_processed_total < lastPeriodTotal.current) lastPeriodTotal.current = data.period_processed_total;
+
+      if (data.period_processed_total < lastPeriodTotal.current) {
+        lastPeriodTotal.current = data.period_processed_total;
+      }
 
       tickCount.current += 1;
-      
+
       if (tickCount.current >= 4) {
         const pDelta = Math.max(0, data.period_processed_total - lastPeriodTotal.current);
         setCurrentPeriodSpeed(pDelta);
@@ -91,7 +106,6 @@ export default function DashboardPage() {
   };
 
   const handleStop = async () => { await stopSync(); loadStats(); };
-  
   const handleStartHealer = async () => { await startHealer(healerMode); loadStats(); };
   const handleStopHealer = async () => { await stopHealer(); loadStats(); };
 
@@ -126,7 +140,6 @@ export default function DashboardPage() {
     }
   };
 
-  // 🚀 L'FIX HNA: Zidna parameter fixSelection bash t'passi l'mois
   const handleFixPeriods = async () => {
     if (window.confirm(`Voulez-vous vraiment vérifier tous les EPS de ${fixSelection} et déplacer les intrus vers leur vrai mois ?`)) {
       const msg = await fixPeriods(fixSelection);
@@ -138,13 +151,13 @@ export default function DashboardPage() {
   const handleForceOffset = async () => {
     const currentVal = stats?.period_offset;
     const newOffset = prompt(`L'offset actuel est de ${currentVal}.\nEntrez la nouvelle valeur (ex: 16000) :`, currentVal?.toString());
-    
+
     if (newOffset !== null) {
       const val = parseInt(newOffset, 10);
       if (!isNaN(val) && val >= 0) {
         await setManualOffset(val);
         alert(`Offset forcé à ${val} avec succès !`);
-        loadStats(); 
+        loadStats();
       } else {
         alert("Valeur invalide.");
       }
@@ -189,38 +202,111 @@ export default function DashboardPage() {
     return '';
   };
 
+  const getPeriodScanClass = () => {
+    if (!periodInfo) return styles.scanNew;
+    if (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) return styles.scanDone;
+    if (periodInfo.offset > 0) return styles.scanResume;
+    return styles.scanNew;
+  };
+
   return (
     <div className={styles.pageWrapper}>
       <div className={styles.container}>
-        
-        <header className={styles.header}>
-          <div>
-            <h1 className={styles.pageTitle}>Gringotts Control Center</h1>
-            <p className={styles.pageSubtitle}>Extracteur Historique Spécialisé (Time Machine)</p>
+
+        {/* TOP NAVIGATION DOCK */}
+        <header className={styles.topNavDock}>
+          <div className={styles.brandGroup}>
+            <div className={styles.vaultEmblem}>G</div>
+            <div>
+              <h1 className={styles.pageTitle}>GRINGOTTS // QUANTUM SYNC</h1>
+              <p className={styles.pageSubtitle}>Extracteur Historique Spécialisé & Enrichissement Temps Réel</p>
+            </div>
           </div>
+
+          <nav className={styles.navPills}>
+            <Link href="/" className={`${styles.navPill} ${styles.navPillActive}`}>
+              ⚡ Command Center
+            </Link>
+            <Link href="/interventions" className={styles.navPill}>
+              🗄️ Explorateur EPS
+            </Link>
+            <Link href="/time-machine" className={styles.navPill}>
+              ⏱️ Time Machine
+            </Link>
+            <Link href="/lab" className={styles.navPill}>
+              🧪 API Lab
+            </Link>
+          </nav>
+
           <div className={`${styles.statusBadge} ${isRunning ? styles.statusOnline : styles.statusOffline}`}>
             {isRunning && <span className={styles.pulse}></span>}
             {isRunning ? 'MOTEUR ACTIF' : 'MOTEUR ARRÊTÉ'}
           </div>
         </header>
 
+        {/* TELEMETRY RIBBON */}
+        <section className={styles.telemetryRibbon}>
+          <div className={styles.telemetryCard}>
+            <span className={styles.telemetryLabel}>Base Locale Totale</span>
+            <span className={styles.telemetryValue}>
+              {(stats?.total_interventions_local || 0).toLocaleString()}
+            </span>
+            <span className={styles.telemetrySub}>Interventions indexées</span>
+          </div>
+
+          <div className={styles.telemetryCard}>
+            <span className={styles.telemetryLabel}>Période Active</span>
+            <span className={styles.telemetryValue}>
+              {stats?.current_period || 'STANDBY'}
+            </span>
+            <span className={styles.telemetrySub}>Vélocité: {currentPeriodSpeed} EPS/cycle</span>
+          </div>
+
+          <div className={styles.telemetryCard}>
+            <span className={styles.telemetryLabel}>Total Aspiré (Session)</span>
+            <span className={styles.telemetryValue}>
+              {(stats?.period_processed_total || 0).toLocaleString()}
+            </span>
+            <span className={styles.telemetrySub}>ETA: {stats?.eta || 'Calcul...'}</span>
+          </div>
+
+          <div className={styles.telemetryCard}>
+            <span className={styles.telemetryLabel}>Enrichissement Healer</span>
+            <span className={styles.telemetryValue}>
+              {(stats?.healer_processed_total || 0).toLocaleString()}
+            </span>
+            <span className={styles.telemetrySub}>
+              {isHealing ? `Actif (${healerMode})` : 'En veille'}
+            </span>
+          </div>
+        </section>
+
+        {/* MAIN BENTO GRID */}
         <div className={styles.mainGrid}>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-            
+
+          {/* LEFT COLUMN: TIME MACHINE + HEALER */}
+          <div className={styles.columnStack}>
+
+            {/* TIME MACHINE CARD */}
             <div className={styles.glassCard}>
               <div className={styles.cardHeader}>
                 <h2 className={styles.cardTitle}>
                   <div className={`${styles.iconBox} ${styles.iconTime}`}><IconClock /></div>
                   Time Machine (Aspiration Mensuelle)
                 </h2>
-                <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>{rStatus.icon} {rStatus.text}</span>
+                <span className={`${styles.statusText} ${getStatusCssClass(rStatus.css)}`}>
+                  {rStatus.icon} {rStatus.text}
+                </span>
               </div>
 
               {!isRunning && (
                 <div className={styles.controlsGroup}>
                   <div className={styles.tmSelector}>
-                    <select className={styles.tmSelect} value={currentSelection} onChange={e => setCurrentSelection(e.target.value)}>
+                    <select
+                      className={styles.tmSelect}
+                      value={currentSelection}
+                      onChange={e => setCurrentSelection(e.target.value)}
+                    >
                       {availableYears.map(year => (
                         <optgroup key={year} label={`Année ${year}`}>
                           {availableMonths.map(month => (
@@ -231,26 +317,32 @@ export default function DashboardPage() {
                         </optgroup>
                       ))}
                     </select>
-                    <button className={styles.btnSecondary} style={{ width: 'auto' }} onClick={addPeriod}>Ajouter</button>
+                    <button className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnViolet}`} onClick={addPeriod}>
+                      + Ajouter
+                    </button>
                   </div>
-                  
+
                   {periodInfo && (
-                    <div style={{ padding: '10px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold',
-                      background: (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#ecfdf5' : (periodInfo.offset > 0 ? '#fffbeb' : '#f8fafc'),
-                      color: (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#059669' : (periodInfo.offset > 0 ? '#d97706' : '#64748b'),
-                      border: `1px solid ${(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '#a7f3d0' : (periodInfo.offset > 0 ? '#fde68a' : '#e2e8f0')}`
-                    }}>
-                      {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? '✅ Terminé :' : (periodInfo.offset > 0 ? '⚠️ À reprendre :' : '🆕 Nouveau :')}
-                      <span style={{ color: '#0f172a', marginLeft: '5px' }}>{periodInfo.offset.toLocaleString()} / {periodInfo.total > 0 ? periodInfo.total.toLocaleString() : '?'} EPS</span>
+                    <div className={`${styles.periodScanBanner} ${getPeriodScanClass()}`}>
+                      <span>
+                        {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total)
+                          ? '✅ Période Terminée'
+                          : (periodInfo.offset > 0 ? '⚠️ Reprise Disponible' : '🆕 Nouvelle Période')}
+                      </span>
+                      <span>
+                        {periodInfo.offset.toLocaleString()} / {periodInfo.total > 0 ? periodInfo.total.toLocaleString() : '?'} EPS
+                      </span>
                     </div>
                   )}
 
                   <div className={styles.tmList}>
-                    {selectedPeriods.length === 0 && <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto' }}>Aucune période sélectionnée</span>}
+                    {selectedPeriods.length === 0 && (
+                      <span className={styles.tmEmptyText}>Aucune période dans la file d&apos;attente</span>
+                    )}
                     {selectedPeriods.map(p => (
                       <div key={p} className={styles.tmTag}>
                         {p}
-                        <button onClick={() => removePeriod(p)}><IconTrash /></button>
+                        <button onClick={() => removePeriod(p)} title="Retirer"><IconTrash /></button>
                       </div>
                     ))}
                   </div>
@@ -264,7 +356,9 @@ export default function DashboardPage() {
                 </div>
                 <div className={styles.metricBox}>
                   <span className={styles.metricLabel}>Téléchargés (Ce mois)</span>
-                  <span className={styles.metricValue}>{periodOffset.toLocaleString()} / {periodTotal.toLocaleString()}</span>
+                  <span className={styles.metricValue}>
+                    {periodOffset.toLocaleString()} / {periodTotal.toLocaleString()}
+                  </span>
                 </div>
               </div>
 
@@ -277,19 +371,28 @@ export default function DashboardPage() {
                   <div className={styles.progressFillTime} style={{ width: `${progressPeriod}%` }}></div>
                 </div>
                 <div className={styles.progressFooter}>
-                  <span>Vitesse: {currentPeriodSpeed} EPS</span>
+                  <span>VÉLOCITÉ LIVE : {currentPeriodSpeed} EPS</span>
+                  <span>OFFSET : {periodOffset.toLocaleString()}</span>
                 </div>
               </div>
 
               <div className={styles.sparkline}>
                 {periodHistory.map((val, i) => (
-                  <div key={i} className={styles.sparklineBar} style={{ height: `${Math.min(100, Math.max(5, (val / 300) * 100))}%`, background: '#8b5cf6' }}></div>
+                  <div
+                    key={i}
+                    className={styles.sparklineBar}
+                    style={{ height: `${Math.min(100, Math.max(8, (val / 300) * 100))}%` }}
+                  />
                 ))}
               </div>
 
               <div className={styles.controlsGroup}>
                 {!isRunning ? (
-                  <button className={`${styles.btnPrimary} ${styles.bgPurple}`} onClick={handleStartTimeMachine} disabled={selectedPeriods.length === 0}>
+                  <button
+                    className={`${styles.btnPrimary} ${styles.bgPurple}`}
+                    onClick={handleStartTimeMachine}
+                    disabled={selectedPeriods.length === 0}
+                  >
                     <IconPlay /> Démarrer la Time Machine
                   </button>
                 ) : (
@@ -300,32 +403,43 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* BACKGROUND HEALER CARD */}
             <div className={styles.glassCard}>
               <div className={styles.cardHeader}>
                 <h2 className={styles.cardTitle}>
                   <div className={`${styles.iconBox} ${styles.iconHealer}`}><IconHealer /></div>
-                  Background Healer
+                  Background Healer (Enrichissement JSON)
                 </h2>
-                <span className={`${styles.statusText} ${getStatusCssClass(hStatus.css)}`}>{hStatus.icon} {hStatus.text}</span>
+                <span className={`${styles.statusText} ${getStatusCssClass(hStatus.css)}`}>
+                  {hStatus.icon} {hStatus.text}
+                </span>
               </div>
-              
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <select 
-                  value={healerMode} 
+
+              <div className={styles.inlineRow}>
+                <select
+                  value={healerMode}
                   onChange={e => setHealerMode(e.target.value)}
                   disabled={isHealing}
-                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontWeight: 'bold', color: '#334155' }}
+                  className={styles.tmSelect}
                 >
-                  <option value="TIME_MACHINE">Priorité TIME MACHINE (Plus Anciens d'abord)</option>
-                  <option value="RADAR">Priorité RADAR (Plus Récents d'abord)</option>
+                  <option value="TIME_MACHINE">Priorité TIME MACHINE (Plus Anciens d&apos;abord)</option>
+                  <option value="RADAR">Priorité RADAR (Plus Récents d&apos;abord)</option>
                 </select>
-                
+
                 {!isHealing ? (
-                  <button onClick={handleStartHealer} style={{ padding: '10px 20px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={handleStartHealer}
+                    className={`${styles.btnPrimary} ${styles.bgEmerald}`}
+                    style={{ width: 'auto', padding: '12px 22px' }}
+                  >
                     <IconPlay /> Démarrer
                   </button>
                 ) : (
-                  <button onClick={handleStopHealer} style={{ padding: '10px 20px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={handleStopHealer}
+                    className={`${styles.btnPrimary} ${styles.bgRed}`}
+                    style={{ width: 'auto', padding: '12px 22px' }}
+                  >
                     <IconStop /> Stopper
                   </button>
                 )}
@@ -344,7 +458,7 @@ export default function DashboardPage() {
 
               <div className={styles.progressSection}>
                 <div className={styles.progressHeader}>
-                  <span>Progression de l'Enrichissement</span>
+                  <span>Progression de l&apos;Enrichissement</span>
                   <span>{progressHealer}%</span>
                 </div>
                 <div className={styles.progressTrack}>
@@ -355,22 +469,28 @@ export default function DashboardPage() {
 
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-            
+          {/* RIGHT COLUMN: SYSTEM TOOLS + LIVE TERMINAL */}
+          <div className={styles.columnStack}>
+
+            {/* SYSTEM TOOLS CARD */}
             <div className={styles.glassCard}>
-              <h2 className={styles.cardTitle} style={{ marginBottom: '15px' }}><IconDatabase /> Outils Système</h2>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>
+                  <div className={`${styles.iconBox} ${styles.iconStandard}`}><IconDatabase /></div>
+                  Outils Système & Maintenance
+                </h2>
+              </div>
+
               <div className={styles.controlsGroup}>
-                
-                <button className={styles.btnSecondary} style={{ flex: 1 }} onClick={handleSmartClean}>
-                  Nettoyer les doublons
+                <button className={styles.btnSecondary} onClick={handleSmartClean}>
+                  🧹 Nettoyer les doublons exacts
                 </button>
-                
-                {/* 🚀 L'FIX HNA: Zidna Dropdown d Nettoyer Les Intrus m3a select */}
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <select 
-                    className={styles.btnSecondary} 
-                    style={{ flex: 1, padding: '10px', textAlign: 'left', background: '#fffbeb', borderColor: '#fde68a', color: '#d97706' }} 
-                    value={fixSelection} 
+
+                {/* NETTOYER LES INTRUS */}
+                <div className={styles.inlineRow}>
+                  <select
+                    className={`${styles.tmSelect} ${styles.tmSelectGold}`}
+                    value={fixSelection}
                     onChange={e => setFixSelection(e.target.value)}
                   >
                     {availableYears.map(year => (
@@ -383,30 +503,33 @@ export default function DashboardPage() {
                       </optgroup>
                     ))}
                   </select>
-                  <button className={styles.btnSecondary} style={{ color: '#d97706', borderColor: '#fde68a', width: 'auto', padding: '0 15px' }} onClick={handleFixPeriods}>
+                  <button
+                    className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnGold}`}
+                    onClick={handleFixPeriods}
+                  >
                     <IconRefresh /> Nettoyer les intrus
                   </button>
                 </div>
-                
-                <Link href="/interventions" style={{ textDecoration: 'none' }}>
-                  <button className={styles.btnSecondary} style={{ width: '100%' }}>
-                     Explorer les données brutes
+
+                <Link href="/interventions">
+                  <button className={`${styles.btnSecondary} ${styles.btnCyan}`}>
+                    🗄️ Explorer les données brutes (Interventions)
                   </button>
                 </Link>
-                
+
                 <button className={styles.btnSecondary} onClick={handleForceOffset}>
-                  <IconEdit /> Forcer l'Offset (Reprise Manuelle)
+                  <IconEdit /> Forcer l&apos;Offset (Reprise Manuelle)
                 </button>
 
-                <button className={styles.btnSecondary} style={{ color: '#8b5cf6', borderColor: '#ddd6fe' }} onClick={handleRetryFailedHeals}>
+                <button className={`${styles.btnSecondary} ${styles.btnViolet}`} onClick={handleRetryFailedHeals}>
                   <IconRefresh /> Réparer les EPS Fantômes
                 </button>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                  <select 
-                    className={styles.btnSecondary} 
-                    style={{ flex: 1, padding: '10px', textAlign: 'left', background: '#eff6ff', borderColor: '#bfdbfe', color: '#1e40af' }} 
-                    value={rescanSelection} 
+                {/* SMART RESCAN */}
+                <div className={styles.inlineRow}>
+                  <select
+                    className={`${styles.tmSelect} ${styles.tmSelectCyan}`}
+                    value={rescanSelection}
                     onChange={e => setRescanSelection(e.target.value)}
                   >
                     {availableYears.map(year => (
@@ -419,16 +542,20 @@ export default function DashboardPage() {
                       </optgroup>
                     ))}
                   </select>
-                  <button className={styles.btnSecondary} style={{ color: '#ffffff', background: '#3b82f6', borderColor: '#2563eb', width: 'auto', padding: '0 15px' }} onClick={handleRescanPeriod} disabled={isRunning}>
+                  <button
+                    className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnCyan}`}
+                    onClick={handleRescanPeriod}
+                    disabled={isRunning}
+                  >
                     <IconSearch /> Smart Rescan
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                  <select 
-                    className={styles.btnSecondary} 
-                    style={{ flex: 1, padding: '10px', textAlign: 'left' }} 
-                    value={purgeSelection} 
+                {/* PURGE PERIOD */}
+                <div className={styles.inlineRow}>
+                  <select
+                    className={`${styles.tmSelect} ${styles.tmSelectCrimson}`}
+                    value={purgeSelection}
                     onChange={e => setPurgeSelection(e.target.value)}
                   >
                     {availableYears.map(year => (
@@ -441,20 +568,28 @@ export default function DashboardPage() {
                       </optgroup>
                     ))}
                   </select>
-                  <button className={styles.btnSecondary} style={{ color: '#ef4444', borderColor: '#fecaca', width: 'auto', padding: '0 15px' }} onClick={handlePurgePeriod}>
-                    <IconTrash /> Purger
+                  <button
+                    className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnCrimson}`}
+                    onClick={handlePurgePeriod}
+                  >
+                    <IconTrash /> Purger Mois
                   </button>
                 </div>
 
-                <button className={styles.btnPrimary} style={{ background: '#ef4444', marginTop: '10px' }} onClick={handleReset}>
+                <button
+                  className={`${styles.btnPrimary} ${styles.bgRed}`}
+                  style={{ marginTop: '6px' }}
+                  onClick={handleReset}
+                >
                   <IconTrash /> Reset & Purge Totale
                 </button>
               </div>
             </div>
 
+            {/* LIVE TERMINAL CONSOLE */}
             <div className={styles.consoleWrapper}>
               <div className={styles.consoleHeader}>
-                <IconTerminal /> Console d'Alertes Live
+                <IconTerminal /> Console d&apos;Alertes Live
               </div>
               {stats?.alerts && stats.alerts.length > 0 ? (
                 <div>
@@ -462,7 +597,7 @@ export default function DashboardPage() {
                     let cleanAlert = alert;
                     if (cleanAlert.includes('404')) cleanAlert = cleanAlert.replace(/HTTP 404.*/, 'Endpoint PHP Introuvable (URL Invalide)');
                     if (cleanAlert.includes('500') || cleanAlert.includes('504')) cleanAlert = cleanAlert.replace(/HTTP 50.*/, 'Serveur Bouygues Surchargé (Attente...)');
-                    
+
                     const timeMatch = cleanAlert.match(/^\[(.*?)\]/);
                     const timeStr = timeMatch ? timeMatch[0] : '';
                     const msgStr = cleanAlert.replace(/^\[.*?\]\s*/, '');
@@ -476,7 +611,9 @@ export default function DashboardPage() {
                   })}
                 </div>
               ) : (
-                <div style={{ padding: '20px', color: '#475569', fontSize: '0.85rem', textAlign: 'center' }}>Aucun événement enregistré.</div>
+                <div style={{ padding: '28px', color: '#64748b', fontSize: '0.84rem', textAlign: 'center', fontWeight: 700 }}>
+                  Aucun événement enregistré dans le flux.
+                </div>
               )}
             </div>
 

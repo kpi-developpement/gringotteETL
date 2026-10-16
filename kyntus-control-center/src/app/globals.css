@@ -1,13 +1,30 @@
 :root {
-  --kyntus-blue: #1e5a99;
-  --kyntus-dark: #102d50;
-  --kyntus-light: #f4f7f6;
-  --text-main: #333333;
-  --text-muted: #6b7280;
-  --border-color: #e5e7eb;
-  --success: #10b981;
-  --danger: #ef4444;
-  --card-bg: #ffffff;
+  --bg-abyss: #030712;
+  --bg-obsidian: #090d16;
+  --bg-glass: rgba(15, 23, 42, 0.72);
+  --bg-glass-elevated: rgba(30, 41, 59, 0.65);
+  --bg-input: rgba(9, 13, 22, 0.85);
+
+  --border-subtle: rgba(148, 163, 184, 0.12);
+  --border-glow-cyan: rgba(56, 189, 248, 0.35);
+  --border-glow-violet: rgba(139, 92, 246, 0.4);
+  --border-glow-emerald: rgba(16, 185, 129, 0.4);
+  --border-glow-gold: rgba(245, 158, 11, 0.4);
+
+  --text-pure: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --cyan-core: #38bdf8;
+  --cyan-deep: #0284c7;
+  --violet-core: #a78bfa;
+  --violet-deep: #7c3aed;
+  --emerald-core: #34d399;
+  --emerald-deep: #059669;
+  --gold-core: #fbbf24;
+  --gold-deep: #d97706;
+  --crimson-core: #f87171;
+  --crimson-deep: #dc2626;
 }
 
 * {
@@ -16,14 +33,49 @@
   padding: 0;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--kyntus-light);
-  color: var(--text-main);
+html, body {
+  min-height: 100vh;
+  background-color: var(--bg-abyss);
+  color: var(--text-pure);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Global Ambient Quantum Grid */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: 
+    radial-gradient(circle at 15% 10%, rgba(124, 58, 237, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 85% 15%, rgba(56, 189, 248, 0.1) 0%, transparent 45%),
+    radial-gradient(circle at 50% 90%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+    linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+  pointer-events: none;
+  z-index: -1;
 }
 
 a {
   text-decoration: none;
   color: inherit;
+}
+
+/* Sleek Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #030712;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 99px;
+  border: 2px solid #030712;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #38bdf8;
 }
