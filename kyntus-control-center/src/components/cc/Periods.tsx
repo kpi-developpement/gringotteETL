@@ -120,7 +120,10 @@ export function PeriodsTable({ rows, selected, onSelect }: { rows: PeriodRow[]; 
                 </td>
                 <td className={s.num}>{r.remote_total ? fmt(r.remote_total) : '—'}</td>
                 <td className={cx(s.num, s.strong)}>{fmt(r.local_distinct)}</td>
-                <td className={s.num} style={{ color: r.gap > 0 ? '#fcd34d' : 'var(--txt-3)', fontWeight: r.gap > 0 ? 800 : 500 }}>{r.gap > 0 ? `−${fmt(r.gap)}` : '0'}</td>
+                <td className={s.num} style={{ color: r.state === 'ACTIVE' ? '#67e8f9' : r.gap > 0 ? '#fcd34d' : 'var(--txt-3)', fontWeight: r.gap > 0 ? 800 : 500 }}
+                  title={r.state === 'ACTIVE' ? 'Calculé à la fin du scan' : r.gap_source === 'last_scan' ? 'Constat du dernier scan complet' : r.gap_source === 'live' ? 'Base vs Bytel après scan complet' : 'Pas encore de scan complet'}>
+                  {r.state === 'ACTIVE' ? 'en scan…' : r.gap > 0 ? `−${fmt(r.gap)}${r.gap_source === 'last_scan' ? '*' : ''}` : r.gap_source === 'unknown' ? '—' : '0'}
+                </td>
                 <td className={s.num} style={{ color: r.missing_details > 0 ? '#93c5fd' : 'var(--txt-3)' }}>{fmt(r.missing_details)}</td>
                 <td className={s.num} style={{ color: r.phantoms > 0 ? '#fda4af' : 'var(--txt-3)' }}>{fmt(r.phantoms)}</td>
                 <td className={s.num}>{r.scans}</td>

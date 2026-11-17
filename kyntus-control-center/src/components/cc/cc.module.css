@@ -29,7 +29,7 @@
   min-height: 100vh;
   background: var(--bg);
   color: var(--txt);
-  overflow-x: hidden;
+  overflow-x: clip; /* clip (et pas hidden) sinon le header sticky ne colle plus */
   isolation: isolate;
 }
 
@@ -72,6 +72,8 @@
 @keyframes gridPan { to { background-position: 56px 56px, 56px 56px; } }
 
 .container {
+  position: relative;
+  z-index: 1;
   max-width: 1600px;
   margin: 0 auto;
   padding: 20px 28px 60px;

@@ -14,13 +14,14 @@ import java.util.List;
 public interface SyncEventRepository extends JpaRepository<SyncEvent, Long> {
 
     @Query("SELECT e FROM SyncEvent e WHERE " +
-            "(:source = '' OR e.source = :source) AND " +
+            "(:allSources = true OR e.source IN :sources) AND " +
             "(:level = '' OR e.level = :level) AND " +
             "(:period = '' OR e.period = :period) AND " +
             "(:beforeId = 0 OR e.id < :beforeId) AND " +
             "(:search = '' OR LOWER(e.message) LIKE LOWER(CONCAT('%', :search, '%'))) " +
             "ORDER BY e.id DESC")
-    List<SyncEvent> search(@Param("source") String source,
+    List<SyncEvent> search(@Param("allSources") boolean allSources,
+                           @Param("sources") List<String> sources,
                            @Param("level") String level,
                            @Param("period") String period,
                            @Param("beforeId") long beforeId,

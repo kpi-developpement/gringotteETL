@@ -152,13 +152,24 @@ public class AutoPilotService {
             r.put("missing_details", a == null ? 0 : ((Number) a[3]).longValue());
             r.put("phantoms", a == null ? 0 : ((Number) a[4]).longValue());
             r.put("remote_total", total);
-            r.put("gap", total > 0 ? Math.max(0, total - distinct) : 0);
+            // Le "manque" n'a de sens qu'après un scan complet : sinon on reprend le constat du dernier scan.
+            Map<String, Object> last = parseResult(getStr("ap_result_" + p));
+            boolean scannedFully = total > 0 && offset >= total && !"ACTIVE".equals(state);
+            long gap;
+            String gapSource;
+            if (scannedFully) { gap = Math.max(0, total - distinct); gapSource = "live"; }
+            else if (last != null && !Boolean.TRUE.equals(last.get("empty"))) {
+                gap = Math.max(0, ((Number) last.get("remote")).longValue() - ((Number) last.get("local")).longValue());
+                gapSource = "last_scan";
+            } else { gap = 0; gapSource = "unknown"; }
+            r.put("gap", gap);
+            r.put("gap_source", gapSource);
             r.put("offset", offset);
             r.put("progress", total > 0 ? Math.min(100, Math.round(offset * 100.0 / total)) : 0);
             r.put("scans", getInt("ap_scans_" + p));
             r.put("pass_done", getInt("ap_pass_done_" + p));
             r.put("last_scan", fmt(getLong("ap_lastscan_" + p)));
-            r.put("last_result", parseResult(getStr("ap_result_" + p)));
+            r.put("last_result", last);
             rows.add(r);
         }
         rows.sort(Comparator.comparing((Map<String, Object> r) -> (String) r.get("period")).reversed());

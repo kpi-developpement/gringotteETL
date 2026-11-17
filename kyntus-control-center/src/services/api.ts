@@ -56,6 +56,7 @@ export interface PeriodRow {
   phantoms: number;
   remote_total: number;
   gap: number;
+  gap_source: 'live' | 'last_scan' | 'unknown';
   offset: number;
   progress: number;
   scans: number;
@@ -78,6 +79,7 @@ export interface HealerInfo {
   not_found: number;
   failed: number;
   failed_batches: number;
+  recovered: number;
   rate_per_min: number;
   last_success_ago_s: number;
   last_error: string | null;
@@ -99,6 +101,12 @@ export const fetchEvents = async (f: EventFilters = {}): Promise<SyncEvent[]> =>
     if (!res.ok) return [];
     return await res.json();
   } catch { return []; }
+};
+
+export const eventsExportUrl = (f: EventFilters = {}) => {
+  const params = new URLSearchParams();
+  Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== '' && v !== 'ALL') params.append(k, String(v)); });
+  return `${API_URL}/events/export?${params.toString()}`;
 };
 
 export const fetchPeriods = async (): Promise<PeriodRow[]> => {

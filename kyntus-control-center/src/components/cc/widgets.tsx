@@ -1,7 +1,8 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import s from './cc.module.css';
+import fx from './fx.module.css';
 import { useAnimatedNumber } from './hooks';
 
 export type Accent = 'cyan' | 'violet' | 'emerald' | 'amber' | 'rose';
@@ -20,7 +21,63 @@ export function Num({ value, decimals = 0 }: { value: number; decimals?: number 
 export function Card({ children, accent = 'cyan', glow = false, className, style }: {
   children: ReactNode; accent?: Accent; glow?: boolean; className?: string; style?: React.CSSProperties;
 }) {
-  return <section className={cx(s.card, ACC[accent], glow && s.cardGlow, className)} style={style}>{children}</section>;
+  const onMove = (e: React.MouseEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`);
+  };
+  return (
+    <section onMouseMove={onMove} className={cx(s.card, fx.spot, ACC[accent], glow && s.cardGlow, className)} style={style}>
+      {children}
+    </section>
+  );
+}
+
+/** Contrôle segmenté avec indicateur qui glisse. */
+export function Segmented<T extends string>({ value, options, onChange }: {
+  value: T; options: { value: T; label: ReactNode }[]; onChange: (v: T) => void;
+}) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [ind, setInd] = useState({ x: 0, w: 0 });
+  const idx = Math.max(0, options.findIndex(o => o.value === value));
+  useLayoutEffect(() => {
+    const el = refs.current[idx];
+    if (el) setInd({ x: el.offsetLeft - 4, w: el.offsetWidth });
+  }, [idx, options.length]);
+  return (
+    <div className={fx.seg} role="tablist">
+      <span className={fx.segIndicator} style={{ transform: `translateX(${ind.x}px)`, width: ind.w }} />
+      {options.map((o, i) => (
+        <button key={o.value} ref={el => { refs.current[i] = el; }} role="tab" aria-selected={o.value === value}
+          className={cx(fx.segBtn, o.value === value && fx.segOn)} onClick={() => onChange(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Sparkline en aire avec dégradé. */
+export function Sparkline({ data, color = '#22d3ee', height = 56 }: { data: number[]; color?: string; height?: number }) {
+  const id = useRef(`sp${Math.random().toString(36).slice(2, 8)}`).current;
+  if (data.length < 2) return <svg className={fx.spark} style={{ height }} />;
+  const max = Math.max(1, ...data);
+  const w = 100;
+  const pts = data.map((v, i) => [(i / (data.length - 1)) * w, height - 4 - (v / max) * (height - 10)]);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
+  const area = `${line} L${w},${height} L0,${height} Z`;
+  return (
+    <svg className={fx.spark} style={{ height, color }} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity=".45" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${id})`} />
+      <path d={line} className={fx.sparkLine} stroke={color} />
+    </svg>
+  );
 }
 
 export function CardHead({ icon, title, sub, right }: { icon: ReactNode; title: ReactNode; sub?: ReactNode; right?: ReactNode }) {

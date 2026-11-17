@@ -95,6 +95,7 @@ public class SyncOrchestrator {
     private final AtomicLong hNotFound = new AtomicLong();
     private final AtomicLong hFailed = new AtomicLong();
     private final AtomicLong hFailedBatches = new AtomicLong();
+    private final AtomicLong hRecovered = new AtomicLong();
     private final ConcurrentLinkedDeque<long[]> healWindow = new ConcurrentLinkedDeque<>(); // [ts, count]
     private final List<Map<String, Object>> recentLots = new CopyOnWriteArrayList<>();
     private volatile long lastHealSuccessAt = 0;
@@ -742,6 +743,35 @@ public class SyncOrchestrator {
 
         if (healedData == null && !isHealing) return new int[3]; // arrêt : on ne marque rien en fantôme
 
+        // 2e chance : sous charge, le proxy PHP peut répondre ok=true en omettant des IDs.
+        if (healedData != null && isHealing) {
+            final Map<String, Object> first = healedData;
+            List<String> missing = idsToHeal.stream().filter(id -> !hasDetail(first.get(id))).toList();
+            if (!missing.isEmpty() && throttle.acquire(() -> isHealing)) {
+                long t0 = System.currentTimeMillis();
+                try {
+                    Map<String, Object> retry = phpApiClient.healData(missing);
+                    throttle.onSuccess(System.currentTimeMillis() - t0);
+                    if (retry != null && Boolean.TRUE.equals(retry.get("ok")) && retry.get("data") instanceof Map<?, ?> rd) {
+                        int rec = 0;
+                        Map<String, Object> merged = new HashMap<>(first);
+                        for (String id : missing) {
+                            Object d = rd.get(id);
+                            if (hasDetail(d)) { merged.put(id, d); rec++; }
+                        }
+                        healedData = merged;
+                        if (rec > 0) hRecovered.addAndGet(rec);
+                    }
+                } catch (RestClientResponseException e) {
+                    handleHttpError(e);
+                } catch (ResourceAccessException e) {
+                    handleTimeout();
+                } catch (Exception e) {
+                    throttle.onError();
+                }
+            }
+        }
+
         int ok = 0, notFound = 0, failed = 0;
         List<Object[]> updates = new ArrayList<>(batch.size());
         for (Intervention inv : batch) {
@@ -750,14 +780,14 @@ public class SyncOrchestrator {
                 failed++;
             } else {
                 Object detailObj = healedData.get(inv.getIdIntervention());
-                if (detailObj instanceof String str && !str.isBlank() && !"{}".equals(str)) {
+                if (!hasDetail(detailObj)) {
+                    notFound++;
+                } else if (detailObj instanceof String str) {
                     detail = str;
                     ok++;
-                } else if (detailObj != null && !(detailObj instanceof String)) {
+                } else {
                     try { detail = objectMapper.writeValueAsString(detailObj); ok++; }
                     catch (Exception ex) { notFound++; }
-                } else {
-                    notFound++;
                 }
             }
             updates.add(new Object[]{detail, inv.getId()});
@@ -770,6 +800,14 @@ public class SyncOrchestrator {
         if (failed > 0) hFailedBatches.incrementAndGet();
         if (ok > 0) lastHealSuccessAt = System.currentTimeMillis();
         return new int[]{ok, notFound, failed};
+    }
+
+    private static boolean hasDetail(Object d) {
+        if (d == null) return false;
+        if (d instanceof String str) return !str.isBlank() && !"{}".equals(str) && !"[]".equals(str);
+        if (d instanceof Map<?, ?> m) return !m.isEmpty();
+        if (d instanceof Collection<?> c) return !c.isEmpty();
+        return true;
     }
 
     /** Vue détaillée du Healer pour l'UI. */
@@ -788,6 +826,7 @@ public class SyncOrchestrator {
         m.put("not_found", hNotFound.get());
         m.put("failed", hFailed.get());
         m.put("failed_batches", hFailedBatches.get());
+        m.put("recovered", hRecovered.get());
         m.put("rate_per_min", Math.round(last5 / 5.0));
         m.put("last_success_ago_s", lastHealSuccessAt == 0 ? -1 : (now - lastHealSuccessAt) / 1000);
         m.put("last_error", lastHealError);

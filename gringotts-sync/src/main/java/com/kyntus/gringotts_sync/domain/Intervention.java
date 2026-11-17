@@ -79,7 +79,8 @@ public class Intervention {
     @Column(name = "periode")
     private String periode;
 
-    @JsonProperty("actions_log")
+    // WRITE_ONLY : lu depuis le payload PHP, jamais renvoyé à l'UI (collection LAZY hors session = erreur 500).
+    @JsonProperty(value = "actions_log", access = JsonProperty.Access.WRITE_ONLY)
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JoinColumn(name = "intervention_id")
     private List<ActionLog> actionsLog;

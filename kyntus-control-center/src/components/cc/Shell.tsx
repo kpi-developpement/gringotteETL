@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ReactNode } from 'react';
 import s from './cc.module.css';
+import fx from './fx.module.css';
 import { cx, StatusDot } from './widgets';
 import { useClock, usePoll } from './hooks';
 import { IBolt, IClock, IFlask, ILayers } from './icons';
@@ -11,7 +12,7 @@ import { fetchEvents, SyncStats, HealerInfo, SyncEvent } from '../../services/ap
 
 const NAV = [
   { href: '/', label: 'Mission Control', icon: <IBolt /> },
-  { href: '/time-machine', label: 'Time Machine', icon: <IClock /> },
+  { href: '/time-machine', label: 'Moteurs', icon: <IClock /> },
   { href: '/interventions', label: 'Explorateur EPS', icon: <ILayers /> },
   { href: '/lab', label: 'API Lab', icon: <IFlask /> },
 ];
@@ -28,23 +29,25 @@ export default function Shell({ children, stats, healer }: { children: ReactNode
   const healState = healer?.running
     ? (healer.last_success_ago_s > 300 && healer.queue > 0 ? 'warn' : 'live')
     : 'off';
-  const bytelState = ap?.bytel_paused ? 'err' : (ap?.throttle?.includes('Parallèle 1/') ? 'warn' : 'live');
+  const bytelState = !ap ? 'off' : ap.bytel_paused ? 'err' : (ap.throttle?.includes('Parallèle 1/') ? 'warn' : 'live');
 
   return (
-    <div className={s.root}>
+    <div className={s.root} data-cc-root="">
       <div className={s.aurora}>
         <div className={cx(s.blob, s.blob1)} />
         <div className={cx(s.blob, s.blob2)} />
         <div className={cx(s.blob, s.blob3)} />
       </div>
       <div className={s.grid} />
+      <div className={fx.grain} />
+      <div className={fx.vignette} />
 
       <div className={s.container}>
         <header className={s.header}>
           <div className={s.brand}>
             <div className={s.logo}><IBolt s={18} /></div>
             <div>
-              <div className={s.brandTitle}>GRINGOTTS</div>
+              <div className={cx(s.brandTitle, fx.glitch)} data-text="GRINGOTTS">GRINGOTTS</div>
               <div className={s.brandSub}>Mission Control</div>
             </div>
           </div>
@@ -68,7 +71,7 @@ export default function Shell({ children, stats, healer }: { children: ReactNode
               <StatusDot state={healState} />Healer {healer?.running ? `${healer.rate_per_min}/min` : 'OFF'}
             </span>
             <span className={s.pill} title={ap?.throttle}>
-              <StatusDot state={bytelState} />Bytel {ap?.bytel_paused ? 'PAUSE' : 'OK'}
+              <StatusDot state={bytelState} />Bytel {!ap ? '—' : ap.bytel_paused ? 'PAUSE' : 'OK'}
             </span>
             <span className={s.clock}>{now ? now.toLocaleTimeString('fr-FR') : '--:--:--'}</span>
           </div>

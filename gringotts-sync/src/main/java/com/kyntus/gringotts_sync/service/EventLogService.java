@@ -51,8 +51,31 @@ public class EventLogService {
     }
 
     public List<SyncEvent> search(String source, String level, String period, long beforeId, String search, int limit) {
-        return repository.search(nz(source), nz(level), nz(period), beforeId, nz(search),
-                PageRequest.of(0, Math.max(1, Math.min(limit, 500))));
+        List<String> sources = Arrays.stream(nz(source).split(","))
+                .map(String::trim).filter(x -> !x.isEmpty()).toList();
+        return repository.search(sources.isEmpty(), sources.isEmpty() ? List.of("_") : sources,
+                nz(level), nz(period), beforeId, nz(search),
+                PageRequest.of(0, Math.max(1, Math.min(limit, 5000))));
+    }
+
+    private static final java.time.format.DateTimeFormatter EXPORT_FMT =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm:ss");
+    private static final Map<String, String> SRC_LABEL = Map.of(
+            TM, "Time Machine", HEALER, "Healer", AUTOPILOT, "AutoPilot",
+            BYTEL, "Bytel", MAINTENANCE, "Maintenance", SYSTEM, "Système");
+    private static final Map<String, String> LVL_LABEL = Map.of(INFO, "Info", SUCCESS, "OK", WARN, "Alerte", ERROR, "Erreur");
+
+    /** Export texte (TSV) prêt à coller dans un ticket / Excel. */
+    public String exportText(String source, String level, String period, String search, int limit) {
+        StringBuilder sb = new StringBuilder("Horodatage\tSource\tNiveau\tPériode\tMessage\n");
+        for (SyncEvent e : search(source, level, period, 0, search, limit)) {
+            sb.append(e.getCreatedAt().format(EXPORT_FMT)).append('\t')
+              .append(SRC_LABEL.getOrDefault(e.getSource(), e.getSource())).append('\t')
+              .append(LVL_LABEL.getOrDefault(e.getLevel(), e.getLevel())).append('\t')
+              .append(e.getPeriod() == null ? "—" : e.getPeriod()).append('\t')
+              .append(e.getMessage().replace('\n', ' ').replace('\t', ' ')).append('\n');
+        }
+        return sb.toString();
     }
 
     public Map<String, Long> countsLast24h() {

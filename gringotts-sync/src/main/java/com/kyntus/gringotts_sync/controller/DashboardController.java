@@ -166,6 +166,19 @@ public class DashboardController {
         return ResponseEntity.ok(eventLogService.search(source, level, period, beforeId, search, limit));
     }
 
+    @GetMapping(value = "/events/export", produces = "text/plain;charset=UTF-8")
+    public ResponseEntity<String> exportEvents(
+            @RequestParam(required = false) String source,
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) String period,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "2000") int limit) {
+        String name = "gringotts-logs" + (period == null || period.isBlank() ? "" : "-" + period) + ".tsv";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + name + "\"")
+                .body(eventLogService.exportText(source, level, period, search, limit));
+    }
+
     @GetMapping("/periods")
     public ResponseEntity<List<Map<String, Object>>> getPeriods() {
         return ResponseEntity.ok(autoPilotService.periodsOverview());
