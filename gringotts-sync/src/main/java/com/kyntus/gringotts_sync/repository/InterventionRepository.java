@@ -92,6 +92,16 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT :limit", nativeQuery = true)
     List<Intervention> findMissingDetailsAsc(@Param("limit") int limit);
 
+    @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention = '{}'", nativeQuery = true)
+    long countPhantoms();
+
+    /** [periode, total, distinct, sans_details, fantomes] */
+    @Query(value = "SELECT periode, COUNT(*), COUNT(DISTINCT id_intervention), " +
+            "SUM(CASE WHEN detail_intervention IS NULL OR detail_intervention = '' OR detail_intervention = '[]' THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN detail_intervention = '{}' THEN 1 ELSE 0 END) " +
+            "FROM interventions GROUP BY periode", nativeQuery = true)
+    List<Object[]> periodAggregates();
+
     @Query(value = "SELECT COUNT(DISTINCT id_intervention) FROM interventions WHERE periode = :periode", nativeQuery = true)
     long countDistinctByPeriode(@Param("periode") String periode);
 

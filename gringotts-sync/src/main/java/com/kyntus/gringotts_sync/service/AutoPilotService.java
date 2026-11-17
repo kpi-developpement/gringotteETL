@@ -1,27 +1,29 @@
 package com.kyntus.gringotts_sync.service;
 
 import com.kyntus.gringotts_sync.domain.SyncState;
+import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalTime;
-import java.time.YearMonth;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+import static com.kyntus.gringotts_sync.service.EventLogService.*;
+
 /**
- * AutoPilot : rend l'app autonome.
+ * AutoPilot : boucle infinie sur TOUTES les périodes.
  *
- * Chaque tick (60s par défaut) :
- *  1. Watchdog : répare les threads morts.
- *  2. Healer : toujours actif (redémarré s'il est tombé).
- *  3. Mois courant : terminé -> re-scan complet toutes les X minutes (nouveaux EPS + changements d'état).
- *  4. Mois passés (fenêtre glissante) : périodes non terminées reprises ; périodes terminées vérifiées
- *     toutes les X heures (total Bytel vs EPS distincts en base). Trou détecté -> re-scan.
- *  5. EPS fantômes ("{}") remis dans la file du Healer toutes les X heures.
+ * Passe #1 : toutes les périodes (de start-period jusqu'au mois courant), mois courant d'abord puis du plus
+ * récent au plus ancien. Quand la passe est finie -> courte pause -> passe #2, #3... sans jamais s'arrêter.
+ * Chaque période est donc re-scannée à chaque passe (nouveaux EPS, changements d'état, trous comblés).
+ *
+ * En plus, pendant une passe, le mois courant est ré-inséré en tête de file toutes les X minutes.
+ * Watchdog + Healer toujours actif + EPS fantômes remis en file régulièrement.
  */
 @Slf4j
 @Service
@@ -29,42 +31,54 @@ public class AutoPilotService {
 
     private static final String KEY_ENABLED = "ap_enabled";
     private static final String KEY_PHANTOM = "ap_phantom_retry";
+    private static final String KEY_PASS = "ap_pass";
+    private static final String KEY_PASS_STARTED = "ap_pass_started";
 
     private final SyncOrchestrator orchestrator;
     private final SyncStateRepository syncStateRepository;
+    private final InterventionRepository interventionRepository;
 
     private final boolean enabledByDefault;
-    private final int monthsBack;
+    private final YearMonth startPeriod;
     private final long currentRefreshMs;
-    private final long verifyMs;
+    private final long passGapMs;
     private final long phantomRetryMs;
     private final String healerMode;
     private final List<String> extraPeriods;
 
     private volatile String status = "Initialisation";
     private volatile String lastTickAt = "-";
-    private volatile List<String> lastGaps = List.of();
+
+    private volatile List<Object[]> aggCache = List.of();
+    private volatile long aggCachedAt = 0;
 
     public AutoPilotService(
             SyncOrchestrator orchestrator,
             SyncStateRepository syncStateRepository,
+            InterventionRepository interventionRepository,
             @Value("${kyntus.autopilot.enabled:true}") boolean enabledByDefault,
-            @Value("${kyntus.autopilot.months-back:2}") int monthsBack,
+            @Value("${kyntus.autopilot.start-period:2024_M01}") String startPeriod,
             @Value("${kyntus.autopilot.current-refresh-minutes:60}") long currentRefreshMinutes,
-            @Value("${kyntus.autopilot.verify-hours:6}") long verifyHours,
+            @Value("${kyntus.autopilot.pass-gap-minutes:2}") long passGapMinutes,
             @Value("${kyntus.autopilot.phantom-retry-hours:6}") long phantomRetryHours,
             @Value("${kyntus.autopilot.healer-mode:RADAR}") String healerMode,
             @Value("${kyntus.autopilot.extra-periods:}") String extraPeriods) {
         this.orchestrator = orchestrator;
         this.syncStateRepository = syncStateRepository;
+        this.interventionRepository = interventionRepository;
         this.enabledByDefault = enabledByDefault;
-        this.monthsBack = Math.max(0, monthsBack);
+        this.startPeriod = parsePeriod(startPeriod).orElse(YearMonth.of(2024, 1));
         this.currentRefreshMs = currentRefreshMinutes * 60_000L;
-        this.verifyMs = verifyHours * 3_600_000L;
+        this.passGapMs = passGapMinutes * 60_000L;
         this.phantomRetryMs = phantomRetryHours * 3_600_000L;
         this.healerMode = healerMode;
         this.extraPeriods = Arrays.stream(extraPeriods.split(","))
                 .map(String::trim).filter(s -> !s.isEmpty()).toList();
+    }
+
+    @PostConstruct
+    void init() {
+        orchestrator.setPeriodListener(this::onPeriodComplete);
     }
 
     // ---------------------------------------------------------------- API
@@ -79,24 +93,82 @@ public class AutoPilotService {
     public void setEnabled(boolean enabled) {
         saveInt(KEY_ENABLED, enabled ? 1 : 0);
         status = enabled ? "Activé" : "Désactivé";
-        orchestrator.addAlert("[AUTOPILOT] " + (enabled ? "Activé (prise en main < 1 min)" : "Désactivé"));
+        orchestrator.event(AUTOPILOT, enabled ? SUCCESS : WARN, null,
+                enabled ? "AutoPilot activé (prise en main < 1 min)" : "AutoPilot désactivé");
     }
 
     public Map<String, Object> describe() {
+        int pass = currentPass();
+        List<String> all = managedPeriods();
+        long done = all.stream().filter(p -> getInt("ap_pass_done_" + p) >= pass).count();
+
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enabled", isEnabled());
         m.put("status", status);
         m.put("last_tick", lastTickAt);
-        m.put("managed_periods", managedPeriods());
-        m.put("last_gaps", lastGaps);
+        m.put("pass", pass);
+        m.put("pass_started", fmt(getLong(KEY_PASS_STARTED)));
+        m.put("pass_done", done);
+        m.put("pass_total", all.size());
+        m.put("managed_periods", all);
         m.put("throttle", orchestrator.getThrottleStatus());
+        m.put("bytel_paused", orchestrator.isBytelPaused());
         return m;
+    }
+
+    /** Tableau par période : base locale, Bytel, healer, passes. */
+    public List<Map<String, Object>> periodsOverview() {
+        int pass = currentPass();
+        String active = orchestrator.getCurrentPeriod();
+        boolean tmRunning = orchestrator.isRunning();
+        List<String> queued = orchestrator.getQueuedPeriods();
+
+        Map<String, Object[]> agg = new HashMap<>();
+        for (Object[] row : aggregates()) {
+            if (row[0] != null) agg.put((String) row[0], row);
+        }
+
+        LinkedHashSet<String> periods = new LinkedHashSet<>(managedPeriods());
+        agg.keySet().stream().filter(p -> parsePeriod(p).isPresent()).forEach(periods::add);
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String p : periods) {
+            Object[] a = agg.get(p);
+            int offset = orchestrator.getSavedOffset(p);
+            int total = orchestrator.getSavedTotal(p);
+            long distinct = a == null ? 0 : ((Number) a[2]).longValue();
+
+            String state;
+            if (tmRunning && p.equals(active)) state = "ACTIVE";
+            else if (queued.contains(p)) state = "QUEUED";
+            else if (getInt("ap_pass_done_" + p) >= pass) state = "DONE";
+            else state = "PENDING";
+
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("period", p);
+            r.put("state", state);
+            r.put("local_rows", a == null ? 0 : ((Number) a[1]).longValue());
+            r.put("local_distinct", distinct);
+            r.put("missing_details", a == null ? 0 : ((Number) a[3]).longValue());
+            r.put("phantoms", a == null ? 0 : ((Number) a[4]).longValue());
+            r.put("remote_total", total);
+            r.put("gap", total > 0 ? Math.max(0, total - distinct) : 0);
+            r.put("offset", offset);
+            r.put("progress", total > 0 ? Math.min(100, Math.round(offset * 100.0 / total)) : 0);
+            r.put("scans", getInt("ap_scans_" + p));
+            r.put("pass_done", getInt("ap_pass_done_" + p));
+            r.put("last_scan", fmt(getLong("ap_lastscan_" + p)));
+            r.put("last_result", parseResult(getStr("ap_result_" + p)));
+            rows.add(r);
+        }
+        rows.sort(Comparator.comparing((Map<String, Object> r) -> (String) r.get("period")).reversed());
+        return rows;
     }
 
     // ---------------------------------------------------------------- Boucle
 
     @Scheduled(initialDelayString = "${kyntus.autopilot.initial-delay-ms:30000}",
-               fixedDelayString = "${kyntus.autopilot.tick-ms:60000}")
+               fixedDelayString = "${kyntus.autopilot.tick-ms:30000}")
     public synchronized void tick() {
         lastTickAt = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         try {
@@ -113,102 +185,98 @@ public class AutoPilotService {
 
             maybeRetryPhantoms();
 
+            long now = System.currentTimeMillis();
+            String current = periodOf(YearMonth.now());
+            int pass = currentPass();
+
             if (orchestrator.isTimeMachineBusy()) {
-                status = "Time Machine en cours (" + orchestrator.getCurrentPeriod() + ")";
+                if (now - getLong("ap_lastscan_" + current) > currentRefreshMs) {
+                    orchestrator.injectPriority(current);
+                }
+                status = "Passe #" + pass + " — scan " + orchestrator.getCurrentPeriod()
+                        + " (" + orchestrator.getQueuedPeriods().size() + " en file)";
                 return;
             }
 
-            planAndStart();
+            List<String> all = managedPeriods();
+            List<String> pending = new ArrayList<>(all.stream().filter(p -> getInt("ap_pass_done_" + p) < pass).toList());
+
+            if (pending.isEmpty()) {
+                long ended = getLong("ap_pass_ended_" + pass);
+                if (ended == 0) {
+                    ended = now;
+                    saveLong("ap_pass_ended_" + pass, now);
+                    long started = getLong(KEY_PASS_STARTED);
+                    orchestrator.event(AUTOPILOT, SUCCESS, null, "Passe #" + pass + " terminée : " + all.size()
+                            + " périodes scannées" + (started > 0 ? " en " + SyncOrchestrator.formatDuration(now - started) : "") + ".");
+                }
+                if (now - ended < passGapMs) {
+                    status = "Passe #" + pass + " terminée — passe #" + (pass + 1) + " dans " + ((passGapMs - (now - ended)) / 1000) + "s";
+                    return;
+                }
+                saveInt(KEY_PASS, pass + 1);
+                saveLong(KEY_PASS_STARTED, now);
+                pending = new ArrayList<>(all);
+                orchestrator.event(AUTOPILOT, INFO, null, "Démarrage de la passe #" + (pass + 1) + " sur " + all.size() + " périodes.");
+            } else if (getLong(KEY_PASS_STARTED) == 0) {
+                saveLong(KEY_PASS_STARTED, now);
+                orchestrator.event(AUTOPILOT, INFO, null, "Démarrage de la passe #" + pass + " sur " + all.size() + " périodes.");
+            }
+
+            // Mois courant d'abord, puis du plus récent au plus ancien.
+            pending.sort(Comparator.comparing((String p) -> !p.equals(current)).thenComparing(Comparator.reverseOrder()));
+
+            Set<String> reset = new LinkedHashSet<>();
+            for (String p : pending) {
+                int off = orchestrator.getSavedOffset(p), tot = orchestrator.getSavedTotal(p);
+                if (tot > 0 && off >= tot) reset.add(p); // déjà complète -> on re-scanne depuis 0
+            }
+
+            if (orchestrator.startAutoSync(pending, reset)) {
+                status = "Passe #" + currentPass() + " — " + pending.size() + " périodes en file";
+            }
         } catch (Exception e) {
             log.error("[AUTOPILOT] Erreur tick", e);
             status = "Erreur: " + e.getMessage();
         }
     }
 
-    private void planAndStart() {
+    private void onPeriodComplete(SyncOrchestrator.PeriodResult r) {
         long now = System.currentTimeMillis();
-        String current = periodOf(YearMonth.now());
-        List<String> toRun = new ArrayList<>();
-        Set<String> reset = new LinkedHashSet<>();
-        List<String> gaps = new ArrayList<>();
-
-        for (String p : managedPeriods()) {
-            int offset = orchestrator.getSavedOffset(p);
-            int total = orchestrator.getSavedTotal(p);
-            boolean unfinished = total == 0 || offset < total;
-
-            if (p.equals(current)) {
-                if (unfinished) {
-                    toRun.add(p);
-                    if (offset == 0) saveLong("ap_lastscan_" + p, now);
-                } else if (now - getLong("ap_lastscan_" + p) > currentRefreshMs) {
-                    toRun.add(p);
-                    reset.add(p);
-                    saveLong("ap_lastscan_" + p, now);
-                }
-                continue;
-            }
-
-            if (unfinished) {
-                toRun.add(p);
-                continue;
-            }
-
-            if (now - getLong("ap_verify_" + p) < verifyMs) continue;
-            saveLong("ap_verify_" + p, now);
-
-            status = "Vérification " + p + "...";
-            int remote = orchestrator.probeRemoteTotal(p);
-            long local = orchestrator.countLocalDistinct(p);
-            if (remote <= 0) continue; // Bytel indispo, on réessaiera au prochain cycle de vérification
-
-            if (local < remote) {
-                // Trou identique au dernier re-scan => structurel (EPS déplacés / doublons Bytel). On ne boucle pas.
-                boolean sameAsLast = getLong("ap_gap_remote_" + p) == remote && getLong("ap_gap_local_" + p) == local;
-                if (sameAsLast) {
-                    log.info("[AUTOPILOT] {}: écart {} persistant après re-scan, ignoré.", p, remote - local);
-                    continue;
-                }
-                saveLong("ap_gap_remote_" + p, remote);
-                saveLong("ap_gap_local_" + p, local);
-                gaps.add(p + " (-" + (remote - local) + ")");
-                orchestrator.addAlert("[AUTOPILOT] Trou détecté sur " + p + " : " + local + "/" + remote + " EPS -> re-scan");
-                toRun.add(p);
-                reset.add(p);
-            } else {
-                log.info("[AUTOPILOT] {} complet ({} / {}).", p, local, remote);
-            }
-        }
-
-        if (!gaps.isEmpty()) lastGaps = gaps;
-
-        // Mois courant en premier : c'est le plus "vivant".
-        toRun.sort(Comparator.comparing((String p) -> !p.equals(current)).thenComparing(Comparator.reverseOrder()));
-
-        if (toRun.isEmpty()) {
-            status = "Tout est à jour. Prochain refresh du mois courant dans "
-                    + Math.max(0, (currentRefreshMs - (now - getLong("ap_lastscan_" + current))) / 60_000) + " min";
-            return;
-        }
-        if (orchestrator.startAutoSync(toRun, reset)) {
-            status = "Sync lancée: " + String.join(", ", toRun);
-        }
+        saveInt("ap_pass_done_" + r.period(), currentPass());
+        saveInt("ap_scans_" + r.period(), getInt("ap_scans_" + r.period()) + 1);
+        saveLong("ap_lastscan_" + r.period(), now);
+        saveStr("ap_result_" + r.period(), r.inserted() + ";" + r.updated() + ";" + r.localDistinct() + ";"
+                + r.remoteTotal() + ";" + r.durationMs() + ";" + (r.empty() ? 1 : 0));
+        aggCachedAt = 0; // force refresh du tableau
     }
 
     private void maybeRetryPhantoms() {
         long now = System.currentTimeMillis();
         if (now - getLong(KEY_PHANTOM) < phantomRetryMs) return;
         saveLong(KEY_PHANTOM, now);
-        int n = orchestrator.retryFailedHeals();
-        log.info("[AUTOPILOT] {} EPS fantômes remis au Healer.", n);
+        orchestrator.retryFailedHeals();
     }
 
     // ---------------------------------------------------------------- Helpers
 
+    private List<Object[]> aggregates() {
+        if (System.currentTimeMillis() - aggCachedAt > 30_000) {
+            aggCache = interventionRepository.periodAggregates();
+            aggCachedAt = System.currentTimeMillis();
+        }
+        return aggCache;
+    }
+
+    int currentPass() {
+        int p = getInt(KEY_PASS);
+        return p <= 0 ? 1 : p;
+    }
+
     List<String> managedPeriods() {
         LinkedHashSet<String> set = new LinkedHashSet<>();
         YearMonth now = YearMonth.now();
-        for (int i = 0; i <= monthsBack; i++) set.add(periodOf(now.minusMonths(i)));
+        for (YearMonth ym = now; !ym.isBefore(startPeriod); ym = ym.minusMonths(1)) set.add(periodOf(ym));
         set.addAll(extraPeriods);
         return new ArrayList<>(set);
     }
@@ -217,18 +285,55 @@ public class AutoPilotService {
         return String.format("%d_M%02d", ym.getYear(), ym.getMonthValue());
     }
 
-    private long getLong(String key) {
-        return syncStateRepository.findById(key)
-                .map(SyncState::getStateValueStr)
-                .filter(s -> s != null && !s.isEmpty())
-                .map(s -> { try { return Long.parseLong(s); } catch (NumberFormatException e) { return 0L; } })
-                .orElse(0L);
+    static Optional<YearMonth> parsePeriod(String p) {
+        try {
+            String[] parts = p.split("_M");
+            return Optional.of(YearMonth.of(Integer.parseInt(parts[0]), Integer.parseInt(parts[1])));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
     }
 
-    private void saveLong(String key, long value) {
+    private static Map<String, Object> parseResult(String s) {
+        if (s == null || s.isEmpty()) return null;
+        String[] a = s.split(";");
+        if (a.length < 6) return null;
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("inserted", Integer.parseInt(a[0]));
+        m.put("updated", Integer.parseInt(a[1]));
+        m.put("local", Long.parseLong(a[2]));
+        m.put("remote", Integer.parseInt(a[3]));
+        m.put("duration", SyncOrchestrator.formatDuration(Long.parseLong(a[4])));
+        m.put("empty", "1".equals(a[5]));
+        return m;
+    }
+
+    private static String fmt(long epochMs) {
+        if (epochMs <= 0) return null;
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMs), ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("dd/MM HH:mm"));
+    }
+
+    private int getInt(String key) {
+        return syncStateRepository.findById(key).map(SyncState::getStateValue).filter(Objects::nonNull).orElse(0);
+    }
+
+    private String getStr(String key) {
+        return syncStateRepository.findById(key).map(SyncState::getStateValueStr).orElse(null);
+    }
+
+    private long getLong(String key) {
+        String s = getStr(key);
+        if (s == null || s.isEmpty()) return 0L;
+        try { return Long.parseLong(s); } catch (NumberFormatException e) { return 0L; }
+    }
+
+    private void saveLong(String key, long value) { saveStr(key, Long.toString(value)); }
+
+    private void saveStr(String key, String value) {
         SyncState st = syncStateRepository.findById(key).orElse(new SyncState());
         st.setStateKey(key);
-        st.setStateValueStr(Long.toString(value));
+        st.setStateValueStr(value);
         syncStateRepository.save(st);
     }
 

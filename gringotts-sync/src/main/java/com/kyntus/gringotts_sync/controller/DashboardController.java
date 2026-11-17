@@ -4,7 +4,9 @@ import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
+import com.kyntus.gringotts_sync.domain.SyncEvent;
 import com.kyntus.gringotts_sync.service.AutoPilotService;
+import com.kyntus.gringotts_sync.service.EventLogService;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
 import com.kyntus.gringotts_sync.service.ExportExcelService;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ public class DashboardController {
     private final SyncOrchestrator syncOrchestrator;
     private final ExportExcelService exportExcelService;
     private final AutoPilotService autoPilotService;
+    private final EventLogService eventLogService;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
@@ -60,6 +63,9 @@ public class DashboardController {
         stats.put("healer_processed_total", syncOrchestrator.getTotalHealerProcessed());
         stats.put("queued_periods", syncOrchestrator.getQueuedPeriods());
         stats.put("autopilot", autoPilotService.describe());
+        stats.put("period_inserted", syncOrchestrator.getPeriodInserted());
+        stats.put("period_updated", syncOrchestrator.getPeriodUpdated());
+        stats.put("event_counts_24h", eventLogService.countsLast24h());
 
         return ResponseEntity.ok(stats);
     }
@@ -147,6 +153,27 @@ public class DashboardController {
         }
         syncOrchestrator.rescanPeriod(period);
         return ResponseEntity.ok(Map.of("ok", true, "message", "Smart Rescan lancé pour la période " + period));
+    }
+
+    @GetMapping("/events")
+    public ResponseEntity<List<SyncEvent>> getEvents(
+            @RequestParam(required = false) String source,
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) String period,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") long beforeId,
+            @RequestParam(defaultValue = "100") int limit) {
+        return ResponseEntity.ok(eventLogService.search(source, level, period, beforeId, search, limit));
+    }
+
+    @GetMapping("/periods")
+    public ResponseEntity<List<Map<String, Object>>> getPeriods() {
+        return ResponseEntity.ok(autoPilotService.periodsOverview());
+    }
+
+    @GetMapping("/healer")
+    public ResponseEntity<Map<String, Object>> getHealer() {
+        return ResponseEntity.ok(syncOrchestrator.healerInsights());
     }
 
     @GetMapping("/autopilot")

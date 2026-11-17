@@ -1,238 +1,134 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { fetchStats, startPeriodSync, stopSync, fetchPeriodInfo } from '../../services/api';
-import styles from '../page.module.css';
-
-const IconBolt = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
-const IconLayers = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
-const IconClock = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
-const IconFlask = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></svg>;
-const IconClose = () => <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
-const IconPlus = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-const IconPlay = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"/></svg>;
-const IconStop = () => <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>;
-const IconCheckCircle = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
-const IconAlert = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+import { useState } from 'react';
+import s from '../../components/cc/cc.module.css';
+import Shell from '../../components/cc/Shell';
+import EventsTable from '../../components/cc/EventsTable';
+import { PeriodMatrix, PeriodsTable } from '../../components/cc/Periods';
+import { useLive, useToast } from '../../components/cc/hooks';
+import { Card, CardHead, cx, Kpi, Num, Progress, Toast } from '../../components/cc/widgets';
+import { IClock, IClose, IGrid, IPlay, IPlus, IRadar, IStop, IDb } from '../../components/cc/icons';
+import { startPeriodSync, stopSync } from '../../services/api';
 
 export default function TimeMachinePage() {
-  const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
-  const [currentSelection, setCurrentSelection] = useState('2026_M01');
+  const { stats, healer, periods, refreshAll } = useLive();
+  const { toast, show } = useToast();
+  const [selected, setSelected] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const [pick, setPick] = useState('');
 
-  const [isRunning, setIsRunning] = useState(false);
-  const [isActionPending, setIsActionPending] = useState(false);
-  const [currentPeriodActive, setCurrentPeriodActive] = useState<string | null>(null);
-  const [periodInfo, setPeriodInfo] = useState<{offset: number, total: number} | null>(null);
+  const isRunning = !!stats?.is_running;
+  const ap = stats?.autopilot;
+  const periodNames = periods.map(p => p.period);
+  const tmProgress = stats && stats.period_total > 0 ? Math.min(100, Math.round((stats.period_offset / stats.period_total) * 100)) : 0;
 
-  const availableYears = ['2026', '2025', '2024'];
-  const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
+  const totalRemote = periods.reduce((a, r) => a + (r.remote_total || 0), 0);
+  const totalLocal = periods.reduce((a, r) => a + (r.local_distinct || 0), 0);
+  const totalGap = periods.reduce((a, r) => a + (r.gap || 0), 0);
+  const coverage = totalRemote > 0 ? Math.min(100, (totalLocal / totalRemote) * 100) : 0;
+  const scansTotal = periods.reduce((a, r) => a + (r.scans || 0), 0);
 
-  const loadStatus = async () => {
-    const data = await fetchStats();
-    if (data) {
-      setIsRunning(data.is_running && data.current_period !== null);
-      setCurrentPeriodActive(data.current_period);
-    }
+  const startManual = async () => {
+    if (picked.length === 0) return show('Ajoutez au moins une période.');
+    if (ap?.enabled && !window.confirm('L’AutoPilot est actif : il reprendra la boucle après votre lancement manuel. Continuer ?')) return;
+    await startPeriodSync(picked.join(','));
+    show(`Scan manuel lancé : ${picked.join(', ')}`);
+    setPicked([]);
+    refreshAll();
   };
 
-  useEffect(() => {
-    loadStatus();
-    const interval = setInterval(loadStatus, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const checkPeriod = async () => {
-      const info = await fetchPeriodInfo(currentSelection);
-      setPeriodInfo(info);
-    };
-    checkPeriod();
-  }, [currentSelection]);
-
-  const addPeriod = () => {
-    if (!selectedPeriods.includes(currentSelection)) {
-      setSelectedPeriods([...selectedPeriods, currentSelection]);
-    }
-  };
-
-  const removePeriod = (p: string) => {
-    setSelectedPeriods(selectedPeriods.filter(item => item !== p));
-  };
-
-  const handleStart = async () => {
-    if (selectedPeriods.length === 0) return alert('Ajoutez au moins une période à la liste.');
-    setIsActionPending(true);
-    await startPeriodSync(selectedPeriods.join(','));
-    await loadStatus();
-    setIsActionPending(false);
-  };
-
-  const handleStop = async () => {
-    setIsActionPending(true);
-    await stopSync();
-    await loadStatus();
-    setIsActionPending(false);
-  };
-
-  const getPeriodScanClass = () => {
-    if (!periodInfo) return styles.scanNew;
-    if (periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) return styles.scanDone;
-    if (periodInfo.offset > 0) return styles.scanResume;
-    return styles.scanNew;
-  };
+  const selRow = periods.find(p => p.period === selected);
 
   return (
-    <div className={styles.pageWrapper}>
-      <div className={styles.container}>
-
-        <header className={styles.topNavDock}>
-          <div className={styles.brandGroup}>
-            <div className={styles.vaultEmblem}><IconClock /></div>
-            <div>
-              <h1 className={styles.pageTitle}>CHRONOS // TIME MACHINE</h1>
-              <p className={styles.pageSubtitle}>Aspiration Bouygues sécurisée par Périodes mensuelles</p>
-            </div>
-          </div>
-
-          <nav className={styles.navPills}>
-            <Link href="/" className={styles.navPill}>
-              <IconBolt />
-              <span>Command Center</span>
-            </Link>
-            <Link href="/interventions" className={styles.navPill}>
-              <IconLayers />
-              <span>Explorateur EPS</span>
-            </Link>
-            <Link href="/time-machine" className={`${styles.navPill} ${styles.navPillActive}`}>
-              <IconClock />
-              <span>Time Machine</span>
-            </Link>
-            <Link href="/lab" className={styles.navPill}>
-              <IconFlask />
-              <span>API Lab</span>
-            </Link>
-          </nav>
-        </header>
-
-        <div className={styles.mainGrid}>
-          <div className={styles.glassCard}>
-            <div className={styles.cardHeader}>
-              <h2 className={styles.cardTitle}>
-                <div className={`${styles.iconBox} ${styles.iconTime}`}><IconClock /></div>
-                1. Sélectionner les mois à aspirer
-              </h2>
-            </div>
-
-            <div className={styles.tmSelector}>
-              <select
-                value={currentSelection}
-                onChange={e => setCurrentSelection(e.target.value)}
-                className={styles.tmSelect}
-                disabled={isRunning}
-              >
-                {availableYears.map(year => (
-                  <optgroup key={year} label={`Année ${year}`}>
-                    {availableMonths.map(month => (
-                      <option key={`${year}_${month}`} value={`${year}_${month}`}>
-                        {year} — Mois {month.replace('M', '')}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <button
-                onClick={addPeriod}
-                disabled={isRunning}
-                className={`${styles.btnSecondary} ${styles.btnAuto} ${styles.btnViolet}`}
-              >
-                <IconPlus />
-                <span>Ajouter</span>
-              </button>
-            </div>
-
-            {periodInfo && (
-              <div className={`${styles.periodScanBanner} ${getPeriodScanClass()}`}>
-                <span className={styles.scanLabelGroup}>
-                  {(periodInfo.total > 0 && periodInfo.offset >= periodInfo.total) ? (
-                    <><IconCheckCircle /> Terminé :</>
-                  ) : periodInfo.offset > 0 ? (
-                    <><IconAlert /> À reprendre :</>
-                  ) : (
-                    <><IconBolt /> Nouveau :</>
-                  )}
-                </span>
-                <span>
-                  {periodInfo.offset.toLocaleString()} / {periodInfo.total > 0 ? periodInfo.total.toLocaleString() : '?'} EPS
-                </span>
-              </div>
-            )}
-
-            <div className={styles.metricLabel}>
-              Liste d&apos;attente ({selectedPeriods.length})
-            </div>
-
-            <div className={styles.tmList} style={{ minHeight: '150px', alignContent: 'flex-start' }}>
-              {selectedPeriods.length === 0 && (
-                <span className={styles.tmEmptyText}>Aucune période sélectionnée...</span>
-              )}
-              {selectedPeriods.map(p => (
-                <div key={p} className={styles.tmTag}>
-                  <span>{p}</span>
-                  {!isRunning && (
-                    <button onClick={() => removePeriod(p)}>
-                      <IconClose />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.glassCard} style={{ justifyContent: 'space-between' }}>
-            <div className={styles.cardHeader}>
-              <h2 className={styles.cardTitle}>2. Contrôle d&apos;Exécution</h2>
-              <span className={`${styles.statusBadge} ${isRunning ? styles.statusOnline : styles.statusOffline}`}>
-                {isRunning && <span className={styles.pulse}></span>}
-                {isRunning ? 'MOTEUR ACTIF' : 'STANDBY'}
-              </span>
-            </div>
-
-            {isRunning ? (
-              <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <div className={styles.metricLabel}>PÉRIODE EN COURS D&apos;ASPIRATION</div>
-                <div style={{ fontSize: '2.6rem', fontWeight: 900, color: '#fbbf24', margin: '14px 0 32px 0', fontFamily: 'monospace' }}>
-                  {currentPeriodActive || 'Chargement...'}
-                </div>
-
-                <button
-                  onClick={handleStop}
-                  disabled={isActionPending}
-                  className={`${styles.btnPrimary} ${styles.bgRed}`}
-                >
-                  <IconStop />
-                  <span>Stopper le processus</span>
-                </button>
-              </div>
-            ) : (
-              <>
-                <p style={{ color: '#94a3b8', fontSize: '0.92rem', lineHeight: 1.65 }}>
-                  Le moteur va aspirer les périodes une par une. L&apos;offset sera sauvegardé automatiquement pour chaque mois. Si vous relancez un mois déjà entamé, il reprendra exactement là où il s&apos;est arrêté.
-                </p>
-                <button
-                  onClick={handleStart}
-                  disabled={isActionPending || selectedPeriods.length === 0}
-                  className={`${styles.btnPrimary} ${styles.bgPurple}`}
-                >
-                  <IconPlay />
-                  <span>DÉMARRER L&apos;ASPIRATION</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
+    <Shell stats={stats} healer={healer}>
+      <div className={s.kpiGrid} style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+        <Kpi label="Couverture globale" value={coverage} decimals={1} suffix="%" icon={<IRadar />} accent="cyan" sub={`${totalLocal.toLocaleString('fr-FR')} / ${totalRemote.toLocaleString('fr-FR')} EPS`} />
+        <Kpi label="EPS manquants" value={totalGap} icon={<IRadar />} accent={totalGap > 0 ? 'amber' : 'emerald'} sub={`${periods.filter(p => p.gap > 0).length} période(s) concernée(s)`} delay={60} />
+        <Kpi label="Passe actuelle" value={ap?.pass || 0} icon={<IGrid />} accent="violet" sub={`${ap?.pass_done || 0} / ${ap?.pass_total || 0} périodes faites`} delay={120} />
+        <Kpi label="Scans cumulés" value={scansTotal} icon={<IDb />} accent="emerald" sub={`sur ${periods.length} périodes`} delay={180} />
       </div>
-    </div>
+
+      <div className={s.split}>
+        <Card accent="cyan" glow={isRunning}>
+          <CardHead
+            icon={<IClock />}
+            title="Scan en direct"
+            sub={stats?.time_machine_status || '—'}
+            right={isRunning && <button className={cx(s.btn, s.accRose)} onClick={async () => { await stopSync(); show('Time Machine stoppée (AutoPilot désactivé).'); refreshAll(); }}><IStop /> Stopper</button>}
+          />
+          <div className={cx(s.scanline, !isRunning && s.scanIdle)}>
+            <div className={s.tileLabel}>{isRunning ? 'Période en cours' : 'Aucun scan'}</div>
+            <div className={s.bigPeriod}>{isRunning ? stats?.current_period : 'STANDBY'}</div>
+            <div style={{ marginTop: 14 }}><Progress value={isRunning ? tmProgress : 0} /></div>
+            <div className={s.progressMeta}>
+              <span>{(stats?.period_offset || 0).toLocaleString('fr-FR')} / {(stats?.period_total || 0).toLocaleString('fr-FR')}</span>
+              <span>ETA {isRunning ? stats?.eta : '—'}</span>
+            </div>
+          </div>
+          <div className={s.tiles}>
+            <div className={s.tile}><div className={s.tileLabel}>Nouveaux</div><div className={s.tileValue} style={{ color: '#6ee7b7' }}>+<Num value={stats?.period_inserted || 0} /></div></div>
+            <div className={s.tile}><div className={s.tileLabel}>Mis à jour</div><div className={s.tileValue} style={{ color: '#93c5fd' }}>↻<Num value={stats?.period_updated || 0} /></div></div>
+            <div className={s.tile}><div className={s.tileLabel}>En file</div><div className={s.tileValue}>{stats?.queued_periods?.length || 0}</div></div>
+          </div>
+          <div className={s.chips}>
+            {(stats?.queued_periods || []).slice(0, 30).map(p => <span key={p} className={s.chip}>{p}</span>)}
+          </div>
+        </Card>
+
+        <Card accent="violet">
+          <CardHead icon={<IPlay />} title="Scan manuel" sub="Forcer un passage immédiat sur des périodes précises" />
+          <div className={s.row}>
+            <select className={cx(s.select, s.grow)} value={pick || periodNames[0] || ''} onChange={e => setPick(e.target.value)} disabled={isRunning}>
+              {periodNames.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button className={s.btn} disabled={isRunning} onClick={() => {
+              const p = pick || periodNames[0];
+              if (p && !picked.includes(p)) setPicked([...picked, p]);
+            }}><IPlus /> Ajouter</button>
+          </div>
+          <div className={s.chips} style={{ margin: '14px 0', minHeight: 32 }}>
+            {picked.length === 0 && <span style={{ color: 'var(--txt-3)', fontSize: '0.78rem' }}>Aucune période sélectionnée</span>}
+            {picked.map(p => (
+              <span key={p} className={cx(s.chip, s.chipActive)} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                {p}
+                <button onClick={() => setPicked(picked.filter(x => x !== p))} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><IClose /></button>
+              </span>
+            ))}
+          </div>
+          <button className={cx(s.btn, s.btnSolid, s.accViolet, s.btnBlock)} disabled={isRunning || picked.length === 0} onClick={startManual}>
+            <IPlay /> Lancer le scan
+          </button>
+          <p style={{ color: 'var(--txt-3)', fontSize: '0.74rem', marginTop: 12, lineHeight: 1.5 }}>
+            {isRunning
+              ? 'Un scan est déjà en cours. Stoppez-le pour lancer un scan manuel.'
+              : 'Chaque période reprend à son offset sauvegardé. L’AutoPilot reprend sa boucle infinie dès que la file est vide.'}
+          </p>
+
+          {selRow && (
+            <div className={s.callout} style={{ marginTop: 14, borderColor: 'rgba(34,211,238,0.3)', background: 'rgba(34,211,238,0.06)', color: 'var(--txt)' }}>
+              <div>
+                <b className={s.mono}>{selRow.period}</b> — base {selRow.local_distinct.toLocaleString('fr-FR')} / Bytel {selRow.remote_total ? selRow.remote_total.toLocaleString('fr-FR') : '?'}
+                {selRow.gap > 0 && <span style={{ color: '#fcd34d' }}> · {selRow.gap.toLocaleString('fr-FR')} manquants</span>}
+                <br />Scans : {selRow.scans} · dernier {selRow.last_scan || 'jamais'} · {selRow.missing_details} sans détails · {selRow.phantoms} fantômes
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <Card accent="emerald">
+        <CardHead icon={<IGrid />} title="Matrice des périodes" sub="Cliquez une case pour voir son historique" />
+        <PeriodMatrix rows={periods} selected={selected} onSelect={p => setSelected(p === selected ? '' : p)} />
+      </Card>
+
+      <Card accent="cyan">
+        <CardHead icon={<IDb />} title="État détaillé par période" sub="Base locale vs Bytel, trous, détails manquants, historique des passes" />
+        <PeriodsTable rows={periods} selected={selected} onSelect={p => setSelected(p === selected ? '' : p)} />
+      </Card>
+
+      <EventsTable title="Historique Time Machine" fixedSource="TIME_MACHINE" periods={periodNames} period={selected} onPeriodClear={() => setSelected('')} />
+
+      <Toast msg={toast} />
+    </Shell>
   );
 }

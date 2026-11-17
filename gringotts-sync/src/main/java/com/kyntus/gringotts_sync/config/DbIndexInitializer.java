@@ -28,6 +28,12 @@ public class DbIndexInitializer implements ApplicationRunner {
             // File d'attente du Healer : index partiel minuscule, uniquement les EPS sans détails
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_missing_detail ON interventions (id) " +
                     "WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''",
+            // Compteur des EPS fantômes
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_phantom ON interventions (id) WHERE detail_intervention = '{}'",
+            // Journal : filtres par source / période
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_source ON sync_events (source, id)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_period ON sync_events (period, id)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_created ON sync_events (created_at)",
             // Purges / jointures logs
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_actions_log_intervention ON actions_log (intervention_id)"
     };

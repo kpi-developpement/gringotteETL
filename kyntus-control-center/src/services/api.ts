@@ -20,16 +20,102 @@ export interface SyncStats {
   healer_processed_total: number;
   queued_periods?: string[];
   autopilot?: AutoPilotInfo;
+  period_inserted?: number;
+  period_updated?: number;
+  event_counts_24h?: Record<string, number>;
 }
 
 export interface AutoPilotInfo {
   enabled: boolean;
   status: string;
   last_tick: string;
+  pass: number;
+  pass_started: string | null;
+  pass_done: number;
+  pass_total: number;
   managed_periods: string[];
-  last_gaps: string[];
+  throttle: string;
+  bytel_paused: boolean;
+}
+
+export interface SyncEvent {
+  id: number;
+  createdAt: string;
+  source: 'TIME_MACHINE' | 'HEALER' | 'AUTOPILOT' | 'BYTEL' | 'MAINTENANCE' | 'SYSTEM' | string;
+  level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' | string;
+  period: string | null;
+  message: string;
+}
+
+export interface PeriodRow {
+  period: string;
+  state: 'ACTIVE' | 'QUEUED' | 'DONE' | 'PENDING';
+  local_rows: number;
+  local_distinct: number;
+  missing_details: number;
+  phantoms: number;
+  remote_total: number;
+  gap: number;
+  offset: number;
+  progress: number;
+  scans: number;
+  pass_done: number;
+  last_scan: string | null;
+  last_result: { inserted: number; updated: number; local: number; remote: number; duration: string; empty: boolean } | null;
+}
+
+export interface HealerLot {
+  at: string; size: number; ok: number; not_found: number; failed: number; duration_ms: number; queue: number;
+}
+
+export interface HealerInfo {
+  running: boolean;
+  mode: string;
+  status: string;
+  queue: number;
+  phantoms: number;
+  enriched: number;
+  not_found: number;
+  failed: number;
+  failed_batches: number;
+  rate_per_min: number;
+  last_success_ago_s: number;
+  last_error: string | null;
+  uptime_s: number;
+  recent_lots: HealerLot[];
+  bytel_paused: boolean;
   throttle: string;
 }
+
+export interface EventFilters {
+  source?: string; level?: string; period?: string; search?: string; beforeId?: number; limit?: number;
+}
+
+export const fetchEvents = async (f: EventFilters = {}): Promise<SyncEvent[]> => {
+  try {
+    const params = new URLSearchParams();
+    Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== '' && v !== 'ALL') params.append(k, String(v)); });
+    const res = await fetch(`${API_URL}/events?${params.toString()}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch { return []; }
+};
+
+export const fetchPeriods = async (): Promise<PeriodRow[]> => {
+  try {
+    const res = await fetch(`${API_URL}/periods`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch { return []; }
+};
+
+export const fetchHealer = async (): Promise<HealerInfo | null> => {
+  try {
+    const res = await fetch(`${API_URL}/healer`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+};
 
 export const setAutopilot = async (enabled: boolean): Promise<AutoPilotInfo | null> => {
   try {

@@ -2,7 +2,6 @@ package com.kyntus.gringotts_sync.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
@@ -23,12 +22,20 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
+
+import static com.kyntus.gringotts_sync.service.EventLogService.*;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SyncOrchestrator {
+
+    /** Résultat d'un scan complet d'une période. */
+    public record PeriodResult(String period, int inserted, int updated, int remoteTotal,
+                               long localDistinct, long durationMs, boolean empty) {}
 
     private final PhpApiClient phpApiClient;
     private final InterventionRepository interventionRepository;
@@ -36,6 +43,7 @@ public class SyncOrchestrator {
     private final TransactionTemplate transactionTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final BytelThrottle throttle;
+    private final EventLogService events;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${kyntus.healer.chunk-size:200}")
@@ -63,8 +71,15 @@ public class SyncOrchestrator {
 
     private static final int TIME_MACHINE_BATCH = 250;
 
-    private volatile Queue<String> periodQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedDeque<String> periodQueue = new ConcurrentLinkedDeque<>();
     private volatile String currentPeriod = null;
+
+    // Compteurs de la période en cours
+    private volatile int periodInserted = 0;
+    private volatile int periodUpdated = 0;
+    private volatile long periodStartedAt = 0;
+
+    private volatile Consumer<PeriodResult> periodListener = r -> {};
 
     private Thread timeMachineThread;
     private Thread healerThread;
@@ -75,6 +90,18 @@ public class SyncOrchestrator {
         return t;
     });
 
+    // ------------------------------------------------------------ Métriques Healer
+    private final AtomicLong hEnriched = new AtomicLong();
+    private final AtomicLong hNotFound = new AtomicLong();
+    private final AtomicLong hFailed = new AtomicLong();
+    private final AtomicLong hFailedBatches = new AtomicLong();
+    private final ConcurrentLinkedDeque<long[]> healWindow = new ConcurrentLinkedDeque<>(); // [ts, count]
+    private final List<Map<String, Object>> recentLots = new CopyOnWriteArrayList<>();
+    private volatile long lastHealSuccessAt = 0;
+    private volatile String lastHealError = null;
+    private volatile long healerStartedAt = 0;
+
+    // ------------------------------------------------------------ Getters
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
     public String getHealerMode() { return healerMode; }
@@ -88,21 +115,59 @@ public class SyncOrchestrator {
     public long getTotalPeriodProcessed() { return totalPeriodProcessed; }
     public String getCurrentPeriod() { return currentPeriod; }
     public String getThrottleStatus() { return throttle.describe(); }
+    public boolean isBytelPaused() { return throttle.isPaused(); }
     public List<String> getQueuedPeriods() { return new ArrayList<>(periodQueue); }
+    public int getPeriodInserted() { return periodInserted; }
+    public int getPeriodUpdated() { return periodUpdated; }
+    public long getPeriodStartedAt() { return periodStartedAt; }
 
-    /** Répare les flags "zombies" (flag à true mais thread mort). Retourne true si qqch a été corrigé. */
+    public void setPeriodListener(Consumer<PeriodResult> listener) { this.periodListener = listener; }
+
+    // ------------------------------------------------------------ Journal
+
+    /** Ancienne API : déduit la source / le niveau depuis le message. */
+    public void addAlert(String message) {
+        String src = SYSTEM;
+        if (message.contains("[TIME MACHINE]") || message.contains("[SMART RESCAN]")) src = TM;
+        else if (message.contains("[HEALER]")) src = HEALER;
+        else if (message.contains("[AUTOPILOT]")) src = AUTOPILOT;
+        else if (message.contains("[MAINTENANCE]")) src = MAINTENANCE;
+
+        String lvl = INFO;
+        String low = message.toLowerCase();
+        if (message.contains("✅") || message.contains("🎉") || low.contains("terminé") || low.contains("succès")) lvl = SUCCESS;
+        if (message.contains("⚠️") || low.contains("surcharg") || low.contains("timeout") || low.contains("trou")
+                || low.contains("bloqué") || low.contains("pare-feu") || low.contains("watchdog")) lvl = WARN;
+        if (low.contains("erreur") || low.contains("critique")) lvl = ERROR;
+
+        String clean = message.replaceAll("^\\s*\\S*\\s*\\[[A-Z ]+\\]\\s*", "").replaceAll("^\\[[A-Z ]+\\]\\s*", "");
+        event(src, lvl, null, clean.isBlank() ? message : clean);
+    }
+
+    public void event(String source, String level, String period, String message) {
+        String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+        recentAlerts.add(0, "[" + time + "] [" + source + "] " + message);
+        while (recentAlerts.size() > 30) recentAlerts.remove(recentAlerts.size() - 1);
+        if (WARN.equals(level) || ERROR.equals(level)) log.warn("[{}] {}", source, message);
+        else log.info("[{}] {}", source, message);
+        events.log(source, level, period, message);
+    }
+
+    // ------------------------------------------------------------ Contrôle / AutoPilot
+
+    /** Répare les flags "zombies" (flag à true mais thread mort). */
     public synchronized boolean watchdog() {
         boolean fixed = false;
         if (isRunning && (timeMachineThread == null || !timeMachineThread.isAlive())) {
             isRunning = false;
             timeMachineStatus = "Récupéré par le watchdog";
-            addAlert("[WATCHDOG] Thread Time Machine mort détecté, flag réinitialisé.");
+            event(SYSTEM, WARN, currentPeriod, "Watchdog : thread Time Machine mort, relance automatique.");
             fixed = true;
         }
         if (isHealing && (healerThread == null || !healerThread.isAlive())) {
             isHealing = false;
             healerStatus = "Récupéré par le watchdog";
-            addAlert("[WATCHDOG] Thread Healer mort détecté, flag réinitialisé.");
+            event(SYSTEM, WARN, null, "Watchdog : thread Healer mort, relance automatique.");
             fixed = true;
         }
         return fixed;
@@ -120,33 +185,18 @@ public class SyncOrchestrator {
     public synchronized boolean startAutoSync(List<String> periods, Set<String> resetOffsets) {
         if (periods.isEmpty() || isTimeMachineBusy()) return false;
         for (String p : resetOffsets) saveState("offset_" + p, 0);
-        addAlert("[AUTOPILOT] Sync auto: " + String.join(", ", periods));
         startPeriodSync(periods);
         return true;
     }
 
-    /** Sonde légère : récupère le total réel Bytel d'une période (limit=1). -1 si indisponible. */
-    public int probeRemoteTotal(String period) {
-        if (!throttle.acquire(() -> true)) return -1;
-        long t0 = System.currentTimeMillis();
-        try {
-            ImportResponse resp = phpApiClient.triggerImport(0, 1, period);
-            throttle.onSuccess(System.currentTimeMillis() - t0);
-            if (resp != null && resp.isOk() && resp.getTotalApi() > 0) {
-                saveState("total_" + period, resp.getTotalApi());
-                return resp.getTotalApi();
-            }
-            return -1;
-        } catch (RestClientResponseException e) {
-            handleHttpError(e);
-            return -1;
-        } catch (ResourceAccessException e) {
-            throttle.onOverload("timeout/IO");
-            return -1;
-        } catch (Exception e) {
-            throttle.onError();
-            return -1;
-        }
+    /** Insère une période en tête de file (ex: mois courant à rafraîchir pendant une passe). */
+    public synchronized boolean injectPriority(String period) {
+        if (!isRunning || period.equals(currentPeriod) || periodQueue.contains(period)) return false;
+        int off = getSavedState("offset_" + period), tot = getSavedState("total_" + period);
+        if (tot > 0 && off >= tot) saveState("offset_" + period, 0);
+        periodQueue.offerFirst(period);
+        event(AUTOPILOT, INFO, period, "Rafraîchissement prioritaire de " + period + " inséré en tête de file.");
+        return true;
     }
 
     public long countLocalDistinct(String period) {
@@ -159,6 +209,7 @@ public class SyncOrchestrator {
     private void handleHttpError(RestClientResponseException e) {
         int code = e.getStatusCode().value();
         String body = e.getResponseBodyAsString();
+        boolean wasPaused = throttle.isPaused();
         if (code == 403 || body.contains("Access Denied")) {
             throttle.onBlocked();
         } else if (code == 429 || code >= 500 || body.contains("Timeout")) {
@@ -166,21 +217,23 @@ public class SyncOrchestrator {
         } else {
             throttle.onError();
         }
-    }
-
-    public void addAlert(String message) {
-        String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-        recentAlerts.add(0, "[" + time + "] " + message);
-        if (recentAlerts.size() > 20) {
-            recentAlerts.remove(recentAlerts.size() - 1);
+        if (!wasPaused && throttle.isPaused()) {
+            event(BYTEL, ERROR, null, "Protection activée : " + throttle.describe());
         }
-        log.warn("INTERFACE_ALERT: {}", message);
     }
 
-    // 🚀 L'FIX HNA: Fonction jdida kaddir scan b dbt 3la l'mois li 3zelna mn React
+    private void handleTimeout() {
+        boolean wasPaused = throttle.isPaused();
+        throttle.onOverload("timeout/IO");
+        if (!wasPaused && throttle.isPaused()) {
+            event(BYTEL, ERROR, null, "Protection activée : " + throttle.describe());
+        }
+    }
+
+    // ------------------------------------------------------------ Maintenance
+
     public synchronized int fixPeriodsForMonth(String targetPeriod) {
-        log.info("Lancement du nettoyage des intrus pour la période: {}", targetPeriod);
-        addAlert("[MAINTENANCE] Scan de " + targetPeriod + " pour trouver les EPS intrus...");
+        event(MAINTENANCE, INFO, targetPeriod, "Scan de " + targetPeriod + " pour trouver les EPS intrus...");
 
         List<Intervention> interventions = interventionRepository.findByPeriode(targetPeriod);
         int fixedCount = 0;
@@ -194,7 +247,6 @@ public class SyncOrchestrator {
                         String realPeriodRaw = root.get("periode").asText("");
                         if (!realPeriodRaw.isEmpty()) {
                             String realPeriod = realPeriodRaw.replace("-", "_");
-                            // Yla l9a l'période l'7a9i9ya mkhtalfa 3la l'mois li rahoum fih, kayrigelha
                             if (!realPeriod.equals(targetPeriod)) {
                                 inv.setPeriode(realPeriod);
                                 toUpdate.add(inv);
@@ -203,22 +255,20 @@ public class SyncOrchestrator {
                         }
                     }
                 } catch (Exception e) {
-                    // Ignore les JSON lmkhesrin
+                    // JSON invalide : ignoré
                 }
             }
         }
 
-        if (!toUpdate.isEmpty()) {
-            interventionRepository.saveAll(toUpdate);
-        }
+        if (!toUpdate.isEmpty()) interventionRepository.saveAll(toUpdate);
 
-        addAlert("[MAINTENANCE] " + fixedCount + " EPS intrus trouvés et déplacés depuis " + targetPeriod);
+        event(MAINTENANCE, SUCCESS, targetPeriod, fixedCount + " EPS intrus trouvés et déplacés depuis " + targetPeriod);
         return fixedCount;
     }
 
     public synchronized void startPeriodSync(List<String> periods) {
         if (isRunning || (timeMachineThread != null && timeMachineThread.isAlive())) {
-            log.warn("🚨 Tentative de démarrage bloquée : Un processus est déjà en cours !");
+            log.warn("Tentative de démarrage bloquée : un processus est déjà en cours.");
             return;
         }
 
@@ -226,15 +276,14 @@ public class SyncOrchestrator {
         periodQueue.addAll(periods);
         currentPeriod = periodQueue.poll();
         totalPeriodProcessed = 0;
+        resetPeriodCounters();
 
         int savedOffset = getSavedState("offset_" + currentPeriod);
-
         if (savedOffset > 0) {
-            log.info("Reprise de la période : {} à l'offset {}", currentPeriod, savedOffset);
-            addAlert("[TIME MACHINE] Reprise de la période " + currentPeriod + " à l'offset " + savedOffset);
+            event(TM, INFO, currentPeriod, "Reprise de " + currentPeriod + " à l'offset " + savedOffset
+                    + " (" + periods.size() + " période(s) en file)");
         } else {
-            log.info("Démarrage TIME MACHINE avec {} périodes. Première: {}", periods.size(), currentPeriod);
-            addAlert("[TIME MACHINE] Démarrage de la période " + currentPeriod);
+            event(TM, INFO, currentPeriod, "Démarrage de " + currentPeriod + " (" + periods.size() + " période(s) en file)");
         }
 
         isRunning = true;
@@ -243,18 +292,16 @@ public class SyncOrchestrator {
         syncStartTime = System.currentTimeMillis();
         totalProcessedSinceStart = 0;
 
-        timeMachineThread = new Thread(this::timeMachineLoop);
+        timeMachineThread = new Thread(this::timeMachineLoop, "time-machine");
         timeMachineThread.start();
     }
 
     public synchronized void rescanPeriod(String period) {
         if (isRunning) {
-            addAlert("⚠️ Veuillez stopper la synchronisation en cours avant de lancer un Rescan.");
+            event(TM, WARN, period, "Stoppez la synchronisation en cours avant de lancer un Rescan.");
             return;
         }
-        log.info("Lancement du Smart Rescan pour la période: {}", period);
-        addAlert("[SMART RESCAN] Repassage sur " + period + " pour récupérer les EPS manquants...");
-
+        event(TM, INFO, period, "Smart Rescan de " + period + " (offset remis à 0)");
         saveState("offset_" + period, 0);
         startPeriodSync(Collections.singletonList(period));
     }
@@ -263,30 +310,29 @@ public class SyncOrchestrator {
         isRunning = false;
         currentEta = "Arrêté";
         timeMachineStatus = "Arrêt demandé";
-        log.info("Arrêt du Daemon demandé.");
-        addAlert("[SYSTEM] Arrêt du système demandé");
+        periodQueue.clear();
+        event(TM, WARN, currentPeriod, "Arrêt de la Time Machine demandé.");
     }
 
     public synchronized void startHealer(String mode) {
         if (isHealing || (healerThread != null && healerThread.isAlive())) {
-            log.warn("🚨 Healer déjà en cours d'exécution !");
+            log.warn("Healer déjà en cours d'exécution.");
             return;
         }
         isHealing = true;
         healerMode = mode;
         healerStatus = "Démarrage en cours";
-        log.info("Démarrage du Healer en mode : {}", mode);
-        addAlert("[HEALER] Démarrage en mode " + mode);
+        healerStartedAt = System.currentTimeMillis();
+        event(HEALER, INFO, null, "Démarrage du Healer en mode " + mode);
 
-        healerThread = new Thread(this::backgroundHealerLoop);
+        healerThread = new Thread(this::backgroundHealerLoop, "healer");
         healerThread.start();
     }
 
     public synchronized void stopHealer() {
         isHealing = false;
         healerStatus = "Arrêt demandé";
-        log.info("Arrêt du Healer demandé.");
-        addAlert("[HEALER] Arrêt demandé");
+        event(HEALER, WARN, null, "Arrêt du Healer demandé.");
     }
 
     public synchronized void purgeDatabase() {
@@ -297,81 +343,90 @@ public class SyncOrchestrator {
         try { phpApiClient.resetIonos(); } catch (Exception e) { log.error("Erreur reset IONOS", e); }
 
         interventionRepository.truncateInterventions();
-        syncStateRepository.deleteAll();
+        // On garde le flag AutoPilot (ap_enabled) mais on remet tout le reste à zéro.
+        syncStateRepository.findAll().stream()
+                .filter(s -> !"ap_enabled".equals(s.getStateKey()))
+                .forEach(syncStateRepository::delete);
 
         totalHealerProcessed = 0;
         totalPeriodProcessed = 0;
         currentPeriod = null;
         periodQueue.clear();
 
-        log.warn("PURGE TOTALE effectuée.");
-        addAlert("[MAINTENANCE] Base de données purgée avec succès.");
+        event(MAINTENANCE, WARN, null, "PURGE TOTALE de la base effectuée.");
     }
 
     public synchronized int purgePeriod(String period) {
         String cleanPeriod = period.replace("_", "-");
-        String dbPeriod = period;
 
-        interventionRepository.deleteLogsByPeriodNative(cleanPeriod, dbPeriod);
-        int deletedCount = interventionRepository.deleteInterventionsByPeriodNative(cleanPeriod, dbPeriod);
+        interventionRepository.deleteLogsByPeriodNative(cleanPeriod, period);
+        int deletedCount = interventionRepository.deleteInterventionsByPeriodNative(cleanPeriod, period);
 
         syncStateRepository.deleteById("offset_" + period);
         syncStateRepository.deleteById("total_" + period);
 
-        addAlert("[MAINTENANCE] Période " + period + " purgée (" + deletedCount + " supprimées).");
+        event(MAINTENANCE, WARN, period, "Période " + period + " purgée (" + deletedCount + " supprimées).");
         return deletedCount;
     }
 
     public void cleanDuplicatesTask() {
-        log.info("Smart Clean (Dédoublonnage) démarré.");
-        addAlert("[MAINTENANCE] Smart Clean lancé");
+        event(MAINTENANCE, INFO, null, "Smart Clean (dédoublonnage) lancé.");
         int totalDeleted = 0;
         while (true) {
             List<Long> duplicateIds = interventionRepository.findDuplicateIds();
             if (duplicateIds.isEmpty()) break;
             interventionRepository.deleteLogsByIds(duplicateIds);
-            int deleted = interventionRepository.deleteInterventionsByIds(duplicateIds);
-            totalDeleted += deleted;
+            totalDeleted += interventionRepository.deleteInterventionsByIds(duplicateIds);
         }
-        log.info("Smart Clean terminé : {} doublons supprimés.", totalDeleted);
-        addAlert("[MAINTENANCE] Smart Clean terminé. " + totalDeleted + " doublons.");
+        event(MAINTENANCE, SUCCESS, null, "Smart Clean terminé : " + totalDeleted + " doublons supprimés.");
     }
 
     public int retryFailedHeals() {
         int count = interventionRepository.resetFailedHeals();
-        addAlert("[HEALER] " + count + " EPS Fantômes remis en file d'attente.");
+        event(HEALER, INFO, null, count + " EPS fantômes remis en file d'attente.");
         return count;
+    }
+
+    // ------------------------------------------------------------ Time Machine
+
+    private void resetPeriodCounters() {
+        periodInserted = 0;
+        periodUpdated = 0;
+        periodStartedAt = System.currentTimeMillis();
+    }
+
+    private void finishPeriod(String period, int remoteTotal, boolean empty) {
+        long local = countLocalDistinct(period);
+        long duration = System.currentTimeMillis() - periodStartedAt;
+        PeriodResult res = new PeriodResult(period, periodInserted, periodUpdated, remoteTotal, local, duration, empty);
+
+        if (empty) {
+            event(TM, WARN, period, "Bytel ne retourne aucun EPS pour " + period + ".");
+        } else {
+            event(TM, SUCCESS, period, String.format("Scan %s terminé en %s : %d nouveaux, %d mis à jour. Base: %d / Bytel: %d EPS",
+                    period, formatDuration(duration), periodInserted, periodUpdated, local, remoteTotal));
+            if (remoteTotal > 0 && local < remoteTotal) {
+                event(TM, WARN, period, (remoteTotal - local) + " EPS manquants sur " + period
+                        + " (" + local + "/" + remoteTotal + ") — repris à la prochaine passe.");
+            }
+        }
+        try { periodListener.accept(res); } catch (Exception e) { log.warn("Listener période: {}", e.getMessage()); }
     }
 
     private void timeMachineLoop() {
         timeMachineStatus = "En cours d'aspiration";
-        log.info("Thread Time Machine Démarré.");
 
         while (isRunning && currentPeriod != null) {
             try {
                 final String activePeriod = currentPeriod;
                 int localOffset = getSavedState("offset_" + activePeriod);
                 int localTotalApi = getSavedState("total_" + activePeriod);
+                boolean periodEmpty = false;
 
                 if (localTotalApi > 0 && localOffset >= localTotalApi) {
-                    log.info("Période {} terminée à 100%.", activePeriod);
-                    addAlert("✅ [TIME MACHINE] Période " + activePeriod + " terminée.");
-
-                    currentPeriod = periodQueue.poll();
-
-                    if (currentPeriod == null) {
-                        log.info("Toutes les périodes ont été traitées. Arrêt.");
-                        addAlert("🎉 [TIME MACHINE] Toutes les périodes ont été traitées !");
-                        stopSync();
-                        break;
-                    } else {
-                        log.info("Passage à la période suivante: {}", currentPeriod);
-                        addAlert("📅 [TIME MACHINE] Passage à : " + currentPeriod);
-                        totalProcessedSinceStart = 0;
-                        syncStartTime = System.currentTimeMillis();
-                        sleep(2000);
-                        continue;
-                    }
+                    finishPeriod(activePeriod, localTotalApi, false);
+                    if (!advanceToNextPeriod()) break;
+                    continue;
                 }
 
                 timeMachineStatus = "Scan [" + activePeriod + "] en cours...";
@@ -379,8 +434,6 @@ public class SyncOrchestrator {
                 boolean importSuccess = false;
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     try {
-                        log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", localOffset, TIME_MACHINE_BATCH, activePeriod);
-
                         if (!throttle.acquire(() -> isRunning)) break;
                         long t0 = System.currentTimeMillis();
                         ImportResponse importResp;
@@ -390,7 +443,7 @@ public class SyncOrchestrator {
                             handleHttpError(ex);
                             throw ex;
                         } catch (ResourceAccessException ex) {
-                            throttle.onOverload("timeout/IO");
+                            handleTimeout();
                             throw ex;
                         } catch (RuntimeException ex) {
                             throttle.onError();
@@ -401,7 +454,12 @@ public class SyncOrchestrator {
                         if (importResp != null && importResp.isOk()) {
 
                             if (importResp.getBatchCount() == 0) {
-                                log.warn("Bouygues a retourné 0 résultat. Avancement manuel de la page pour ne pas rater de données.");
+                                if (importResp.getTotalApi() <= 0 && localOffset == 0) {
+                                    periodEmpty = true;
+                                    importSuccess = true;
+                                    break;
+                                }
+                                // Page vide en plein milieu : on avance pour ne pas boucler.
                                 localOffset += TIME_MACHINE_BATCH;
                                 saveState("offset_" + activePeriod, localOffset);
                                 if (importResp.getTotalApi() > 0) {
@@ -413,48 +471,21 @@ public class SyncOrchestrator {
                             }
 
                             int newOffset = importResp.getNextOffset();
-
                             if (newOffset > 0 && newOffset <= localOffset) {
-                                throw new RuntimeException("Glitch API Bouygues (mauvais offset retourné: " + newOffset + "). On force le retry de la page " + localOffset + " !");
+                                throw new RuntimeException("Glitch API Bouygues (offset retourné " + newOffset + "), retry de la page " + localOffset);
                             }
 
                             List<Intervention> incomingData = importResp.getData();
                             if (incomingData != null && !incomingData.isEmpty()) {
                                 String expectedPeriod = activePeriod.replace("_", "-");
                                 String firstRecordPeriod = incomingData.get(0).getPeriode();
-
                                 if (firstRecordPeriod != null && !firstRecordPeriod.equals(expectedPeriod)) {
-                                    throw new RuntimeException("Glitch API Bouygues détecté : EPS de " + firstRecordPeriod + " reçu au lieu de " + expectedPeriod + ". Retry forcé de la page !");
+                                    throw new RuntimeException("Glitch API Bouygues : EPS de " + firstRecordPeriod + " reçu au lieu de " + expectedPeriod + ", retry de la page");
                                 }
 
-                                transactionTemplate.executeWithoutResult(status -> {
-                                    List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention).filter(id -> id != null && !id.isEmpty()).toList();
-                                    List<Intervention> existingData = interventionRepository.findByIdInterventionIn(incomingEpsIds);
-                                    Map<String, Intervention> existingMap = existingData.stream().collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
-
-                                    for (Intervention incoming : incomingData) {
-                                        if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
-                                        Intervention existing = existingMap.get(incoming.getIdIntervention());
-
-                                        String realPeriod = incoming.getPeriode() != null ? incoming.getPeriode().replace("-", "_") : activePeriod;
-
-                                        if (existing == null) {
-                                            existing = incoming;
-                                            existing.setId(null);
-                                            existing.setSourceIngestion("TIME_MACHINE");
-                                            existing.setPeriode(realPeriod);
-                                            existingMap.put(existing.getIdIntervention(), existing);
-                                        } else {
-                                            existing.setEtat(incoming.getEtat());
-                                            existing.setDateModificationEtat(incoming.getDateModificationEtat());
-                                            existing.setTypeIntervention(incoming.getTypeIntervention());
-                                            existing.setMainteneur(incoming.getMainteneur());
-                                            existing.setPayloadRecu(incoming.getPayloadRecu());
-                                            existing.setPeriode(realPeriod);
-                                        }
-                                    }
-                                    interventionRepository.saveAll(existingMap.values());
-                                });
+                                int[] counts = upsertBatch(incomingData, activePeriod);
+                                periodInserted += counts[0];
+                                periodUpdated += counts[1];
                             }
 
                             int newTotal = importResp.getTotalApi();
@@ -471,62 +502,118 @@ public class SyncOrchestrator {
                             if (totalProcessedSinceStart > 0 && syncStartTime > 0) {
                                 long elapsedMillis = System.currentTimeMillis() - syncStartTime;
                                 long millisPerItem = elapsedMillis / totalProcessedSinceStart;
-                                int remainingItems = localTotalApi - localOffset;
+                                int remainingItems = Math.max(0, localTotalApi - localOffset);
                                 currentEta = formatDuration(remainingItems * millisPerItem);
                             }
                             importSuccess = true;
-                            timeMachineStatus = "[" + activePeriod + "] Offset " + localOffset + "/" + localTotalApi + " | " + throttle.describe();
+                            timeMachineStatus = "[" + activePeriod + "] " + localOffset + "/" + localTotalApi + " | " + throttle.describe();
                             break;
                         }
                     } catch (RestClientResponseException e) {
+                        int code = e.getStatusCode().value();
                         String body = e.getResponseBodyAsString();
-                        log.error("Erreur API PHP (HTTP {}): {}", e.getStatusCode(), body);
-
-                        if (e.getStatusCode().value() == 404) {
-                            addAlert("[TIME MACHINE] Erreur 404 (URL introuvable)");
+                        if (code == 404) {
+                            event(TM, ERROR, activePeriod, "Erreur 404 : endpoint PHP introuvable.");
                             timeMachineStatus = "Erreur HTTP 404";
                             sleep(15000);
-                        }
-                        else if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
-                            // La pause globale est gérée par le BytelThrottle (Healer en pause aussi).
-                            addAlert("[TIME MACHINE] Bloqué par le Pare-feu Bouygues (Akamai). Pause globale.");
+                        } else if (code == 403 || body.contains("Access Denied")) {
+                            event(TM, ERROR, activePeriod, "Bloqué par le pare-feu Bouygues (Akamai). Pause globale.");
                             timeMachineStatus = "Banni - " + throttle.describe();
-                        }
-                        else if (e.getStatusCode().value() == 429 || e.getStatusCode().value() >= 500 || body.contains("Timeout")) {
-                            addAlert("[TIME MACHINE] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ") - ralentissement auto");
+                        } else if (code == 429 || code >= 500 || body.contains("Timeout")) {
+                            event(TM, WARN, activePeriod, "Serveur Bouygues surchargé (HTTP " + code + "), ralentissement auto. Offset " + localOffset);
                             timeMachineStatus = "Surcharge - " + throttle.describe();
-                        }
-                        else {
-                            addAlert("[TIME MACHINE] Erreur HTTP " + e.getStatusCode());
-                            timeMachineStatus = "Erreur HTTP " + e.getStatusCode();
+                        } else {
+                            event(TM, ERROR, activePeriod, "Erreur HTTP " + code);
+                            timeMachineStatus = "Erreur HTTP " + code;
                             sleep(10000);
                         }
                     } catch (ResourceAccessException e) {
-                        log.warn("Timeout / IO vers Bytel: {}", e.getMessage());
-                        addAlert("[TIME MACHINE] Timeout Bytel - ralentissement auto");
+                        event(TM, WARN, activePeriod, "Timeout Bytel à l'offset " + localOffset + ", ralentissement auto.");
                         timeMachineStatus = "Timeout - " + throttle.describe();
                     } catch (Exception e) {
-                        log.error("Erreur de connexion inattendue", e);
+                        log.error("Erreur inattendue", e);
                         timeMachineStatus = "Glitch Bouygues - Retry";
-                        addAlert("⚠️ " + e.getMessage());
+                        event(TM, WARN, activePeriod, e.getMessage());
                         sleep(2000);
                     }
                 }
 
+                if (periodEmpty) {
+                    finishPeriod(activePeriod, 0, true);
+                    if (!advanceToNextPeriod()) break;
+                    continue;
+                }
+
                 if (!importSuccess && isRunning) {
                     timeMachineStatus = "Échecs répétés, pause 30s";
+                    event(TM, ERROR, activePeriod, "3 échecs d'affilée à l'offset " + localOffset + ", pause 30s.");
                     sleep(30000);
                 }
 
             } catch (Exception e) {
                 log.error("Exception critique dans la boucle Time Machine", e);
                 timeMachineStatus = "Erreur Critique";
+                event(TM, ERROR, currentPeriod, "Exception critique : " + e.getMessage());
                 sleep(5000);
             }
         }
-        log.info("Thread Time Machine Arrêté.");
-        timeMachineStatus = "Arrêté";
+        timeMachineStatus = isRunning ? "Passe terminée" : "Arrêté";
+        isRunning = false;
+        log.info("Thread Time Machine arrêté.");
     }
+
+    /** Passe à la période suivante. false s'il n'y en a plus. */
+    private boolean advanceToNextPeriod() {
+        currentPeriod = periodQueue.poll();
+        if (currentPeriod == null) {
+            event(TM, SUCCESS, null, "File terminée : toutes les périodes ont été traitées.");
+            currentEta = "Terminé";
+            return false;
+        }
+        event(TM, INFO, currentPeriod, "Passage à " + currentPeriod);
+        resetPeriodCounters();
+        totalProcessedSinceStart = 0;
+        syncStartTime = System.currentTimeMillis();
+        return true;
+    }
+
+    /** Upsert d'un lot. Retourne {insérés, mis à jour}. */
+    private int[] upsertBatch(List<Intervention> incomingData, String activePeriod) {
+        int[] counts = new int[2];
+        transactionTemplate.executeWithoutResult(status -> {
+            List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention)
+                    .filter(id -> id != null && !id.isEmpty()).toList();
+            Map<String, Intervention> existingMap = interventionRepository.findByIdInterventionIn(incomingEpsIds).stream()
+                    .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
+
+            for (Intervention incoming : incomingData) {
+                if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
+                Intervention existing = existingMap.get(incoming.getIdIntervention());
+                String realPeriod = incoming.getPeriode() != null ? incoming.getPeriode().replace("-", "_") : activePeriod;
+
+                if (existing == null) {
+                    existing = incoming;
+                    existing.setId(null);
+                    existing.setSourceIngestion("TIME_MACHINE");
+                    existing.setPeriode(realPeriod);
+                    existingMap.put(existing.getIdIntervention(), existing);
+                    counts[0]++;
+                } else {
+                    existing.setEtat(incoming.getEtat());
+                    existing.setDateModificationEtat(incoming.getDateModificationEtat());
+                    existing.setTypeIntervention(incoming.getTypeIntervention());
+                    existing.setMainteneur(incoming.getMainteneur());
+                    existing.setPayloadRecu(incoming.getPayloadRecu());
+                    existing.setPeriode(realPeriod);
+                    counts[1]++;
+                }
+            }
+            interventionRepository.saveAll(existingMap.values());
+        });
+        return counts;
+    }
+
+    // ------------------------------------------------------------ Healer
 
     private <T> List<List<T>> partition(List<T> list, int size) {
         List<List<T>> partitions = new ArrayList<>();
@@ -538,19 +625,23 @@ public class SyncOrchestrator {
 
     private void backgroundHealerLoop() {
         healerStatus = "En veille";
-        log.info("Thread Background Healer Démarré en mode : {}", healerMode);
+        boolean announcedUpToDate = false;
 
         while (isHealing) {
             try {
-                // Rapide grâce à l'index partiel idx_interv_missing_detail
                 long missingCount = interventionRepository.countInterventionsWithMissingDetails();
                 if (missingCount == 0) {
                     healTotal = 0;
                     healCurrent = 0;
                     healerStatus = "Base 100% à jour";
+                    if (!announcedUpToDate) {
+                        event(HEALER, SUCCESS, null, "File vide : tous les EPS ont leurs détails.");
+                        announcedUpToDate = true;
+                    }
                     sleep(10000);
                     continue;
                 }
+                announcedUpToDate = false;
 
                 healTotal = (int) missingCount;
                 healCurrent = 0;
@@ -562,40 +653,71 @@ public class SyncOrchestrator {
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
                 healerStatus = "Récupération détails (" + chunk.size() + " EPS) | " + throttle.describe();
+                long t0 = System.currentTimeMillis();
 
-                // Le parallélisme réel est piloté par le BytelThrottle (limite dynamique en vol).
-                List<Future<Integer>> futures = new ArrayList<>();
+                List<Future<int[]>> futures = new ArrayList<>();
                 for (List<Intervention> batch : partition(chunk, Math.max(1, healerBatchSize))) {
                     futures.add(healerThreadPool.submit(() -> healBatch(batch)));
                 }
-                int done = 0;
-                for (Future<Integer> f : futures) {
-                    try { done += f.get(); } catch (ExecutionException ee) { log.error("Erreur batch Healer", ee.getCause()); }
+                int ok = 0, notFound = 0, failed = 0;
+                for (Future<int[]> f : futures) {
+                    try {
+                        int[] r = f.get();
+                        ok += r[0]; notFound += r[1]; failed += r[2];
+                    } catch (ExecutionException ee) {
+                        log.error("Erreur batch Healer", ee.getCause());
+                        lastHealError = String.valueOf(ee.getCause().getMessage());
+                    }
                 }
+                int done = ok + notFound + failed;
+                long dur = System.currentTimeMillis() - t0;
 
                 healCurrent += done;
                 totalHealerProcessed += done;
+                if (done > 0) healWindow.add(new long[]{System.currentTimeMillis(), ok});
+                recordLot(chunk.size(), ok, notFound, failed, dur, missingCount);
+
                 healerStatus = "Lot " + done + "/" + chunk.size() + " traité | " + throttle.describe();
+                if (done > 0) {
+                    event(HEALER, failed > 0 ? WARN : SUCCESS, null, String.format(
+                            "Lot de %d EPS en %s : %d enrichis, %d sans détail chez Bytel, %d échecs réseau. Reste %d.",
+                            done, formatDuration(dur), ok, notFound, failed, Math.max(0, missingCount - done)));
+                }
 
             } catch (Exception e) {
                 log.error("Exception critique Healer", e);
                 healerStatus = "Erreur Critique";
+                lastHealError = e.getMessage();
+                event(HEALER, ERROR, null, "Exception critique : " + e.getMessage());
                 sleep(10000);
             }
         }
-        log.info("Thread Background Healer Arrêté.");
         healerStatus = "Arrêté";
+        log.info("Thread Healer arrêté.");
     }
 
-    /** Soigne un petit lot d'EPS et l'écrit tout de suite en base (UPDATE ciblé, pas de merge JPA). */
+    private void recordLot(int size, int ok, int notFound, int failed, long durationMs, long queue) {
+        Map<String, Object> lot = new LinkedHashMap<>();
+        lot.put("at", LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+        lot.put("size", size);
+        lot.put("ok", ok);
+        lot.put("not_found", notFound);
+        lot.put("failed", failed);
+        lot.put("duration_ms", durationMs);
+        lot.put("queue", queue);
+        recentLots.add(0, lot);
+        while (recentLots.size() > 40) recentLots.remove(recentLots.size() - 1);
+    }
+
+    /** Soigne un petit lot d'EPS. Retourne {enrichis, absents chez Bytel, échecs}. */
     @SuppressWarnings("unchecked")
-    private int healBatch(List<Intervention> batch) {
-        if (!isHealing) return 0;
+    private int[] healBatch(List<Intervention> batch) {
+        if (!isHealing) return new int[3];
         List<String> idsToHeal = batch.stream().map(Intervention::getIdIntervention).toList();
         Map<String, Object> healedData = null;
 
         for (int attempt = 1; attempt <= 3 && isHealing; attempt++) {
-            if (!throttle.acquire(() -> isHealing)) return 0;
+            if (!throttle.acquire(() -> isHealing)) return new int[3];
             long t0 = System.currentTimeMillis();
             try {
                 Map<String, Object> response = phpApiClient.healData(idsToHeal);
@@ -605,42 +727,84 @@ public class SyncOrchestrator {
                     healedData = rawData instanceof Map ? (Map<String, Object>) rawData : new HashMap<>();
                     break;
                 }
+                lastHealError = "Réponse PHP sans ok=true";
             } catch (RestClientResponseException e) {
-                boolean wasPaused = throttle.isPaused();
                 handleHttpError(e);
-                if (!wasPaused && throttle.isPaused()) {
-                    addAlert("[HEALER] " + throttle.describe());
-                }
+                lastHealError = "HTTP " + e.getStatusCode().value();
             } catch (ResourceAccessException e) {
-                throttle.onOverload("timeout/IO");
+                handleTimeout();
+                lastHealError = "Timeout Bytel";
             } catch (Exception e) {
                 throttle.onError();
-                log.warn("Erreur Healer: {}", e.getMessage());
+                lastHealError = e.getMessage();
             }
         }
 
-        if (healedData == null && !isHealing) return 0; // arrêt demandé : on ne marque rien en fantôme
+        if (healedData == null && !isHealing) return new int[3]; // arrêt : on ne marque rien en fantôme
 
+        int ok = 0, notFound = 0, failed = 0;
         List<Object[]> updates = new ArrayList<>(batch.size());
         for (Intervention inv : batch) {
             String detail = "{}";
-            Object detailObj = healedData != null ? healedData.get(inv.getIdIntervention()) : null;
-            if (detailObj instanceof String str) {
-                detail = str;
-            } else if (detailObj != null) {
-                try { detail = objectMapper.writeValueAsString(detailObj); } catch (Exception ignored) { }
+            if (healedData == null) {
+                failed++;
+            } else {
+                Object detailObj = healedData.get(inv.getIdIntervention());
+                if (detailObj instanceof String str && !str.isBlank() && !"{}".equals(str)) {
+                    detail = str;
+                    ok++;
+                } else if (detailObj != null && !(detailObj instanceof String)) {
+                    try { detail = objectMapper.writeValueAsString(detailObj); ok++; }
+                    catch (Exception ex) { notFound++; }
+                } else {
+                    notFound++;
+                }
             }
             updates.add(new Object[]{detail, inv.getId()});
         }
         jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = ? WHERE id = ?", updates);
-        return batch.size();
+
+        hEnriched.addAndGet(ok);
+        hNotFound.addAndGet(notFound);
+        hFailed.addAndGet(failed);
+        if (failed > 0) hFailedBatches.incrementAndGet();
+        if (ok > 0) lastHealSuccessAt = System.currentTimeMillis();
+        return new int[]{ok, notFound, failed};
     }
+
+    /** Vue détaillée du Healer pour l'UI. */
+    public Map<String, Object> healerInsights() {
+        long now = System.currentTimeMillis();
+        while (!healWindow.isEmpty() && now - healWindow.peekFirst()[0] > 10 * 60_000) healWindow.pollFirst();
+        long last5 = healWindow.stream().filter(w -> now - w[0] <= 5 * 60_000).mapToLong(w -> w[1]).sum();
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("running", isHealing);
+        m.put("mode", healerMode);
+        m.put("status", healerStatus);
+        m.put("queue", interventionRepository.countInterventionsWithMissingDetails());
+        m.put("phantoms", interventionRepository.countPhantoms());
+        m.put("enriched", hEnriched.get());
+        m.put("not_found", hNotFound.get());
+        m.put("failed", hFailed.get());
+        m.put("failed_batches", hFailedBatches.get());
+        m.put("rate_per_min", Math.round(last5 / 5.0));
+        m.put("last_success_ago_s", lastHealSuccessAt == 0 ? -1 : (now - lastHealSuccessAt) / 1000);
+        m.put("last_error", lastHealError);
+        m.put("uptime_s", healerStartedAt == 0 || !isHealing ? 0 : (now - healerStartedAt) / 1000);
+        m.put("recent_lots", recentLots);
+        m.put("bytel_paused", throttle.isPaused());
+        m.put("throttle", throttle.describe());
+        return m;
+    }
+
+    // ------------------------------------------------------------ Utils
 
     private void sleep(long millis) {
         try { Thread.sleep(millis); } catch (InterruptedException ignored) {}
     }
 
-    private String formatDuration(long millis) {
+    static String formatDuration(long millis) {
         long seconds = millis / 1000;
         if (seconds < 60) return seconds + "s";
         long minutes = seconds / 60;
@@ -656,18 +820,7 @@ public class SyncOrchestrator {
         syncStateRepository.save(state);
     }
 
-    private void saveStateString(String key, String value) {
-        SyncState state = syncStateRepository.findById(key).orElse(new SyncState());
-        state.setStateKey(key);
-        state.setStateValueStr(value);
-        syncStateRepository.save(state);
-    }
-
     private int getSavedState(String key) {
-        return syncStateRepository.findById(key).map(SyncState::getStateValue).orElse(0);
-    }
-
-    private String getSavedStateString(String key) {
-        return syncStateRepository.findById(key).map(SyncState::getStateValueStr).orElse("");
+        return syncStateRepository.findById(key).map(SyncState::getStateValue).filter(Objects::nonNull).orElse(0);
     }
 }
