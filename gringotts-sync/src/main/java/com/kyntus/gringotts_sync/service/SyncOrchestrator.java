@@ -6,21 +6,23 @@ import com.kyntus.gringotts_sync.domain.ActionLog;
 import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.dto.ImportResponse;
+import com.kyntus.gringotts_sync.integration.BytelThrottle;
 import com.kyntus.gringotts_sync.integration.PhpApiClient;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -32,7 +34,15 @@ public class SyncOrchestrator {
     private final InterventionRepository interventionRepository;
     private final SyncStateRepository syncStateRepository;
     private final TransactionTemplate transactionTemplate;
+    private final JdbcTemplate jdbcTemplate;
+    private final BytelThrottle throttle;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${kyntus.healer.chunk-size:200}")
+    private int healerChunkSize;
+
+    @Value("${kyntus.healer.batch-size:10}")
+    private int healerBatchSize;
 
     private volatile boolean isRunning = false;
     private volatile boolean isHealing = false;
@@ -59,7 +69,11 @@ public class SyncOrchestrator {
     private Thread timeMachineThread;
     private Thread healerThread;
 
-    private final ForkJoinPool healerThreadPool = new ForkJoinPool(2);
+    private final ExecutorService healerThreadPool = Executors.newFixedThreadPool(6, r -> {
+        Thread t = new Thread(r, "healer-worker");
+        t.setDaemon(true);
+        return t;
+    });
 
     public boolean isRunning() { return isRunning; }
     public boolean isHealing() { return isHealing; }
@@ -73,8 +87,88 @@ public class SyncOrchestrator {
     public long getTotalHealerProcessed() { return totalHealerProcessed; }
     public long getTotalPeriodProcessed() { return totalPeriodProcessed; }
     public String getCurrentPeriod() { return currentPeriod; }
+    public String getThrottleStatus() { return throttle.describe(); }
+    public List<String> getQueuedPeriods() { return new ArrayList<>(periodQueue); }
 
-    private void addAlert(String message) {
+    /** Répare les flags "zombies" (flag à true mais thread mort). Retourne true si qqch a été corrigé. */
+    public synchronized boolean watchdog() {
+        boolean fixed = false;
+        if (isRunning && (timeMachineThread == null || !timeMachineThread.isAlive())) {
+            isRunning = false;
+            timeMachineStatus = "Récupéré par le watchdog";
+            addAlert("[WATCHDOG] Thread Time Machine mort détecté, flag réinitialisé.");
+            fixed = true;
+        }
+        if (isHealing && (healerThread == null || !healerThread.isAlive())) {
+            isHealing = false;
+            healerStatus = "Récupéré par le watchdog";
+            addAlert("[WATCHDOG] Thread Healer mort détecté, flag réinitialisé.");
+            fixed = true;
+        }
+        return fixed;
+    }
+
+    public boolean isTimeMachineBusy() {
+        return isRunning || (timeMachineThread != null && timeMachineThread.isAlive());
+    }
+
+    public boolean isHealerBusy() {
+        return isHealing || (healerThread != null && healerThread.isAlive());
+    }
+
+    /** Lancement par l'AutoPilot : remet à zéro l'offset des périodes à re-scanner, puis démarre. */
+    public synchronized boolean startAutoSync(List<String> periods, Set<String> resetOffsets) {
+        if (periods.isEmpty() || isTimeMachineBusy()) return false;
+        for (String p : resetOffsets) saveState("offset_" + p, 0);
+        addAlert("[AUTOPILOT] Sync auto: " + String.join(", ", periods));
+        startPeriodSync(periods);
+        return true;
+    }
+
+    /** Sonde légère : récupère le total réel Bytel d'une période (limit=1). -1 si indisponible. */
+    public int probeRemoteTotal(String period) {
+        if (!throttle.acquire(() -> true)) return -1;
+        long t0 = System.currentTimeMillis();
+        try {
+            ImportResponse resp = phpApiClient.triggerImport(0, 1, period);
+            throttle.onSuccess(System.currentTimeMillis() - t0);
+            if (resp != null && resp.isOk() && resp.getTotalApi() > 0) {
+                saveState("total_" + period, resp.getTotalApi());
+                return resp.getTotalApi();
+            }
+            return -1;
+        } catch (RestClientResponseException e) {
+            handleHttpError(e);
+            return -1;
+        } catch (ResourceAccessException e) {
+            throttle.onOverload("timeout/IO");
+            return -1;
+        } catch (Exception e) {
+            throttle.onError();
+            return -1;
+        }
+    }
+
+    public long countLocalDistinct(String period) {
+        return interventionRepository.countDistinctByPeriode(period);
+    }
+
+    public int getSavedOffset(String period) { return getSavedState("offset_" + period); }
+    public int getSavedTotal(String period) { return getSavedState("total_" + period); }
+
+    private void handleHttpError(RestClientResponseException e) {
+        int code = e.getStatusCode().value();
+        String body = e.getResponseBodyAsString();
+        if (code == 403 || body.contains("Access Denied")) {
+            throttle.onBlocked();
+        } else if (code == 429 || code >= 500 || body.contains("Timeout")) {
+            throttle.onOverload("HTTP " + code);
+        } else {
+            throttle.onError();
+        }
+    }
+
+    public void addAlert(String message) {
         String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         recentAlerts.add(0, "[" + time + "] " + message);
         if (recentAlerts.size() > 20) {
@@ -287,7 +381,22 @@ public class SyncOrchestrator {
                     try {
                         log.debug("Envoi commande Import -> Offset: {}, Limite: {}, Période: {}", localOffset, TIME_MACHINE_BATCH, activePeriod);
 
-                        ImportResponse importResp = phpApiClient.triggerImport(localOffset, TIME_MACHINE_BATCH, activePeriod);
+                        if (!throttle.acquire(() -> isRunning)) break;
+                        long t0 = System.currentTimeMillis();
+                        ImportResponse importResp;
+                        try {
+                            importResp = phpApiClient.triggerImport(localOffset, TIME_MACHINE_BATCH, activePeriod);
+                        } catch (RestClientResponseException ex) {
+                            handleHttpError(ex);
+                            throw ex;
+                        } catch (ResourceAccessException ex) {
+                            throttle.onOverload("timeout/IO");
+                            throw ex;
+                        } catch (RuntimeException ex) {
+                            throttle.onError();
+                            throw ex;
+                        }
+                        throttle.onSuccess(System.currentTimeMillis() - t0);
 
                         if (importResp != null && importResp.isOk()) {
 
@@ -366,9 +475,7 @@ public class SyncOrchestrator {
                                 currentEta = formatDuration(remainingItems * millisPerItem);
                             }
                             importSuccess = true;
-                            timeMachineStatus = "Vitesse: " + TIME_MACHINE_BATCH + " EPS (Offset: " + localOffset + ")";
-
-                            sleep(1200);
+                            timeMachineStatus = "[" + activePeriod + "] Offset " + localOffset + "/" + localTotalApi + " | " + throttle.describe();
                             break;
                         }
                     } catch (RestClientResponseException e) {
@@ -381,20 +488,23 @@ public class SyncOrchestrator {
                             sleep(15000);
                         }
                         else if (e.getStatusCode().value() == 403 || body.contains("Access Denied")) {
-                            addAlert("[TIME MACHINE] Bloqué par le Pare-feu Bouygues (Akamai). Veille 15m.");
-                            timeMachineStatus = "Banni (Pause 15 min)";
-                            sleep(15 * 60 * 1000);
+                            // La pause globale est gérée par le BytelThrottle (Healer en pause aussi).
+                            addAlert("[TIME MACHINE] Bloqué par le Pare-feu Bouygues (Akamai). Pause globale.");
+                            timeMachineStatus = "Banni - " + throttle.describe();
                         }
-                        else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504 || body.contains("Timeout")) {
-                            addAlert("[TIME MACHINE] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ")");
-                            timeMachineStatus = "Surcharge - Retry...";
-                            sleep(15000);
+                        else if (e.getStatusCode().value() == 429 || e.getStatusCode().value() >= 500 || body.contains("Timeout")) {
+                            addAlert("[TIME MACHINE] Serveur Bouygues Surchargé (HTTP " + e.getStatusCode() + ") - ralentissement auto");
+                            timeMachineStatus = "Surcharge - " + throttle.describe();
                         }
                         else {
                             addAlert("[TIME MACHINE] Erreur HTTP " + e.getStatusCode());
                             timeMachineStatus = "Erreur HTTP " + e.getStatusCode();
                             sleep(10000);
                         }
+                    } catch (ResourceAccessException e) {
+                        log.warn("Timeout / IO vers Bytel: {}", e.getMessage());
+                        addAlert("[TIME MACHINE] Timeout Bytel - ralentissement auto");
+                        timeMachineStatus = "Timeout - " + throttle.describe();
                     } catch (Exception e) {
                         log.error("Erreur de connexion inattendue", e);
                         timeMachineStatus = "Glitch Bouygues - Retry";
@@ -432,6 +542,7 @@ public class SyncOrchestrator {
 
         while (isHealing) {
             try {
+                // Rapide grâce à l'index partiel idx_interv_missing_detail
                 long missingCount = interventionRepository.countInterventionsWithMissingDetails();
                 if (missingCount == 0) {
                     healTotal = 0;
@@ -444,81 +555,27 @@ public class SyncOrchestrator {
                 healTotal = (int) missingCount;
                 healCurrent = 0;
 
-                List<Intervention> chunk;
-                if ("TIME_MACHINE".equals(healerMode)) {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsAsc();
-                } else {
-                    chunk = interventionRepository.findInterventionsWithMissingDetailsDesc();
-                }
+                List<Intervention> chunk = "TIME_MACHINE".equals(healerMode)
+                        ? interventionRepository.findMissingDetailsAsc(healerChunkSize)
+                        : interventionRepository.findMissingDetailsDesc(healerChunkSize);
 
                 if (chunk.isEmpty()) { sleep(5000); continue; }
 
-                healerStatus = "Récupération détails (" + chunk.size() + " EPS en cours)";
+                healerStatus = "Récupération détails (" + chunk.size() + " EPS) | " + throttle.describe();
 
-                List<List<Intervention>> batches = partition(chunk, 10);
+                // Le parallélisme réel est piloté par le BytelThrottle (limite dynamique en vol).
+                List<Future<Integer>> futures = new ArrayList<>();
+                for (List<Intervention> batch : partition(chunk, Math.max(1, healerBatchSize))) {
+                    futures.add(healerThreadPool.submit(() -> healBatch(batch)));
+                }
+                int done = 0;
+                for (Future<Integer> f : futures) {
+                    try { done += f.get(); } catch (ExecutionException ee) { log.error("Erreur batch Healer", ee.getCause()); }
+                }
 
-                healerThreadPool.submit(() -> {
-                    batches.parallelStream().forEach(batch -> {
-                        List<String> idsToHeal = batch.stream().map(Intervention::getIdIntervention).toList();
-                        boolean success = false;
-
-                        for (int attempt = 1; attempt <= 3; attempt++) {
-                            try {
-                                Map<String, Object> response = phpApiClient.healData(idsToHeal);
-
-                                if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
-                                    Object rawData = response.get("data");
-
-                                    Map<String, Object> healedData = new HashMap<>();
-                                    if (rawData instanceof Map) healedData = (Map<String, Object>) rawData;
-
-                                    for (Intervention inv : batch) {
-                                        Object detailObj = healedData.get(inv.getIdIntervention());
-                                        if (detailObj != null) {
-                                            if (detailObj instanceof String) {
-                                                inv.setDetailIntervention((String) detailObj);
-                                            } else {
-                                                try {
-                                                    inv.setDetailIntervention(objectMapper.writeValueAsString(detailObj));
-                                                } catch (Exception ex) {
-                                                    inv.setDetailIntervention("{}");
-                                                }
-                                            }
-                                        } else {
-                                            inv.setDetailIntervention("{}");
-                                        }
-                                    }
-                                    success = true;
-                                    break;
-                                }
-                            } catch (RestClientResponseException e) {
-                                if (e.getStatusCode().value() == 403 || e.getResponseBodyAsString().contains("Access Denied")) {
-                                    addAlert("[HEALER] Pare-feu Bouygues déclenché. Veille 15m.");
-                                    sleep(15 * 60 * 1000);
-                                } else if (e.getStatusCode().value() == 500 || e.getStatusCode().value() == 504) {
-                                    sleep(5000);
-                                } else {
-                                    sleep(2000);
-                                }
-                            } catch (Exception e) {
-                                sleep(2000);
-                            }
-                        }
-
-                        if (!success && isHealing) {
-                            for (Intervention inv : batch) inv.setDetailIntervention("{}");
-                        }
-
-                        sleep(1500);
-                    });
-                }).get();
-
-                interventionRepository.saveAll(chunk);
-                healCurrent += chunk.size();
-                totalHealerProcessed += chunk.size();
-                healerStatus = "Lot de " + chunk.size() + " sauvegardé (Vitesse Contrôlée)";
-
-                sleep(500);
+                healCurrent += done;
+                totalHealerProcessed += done;
+                healerStatus = "Lot " + done + "/" + chunk.size() + " traité | " + throttle.describe();
 
             } catch (Exception e) {
                 log.error("Exception critique Healer", e);
@@ -528,6 +585,55 @@ public class SyncOrchestrator {
         }
         log.info("Thread Background Healer Arrêté.");
         healerStatus = "Arrêté";
+    }
+
+    /** Soigne un petit lot d'EPS et l'écrit tout de suite en base (UPDATE ciblé, pas de merge JPA). */
+    @SuppressWarnings("unchecked")
+    private int healBatch(List<Intervention> batch) {
+        if (!isHealing) return 0;
+        List<String> idsToHeal = batch.stream().map(Intervention::getIdIntervention).toList();
+        Map<String, Object> healedData = null;
+
+        for (int attempt = 1; attempt <= 3 && isHealing; attempt++) {
+            if (!throttle.acquire(() -> isHealing)) return 0;
+            long t0 = System.currentTimeMillis();
+            try {
+                Map<String, Object> response = phpApiClient.healData(idsToHeal);
+                throttle.onSuccess(System.currentTimeMillis() - t0);
+                if (response != null && Boolean.TRUE.equals(response.get("ok"))) {
+                    Object rawData = response.get("data");
+                    healedData = rawData instanceof Map ? (Map<String, Object>) rawData : new HashMap<>();
+                    break;
+                }
+            } catch (RestClientResponseException e) {
+                boolean wasPaused = throttle.isPaused();
+                handleHttpError(e);
+                if (!wasPaused && throttle.isPaused()) {
+                    addAlert("[HEALER] " + throttle.describe());
+                }
+            } catch (ResourceAccessException e) {
+                throttle.onOverload("timeout/IO");
+            } catch (Exception e) {
+                throttle.onError();
+                log.warn("Erreur Healer: {}", e.getMessage());
+            }
+        }
+
+        if (healedData == null && !isHealing) return 0; // arrêt demandé : on ne marque rien en fantôme
+
+        List<Object[]> updates = new ArrayList<>(batch.size());
+        for (Intervention inv : batch) {
+            String detail = "{}";
+            Object detailObj = healedData != null ? healedData.get(inv.getIdIntervention()) : null;
+            if (detailObj instanceof String str) {
+                detail = str;
+            } else if (detailObj != null) {
+                try { detail = objectMapper.writeValueAsString(detailObj); } catch (Exception ignored) { }
+            }
+            updates.add(new Object[]{detail, inv.getId()});
+        }
+        jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = ? WHERE id = ?", updates);
+        return batch.size();
     }
 
     private void sleep(long millis) {

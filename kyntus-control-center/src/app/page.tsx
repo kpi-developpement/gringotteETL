@@ -16,6 +16,7 @@ import {
   fetchPeriodInfo,
   rescanPeriod,
   fixPeriods,
+  setAutopilot,
   SyncStats
 } from '../services/api';
 import styles from './page.module.css';
@@ -114,6 +115,7 @@ export default function DashboardPage() {
     loadStats();
   };
 
+  const handleToggleAutopilot = async () => { await setAutopilot(!stats?.autopilot?.enabled); loadStats(); };
   const handleStop = async () => { await stopSync(); loadStats(); };
   const handleStartHealer = async () => { await startHealer(healerMode); loadStats(); };
   const handleStopHealer = async () => { await stopHealer(); loadStats(); };
@@ -313,6 +315,32 @@ export default function DashboardPage() {
 
           {/* LEFT COLUMN: TIME MACHINE + HEALER */}
           <div className={styles.columnStack}>
+
+            {/* AUTOPILOT CARD */}
+            <div className={styles.glassCard}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>
+                  <div className={`${styles.iconBox} ${styles.iconTime}`}><IconBolt /></div>
+                  AutoPilot (Sync Autonome)
+                </h2>
+                <button
+                  onClick={handleToggleAutopilot}
+                  className={`${styles.btnPrimary} ${stats?.autopilot?.enabled ? styles.bgRed : styles.bgEmerald}`}
+                  style={{ width: "auto", padding: "8px 16px" }}
+                >
+                  {stats?.autopilot?.enabled ? 'Désactiver' : 'Activer'}
+                </button>
+              </div>
+              <div style={{ display: 'grid', gap: 6, fontSize: 13, opacity: 0.9 }}>
+                <div><b>État :</b> {stats?.autopilot?.enabled ? '🟢 ' : '⚪ '}{stats?.autopilot?.status || '-'} <span style={{ opacity: 0.6 }}>(tick {stats?.autopilot?.last_tick || '-'})</span></div>
+                <div><b>Périodes suivies :</b> {(stats?.autopilot?.managed_periods || []).join(', ') || '-'}</div>
+                <div><b>File d&apos;attente :</b> {(stats?.queued_periods || []).join(', ') || 'vide'}</div>
+                <div><b>Protection Bytel :</b> {stats?.autopilot?.throttle || '-'}</div>
+                {(stats?.autopilot?.last_gaps || []).length > 0 && (
+                  <div><b>Derniers trous détectés :</b> {stats?.autopilot?.last_gaps.join(', ')}</div>
+                )}
+              </div>
+            </div>
 
             {/* TIME MACHINE CARD */}
             <div className={styles.glassCard}>

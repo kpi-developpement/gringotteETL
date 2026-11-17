@@ -1,0 +1,47 @@
+package com.kyntus.gringotts_sync.config;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+/**
+ * Crée les index manquants au démarrage (idempotent).
+ * CONCURRENTLY => pas de verrou bloquant sur la table pendant la création.
+ */
+@Slf4j
+@Component
+@Order(0)
+@RequiredArgsConstructor
+public class DbIndexInitializer implements ApplicationRunner {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    private static final String[] INDEXES = {
+            // Upsert Time Machine (findByIdInterventionIn) + dédoublonnage
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_id_intervention ON interventions (id_intervention)",
+            // Filtres / comptages par période
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_periode ON interventions (periode)",
+            // File d'attente du Healer : index partiel minuscule, uniquement les EPS sans détails
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_missing_detail ON interventions (id) " +
+                    "WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''",
+            // Purges / jointures logs
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_actions_log_intervention ON actions_log (intervention_id)"
+    };
+
+    @Override
+    public void run(ApplicationArguments args) {
+        for (String sql : INDEXES) {
+            try {
+                long t0 = System.currentTimeMillis();
+                jdbcTemplate.execute(sql);
+                log.info("[DB] Index OK ({} ms): {}", System.currentTimeMillis() - t0, sql.substring(0, Math.min(90, sql.length())));
+            } catch (Exception e) {
+                log.warn("[DB] Index ignoré ({}): {}", e.getMessage(), sql);
+            }
+        }
+    }
+}

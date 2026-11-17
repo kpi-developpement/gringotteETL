@@ -18,7 +18,31 @@ export interface SyncStats {
   healer_status: string;
   alerts: string[];
   healer_processed_total: number;
+  queued_periods?: string[];
+  autopilot?: AutoPilotInfo;
 }
+
+export interface AutoPilotInfo {
+  enabled: boolean;
+  status: string;
+  last_tick: string;
+  managed_periods: string[];
+  last_gaps: string[];
+  throttle: string;
+}
+
+export const setAutopilot = async (enabled: boolean): Promise<AutoPilotInfo | null> => {
+  try {
+    const res = await fetch(`${API_URL}/autopilot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    return await res.json();
+  } catch (err) {
+    return null;
+  }
+};
 
 export interface PageResponse {
   content: any[];

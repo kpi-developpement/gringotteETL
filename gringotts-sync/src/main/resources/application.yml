@@ -6,7 +6,15 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 12
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      keepalive-time: 60000
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: false
@@ -25,3 +33,29 @@ kyntus:
   php-api:
     base-url: ${KYNTUS_PHP_API_BASE_URL:https://bytel.kyntus.fr}
     sync-key: ${KYNTUS_PHP_API_SYNC_KEY:KYNTUS_SUPER_SECRET_SYNC_KEY_2026_!@#}
+
+  # 🤖 AutoPilot : sync autonome + détection de trous
+  autopilot:
+    enabled: ${KYNTUS_AUTOPILOT_ENABLED:true}
+    months-back: ${KYNTUS_AUTOPILOT_MONTHS_BACK:2}              # mois courant + N mois précédents
+    current-refresh-minutes: ${KYNTUS_AUTOPILOT_REFRESH_MIN:60} # re-scan complet du mois courant
+    verify-hours: ${KYNTUS_AUTOPILOT_VERIFY_HOURS:6}            # vérif total Bytel vs base pour les mois passés
+    phantom-retry-hours: 6                                      # remet les EPS "{}" au Healer
+    healer-mode: RADAR
+    extra-periods: ${KYNTUS_AUTOPILOT_EXTRA_PERIODS:}           # ex: 2025_M12,2025_M11
+    tick-ms: 60000
+    initial-delay-ms: 30000
+
+  # 🛡️ Protection serveur Bytel (adaptatif, partagé Time Machine + Healer)
+  throttle:
+    min-delay-ms: ${KYNTUS_THROTTLE_MIN_DELAY_MS:250}   # vitesse max : 1 requête / 250ms
+    max-delay-ms: 15000
+    max-in-flight: ${KYNTUS_THROTTLE_MAX_IN_FLIGHT:4}    # requêtes simultanées max vers Bytel
+    slow-response-ms: 25000                              # réponse plus lente => on freine
+    block-pause-ms: 900000                               # 403 Akamai => pause 15 min
+    breaker-pause-ms: 120000                             # N erreurs d'affilée => pause 2 min
+    breaker-threshold: 6
+
+  healer:
+    chunk-size: 200
+    batch-size: 10

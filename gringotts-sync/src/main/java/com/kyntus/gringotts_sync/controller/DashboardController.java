@@ -4,6 +4,7 @@ import com.kyntus.gringotts_sync.domain.Intervention;
 import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
+import com.kyntus.gringotts_sync.service.AutoPilotService;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
 import com.kyntus.gringotts_sync.service.ExportExcelService;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class DashboardController {
     private final SyncStateRepository syncStateRepository;
     private final SyncOrchestrator syncOrchestrator;
     private final ExportExcelService exportExcelService;
+    private final AutoPilotService autoPilotService;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
@@ -56,6 +58,8 @@ public class DashboardController {
         stats.put("healer_status", syncOrchestrator.getHealerStatus());
         stats.put("alerts", syncOrchestrator.getRecentAlerts());
         stats.put("healer_processed_total", syncOrchestrator.getTotalHealerProcessed());
+        stats.put("queued_periods", syncOrchestrator.getQueuedPeriods());
+        stats.put("autopilot", autoPilotService.describe());
 
         return ResponseEntity.ok(stats);
     }
@@ -145,8 +149,22 @@ public class DashboardController {
         return ResponseEntity.ok(Map.of("ok", true, "message", "Smart Rescan lancé pour la période " + period));
     }
 
+    @GetMapping("/autopilot")
+    public ResponseEntity<Map<String, Object>> getAutopilot() {
+        return ResponseEntity.ok(autoPilotService.describe());
+    }
+
+    @PostMapping("/autopilot")
+    public ResponseEntity<Map<String, Object>> setAutopilot(@RequestBody Map<String, Object> body) {
+        boolean enabled = Boolean.parseBoolean(String.valueOf(body.getOrDefault("enabled", "true")));
+        autoPilotService.setEnabled(enabled);
+        return ResponseEntity.ok(autoPilotService.describe());
+    }
+
     @PostMapping("/stop")
     public ResponseEntity<Map<String, String>> stopSync() {
+        // Arrêt manuel = l'humain reprend la main : on coupe l'AutoPilot sinon il relancerait tout.
+        if (autoPilotService.isEnabled()) autoPilotService.setEnabled(false);
         syncOrchestrator.stopSync();
         return ResponseEntity.ok(Map.of("message", "Arrêté."));
     }
@@ -160,12 +178,14 @@ public class DashboardController {
 
     @PostMapping("/stop-healer")
     public ResponseEntity<Map<String, String>> stopHealer() {
+        if (autoPilotService.isEnabled()) autoPilotService.setEnabled(false);
         syncOrchestrator.stopHealer();
         return ResponseEntity.ok(Map.of("message", "Healer arrêté."));
     }
 
     @PostMapping("/reset")
     public ResponseEntity<Map<String, String>> resetSync() {
+        if (autoPilotService.isEnabled()) autoPilotService.setEnabled(false);
         new Thread(syncOrchestrator::purgeDatabase).start();
         return ResponseEntity.ok(Map.of("message", "Purge en cours..."));
     }

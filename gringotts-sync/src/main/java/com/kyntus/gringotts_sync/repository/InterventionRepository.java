@@ -86,6 +86,15 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT 60", nativeQuery = true)
     List<Intervention> findInterventionsWithMissingDetailsAsc();
 
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id DESC LIMIT :limit", nativeQuery = true)
+    List<Intervention> findMissingDetailsDesc(@Param("limit") int limit);
+
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = '' ORDER BY id ASC LIMIT :limit", nativeQuery = true)
+    List<Intervention> findMissingDetailsAsc(@Param("limit") int limit);
+
+    @Query(value = "SELECT COUNT(DISTINCT id_intervention) FROM interventions WHERE periode = :periode", nativeQuery = true)
+    long countDistinctByPeriode(@Param("periode") String periode);
+
     @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''", nativeQuery = true)
     long countInterventionsWithMissingDetails();
 
