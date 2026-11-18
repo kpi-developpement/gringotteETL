@@ -1037,16 +1037,17 @@ public class SyncOrchestrator {
 
         // Signal d'alerte avant ban Akamai : Bytel répond "ok" mais renvoie un lot 100% vide, plusieurs fois de suite.
         // -> on freine fort tout de suite, et ces EPS sont reprogrammés dans 10 min SANS consommer d'essai.
-        if (healedData != null && batch.size() >= 3) {
+        // (Seulement si le lot contient des nouveaux EPS jamais essayés : sur des ré-essais d'EPS déjà connus sans détail, c'est normal qu'un lot revienne vide.)
+        boolean hasFresh = batch.stream().anyMatch(inv -> inv.getHealAttempts() == null || inv.getHealAttempts() == 0);
+        if (healedData != null && batch.size() >= 3 && hasFresh) {
             final Map<String, Object> hd = healedData;
             boolean allEmpty = idsToHeal.stream().noneMatch(id -> hasDetail(hd.get(id)));
             if (!allEmpty) {
                 emptyBatchStreak.set(0);
             } else {
                 int streak = emptyBatchStreak.incrementAndGet();
-                // Vraie saturation seulement si PLUS AUCUN détail n'arrive depuis 45 s. Si d'autres lots réussissent,
-                // ce sont ces EPS précis qui n'ont pas de détail chez Bytel (ex. EPS-M…, anciens IDs) : traitement normal.
-                boolean bytelSilent = System.currentTimeMillis() - lastHealSuccessAt > 45_000;
+                // Vraie saturation seulement si PLUS AUCUN détail n'arrive depuis 45 s pendant que le Healer traite des nouveaux EPS.
+                boolean bytelSilent = lastHealSuccessAt > 0 && System.currentTimeMillis() - lastHealSuccessAt > 45_000;
                 if (streak >= 2 && streak <= 20 && bytelSilent) {
                     throttle.onBanWarning(streak);
                     Timestamp later = Timestamp.valueOf(LocalDateTime.now().plusMinutes(10));
@@ -1092,8 +1093,8 @@ public class SyncOrchestrator {
 
         // Beaucoup d'IDs omis alors que Bytel répond : symptôme de surcharge -> on ralentit un peu.
         if (ok > 0) lastHealSuccessAt = System.currentTimeMillis();
-        // Ralentir seulement si Bytel n'arrive plus à donner de détails du tout (pas pour des EPS sans détail isolés).
-        if (healedData != null && notFound * 2 > batch.size() && System.currentTimeMillis() - lastHealSuccessAt > 45_000) {
+        // Ralentir seulement sur des nouveaux EPS quand Bytel n'arrive plus à donner de détails (pas sur des ré-essais d'EPS sans détail).
+        if (healedData != null && hasFresh && notFound * 2 > batch.size() && lastHealSuccessAt > 0 && System.currentTimeMillis() - lastHealSuccessAt > 45_000) {
             throttle.onSoftPressure();
         }
 

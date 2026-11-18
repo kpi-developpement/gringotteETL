@@ -8,6 +8,7 @@ import fx from './fx.module.css';
 import { cx, StatusDot } from './widgets';
 import { useClock, usePoll } from './hooks';
 import { IBolt, IClock, IFlask, ILayers } from './icons';
+import InteractiveCanvas from './InteractiveCanvas';
 import { fetchEvents, SyncStats, HealerInfo, SyncEvent } from '../../services/api';
 
 const NAV = [
@@ -39,6 +40,7 @@ export default function Shell({ children, stats, healer }: { children: ReactNode
         <div className={cx(s.blob, s.blob3)} />
       </div>
       <div className={s.grid} />
+      <InteractiveCanvas />
       <div className={fx.grain} />
       <div className={fx.vignette} />
 

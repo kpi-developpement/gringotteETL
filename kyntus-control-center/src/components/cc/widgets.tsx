@@ -23,11 +23,21 @@ export function Card({ children, accent = 'cyan', glow = false, className, style
 }) {
   const onMove = (e: React.MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
-    e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`);
-    e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`);
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    e.currentTarget.style.setProperty('--mx', `${x}px`);
+    e.currentTarget.style.setProperty('--my', `${y}px`);
+    const rx = ((y / r.height) - 0.5) * -3.5;
+    const ry = ((x / r.width) - 0.5) * 3.5;
+    e.currentTarget.style.setProperty('--rx', `${rx.toFixed(2)}deg`);
+    e.currentTarget.style.setProperty('--ry', `${ry.toFixed(2)}deg`);
+  };
+  const onLeave = (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.setProperty('--rx', '0deg');
+    e.currentTarget.style.setProperty('--ry', '0deg');
   };
   return (
-    <section onMouseMove={onMove} className={cx(s.card, fx.spot, ACC[accent], glow && s.cardGlow, className)} style={style}>
+    <section onMouseMove={onMove} onMouseLeave={onLeave} className={cx(s.card, fx.spot, ACC[accent], glow && s.cardGlow, className)} style={style}>
       {children}
     </section>
   );
@@ -98,9 +108,24 @@ export function CardHead({ icon, title, sub, right }: { icon: ReactNode; title: 
 export function Kpi({ label, value, sub, icon, accent = 'cyan', delay = 0, decimals = 0, suffix }: {
   label: string; value: number; sub?: ReactNode; icon?: ReactNode; accent?: Accent; delay?: number; decimals?: number; suffix?: string;
 }) {
+  const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    e.currentTarget.style.setProperty('--mx', `${x}px`);
+    e.currentTarget.style.setProperty('--my', `${y}px`);
+    const rx = ((y / r.height) - 0.5) * -7;
+    const ry = ((x / r.width) - 0.5) * 7;
+    e.currentTarget.style.setProperty('--rx', `${rx.toFixed(2)}deg`);
+    e.currentTarget.style.setProperty('--ry', `${ry.toFixed(2)}deg`);
+  };
+  const onLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.setProperty('--rx', '0deg');
+    e.currentTarget.style.setProperty('--ry', '0deg');
+  };
   return (
-    <div className={cx(s.kpi, ACC[accent])} style={{ animationDelay: `${delay}ms` }}>
-      <div className={s.kpiLabel}><span>{label}</span><span style={{ color: 'var(--accent)' }}>{icon}</span></div>
+    <div onMouseMove={onMove} onMouseLeave={onLeave} className={cx(s.kpi, fx.spot, ACC[accent])} style={{ animationDelay: `${delay}ms` }}>
+      <div className={s.kpiLabel}><span>{label}</span><span className={s.kpiIconWrap} style={{ color: 'var(--accent)' }}>{icon}</span></div>
       <div className={s.kpiValue}>
         <Num value={value} decimals={decimals} />
         {suffix && <span style={{ fontSize: '0.9rem', color: 'var(--txt-3)', marginLeft: 4 }}>{suffix}</span>}
