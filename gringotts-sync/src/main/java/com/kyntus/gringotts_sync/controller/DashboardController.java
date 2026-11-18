@@ -65,6 +65,7 @@ public class DashboardController {
         stats.put("autopilot", autoPilotService.describe());
         stats.put("period_inserted", syncOrchestrator.getPeriodInserted());
         stats.put("period_updated", syncOrchestrator.getPeriodUpdated());
+        stats.put("period_changed", syncOrchestrator.getPeriodChanged());
         stats.put("event_counts_24h", eventLogService.countsLast24h());
 
         return ResponseEntity.ok(stats);
@@ -187,6 +188,38 @@ public class DashboardController {
     @GetMapping("/healer")
     public ResponseEntity<Map<String, Object>> getHealer() {
         return ResponseEntity.ok(syncOrchestrator.healerInsights());
+    }
+
+    @PostMapping("/scope")
+    public ResponseEntity<Map<String, Object>> setScope(@RequestBody Map<String, String> body) {
+        try {
+            autoPilotService.setScope(body.get("mode"), body.get("start"));
+            return ResponseEntity.ok(autoPilotService.describe());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/verify-period")
+    public ResponseEntity<Map<String, Object>> verifyPeriod(@RequestBody Map<String, String> body) {
+        String period = body.get("period");
+        if (period == null || period.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "Période invalide."));
+        return ResponseEntity.ok(autoPilotService.verifyNow(period.trim()));
+    }
+
+    @PostMapping("/recollect-period")
+    public ResponseEntity<Map<String, Object>> recollectPeriod(@RequestBody Map<String, String> body) {
+        String period = body.get("period");
+        if (period == null || period.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "Période invalide."));
+        autoPilotService.requestRecollect(period.trim());
+        return ResponseEntity.ok(Map.of("ok", true, "message", "Collecte complète de " + period + " programmée."));
+    }
+
+    /** Inspecteur d'EPS : état en base + vérification en direct chez Bytel (live=true), avec réparation auto. */
+    @GetMapping("/check/{idIntervention}")
+    public ResponseEntity<Map<String, Object>> checkEps(@PathVariable String idIntervention,
+                                                        @RequestParam(defaultValue = "false") boolean live) {
+        return ResponseEntity.ok(syncOrchestrator.inspectEps(idIntervention, live));
     }
 
     @GetMapping("/autopilot")

@@ -30,6 +30,13 @@ public class DbIndexInitializer implements ApplicationRunner {
                     "WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''",
             // Compteur des EPS fantômes
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_phantom ON interventions (id) WHERE detail_intervention = '{}'",
+            // File du Healer par période (tri périodes récentes d'abord)
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_fresh_by_period ON interventions (periode, id) " +
+                    "WHERE detail_intervention IS NULL OR detail_intervention = '[]' OR detail_intervention = ''",
+            // Ré-essais programmés des fantômes
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_retry ON interventions (periode, heal_next_at) WHERE detail_intervention = '{}'",
+            // Contrôle des orphelins (EPS plus renvoyés par Bytel)
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_period_seen ON interventions (periode, last_seen_at)",
             // Journal : filtres par source / période
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_source ON sync_events (source, id)",
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_period ON sync_events (period, id)",

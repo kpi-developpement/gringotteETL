@@ -248,6 +248,116 @@
 }
 tr:hover .rowCopy { opacity: 1; }
 
+/* ---------- Phase board (3 phases par période) ---------- */
+.phaseHead, .phaseRow {
+  display: grid;
+  grid-template-columns: 96px repeat(3, minmax(150px, 1fr)) 130px 210px;
+  gap: 12px;
+  align-items: center;
+}
+.phaseHead {
+  padding: 0 14px 10px;
+  font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: #66708a; font-weight: 900;
+}
+.phaseList { display: flex; flex-direction: column; gap: 8px; max-height: 640px; overflow: auto; padding-right: 4px; }
+.phaseRow {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, .1);
+  background: rgba(255, 255, 255, .02);
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+  animation: fadeSwap .5s cubic-bezier(.2, .8, .2, 1) both;
+}
+.phaseRow:hover { border-color: rgba(148, 163, 184, .28); background: rgba(255, 255, 255, .035); transform: translateX(2px); }
+.phaseSel { border-color: rgba(255, 255, 255, .6) !important; }
+.phaseOut { opacity: .45; }
+.phaseLive { border-color: rgba(34, 211, 238, .45); box-shadow: inset 3px 0 0 #22d3ee, 0 0 30px -14px #22d3ee; }
+@media (max-width: 1200px) {
+  .phaseHead { display: none; }
+  .phaseRow { grid-template-columns: 1fr 1fr; }
+}
+
+.step { position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.step::after {
+  content: '';
+  position: absolute; left: 36px; right: -12px; top: 15px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, .25), rgba(148, 163, 184, .05));
+  z-index: 0;
+}
+.stepLast::after { display: none; }
+.stepDot {
+  position: relative; z-index: 1;
+  flex: none;
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: .78rem; font-weight: 900;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  border: 2px solid;
+  background: #070912;
+}
+.stepTxt { min-width: 0; position: relative; z-index: 1; background: transparent; }
+.stepLabel { font-size: .76rem; font-weight: 800; color: #eef2ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stepSub { font-size: .66rem; color: #8a94ad; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sDone { color: #34d399; border-color: #10b981; background: rgba(16, 185, 129, .15); box-shadow: 0 0 14px -4px #10b981; }
+.sActive { color: #67e8f9; border-color: #22d3ee; box-shadow: 0 0 0 0 rgba(34, 211, 238, .6); animation: stepPulse 1.6s ease-out infinite; }
+.sTodo { color: #94a3b8; border-color: rgba(148, 163, 184, .4); }
+.sWarn { color: #fbbf24; border-color: #f59e0b; background: rgba(245, 158, 11, .12); }
+.sErr { color: #fb7185; border-color: #f43f5e; background: rgba(244, 63, 94, .14); animation: stepPulseErr 1.2s ease-out infinite; }
+.sWait { color: #475569; border-color: rgba(71, 85, 105, .4); border-style: dashed; }
+@keyframes stepPulse { 0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, .55); } 100% { box-shadow: 0 0 0 12px rgba(34, 211, 238, 0); } }
+@keyframes stepPulseErr { 0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, .55); } 100% { box-shadow: 0 0 0 12px rgba(244, 63, 94, 0); } }
+
+/* ---------- Phase summary ---------- */
+.phaseSummary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+@media (max-width: 900px) { .phaseSummary { grid-template-columns: 1fr 1fr; } }
+.phaseChip {
+  position: relative;
+  display: flex; gap: 12px; align-items: center;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, .12);
+  background: rgba(20, 24, 42, .7);
+}
+.phaseChipBusy { border-color: rgba(34, 211, 238, .35); }
+.phaseChipBusy .phaseChipIcon { color: #22d3ee; box-shadow: 0 0 22px -6px #22d3ee; }
+.phaseChipDone { border-color: rgba(16, 185, 129, .4); background: linear-gradient(135deg, rgba(16, 185, 129, .12), rgba(20, 24, 42, .7)); }
+.phaseChipDone .phaseChipIcon { color: #34d399; box-shadow: 0 0 22px -6px #10b981; }
+.phaseChipIcon {
+  width: 42px; height: 42px; border-radius: 12px; flex: none;
+  display: grid; place-items: center;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(148, 163, 184, .18);
+  color: #94a3b8;
+}
+.phaseChipLabel { font-size: .64rem; letter-spacing: .14em; text-transform: uppercase; color: #66708a; font-weight: 900; }
+.phaseChipValue { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.6rem; font-weight: 900; color: #fff; line-height: 1.1; }
+.phaseChipHint { font-size: .7rem; color: #a5b0c8; }
+.phaseArrow {
+  position: absolute; right: -14px; top: 50%; transform: translateY(-50%);
+  z-index: 2; color: #475569; font-weight: 900; font-size: 1rem;
+}
+@media (max-width: 900px) { .phaseArrow { display: none; } }
+
+/* ---------- Scope policy ---------- */
+.policy { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.policy > div {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px; border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, .12);
+  background: rgba(255, 255, 255, .02);
+  font-size: .74rem; color: #a5b0c8;
+}
+.policy b { color: #eef2ff; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; }
+.policyNote { font-size: .72rem; color: #66708a; margin-top: 10px; }
+.preview {
+  margin-top: 8px; padding: 10px; border-radius: 10px;
+  background: #02040a; border: 1px solid rgba(148, 163, 184, .15);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .7rem; color: #c7d2fe;
+  white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto;
+}
+
 /* ---------- Copy modal (fallback presse-papier) ---------- */
 .modalBack {
   position: fixed; inset: 0; z-index: 200;

@@ -34,15 +34,16 @@ kyntus:
     base-url: ${KYNTUS_PHP_API_BASE_URL:https://bytel.kyntus.fr}
     sync-key: ${KYNTUS_PHP_API_SYNC_KEY:KYNTUS_SUPER_SECRET_SYNC_KEY_2026_!@#}
 
-  # 🤖 AutoPilot : boucle infinie sur toutes les périodes
+  # 🤖 AutoPilot : 3 phases par période (Collecte → Enrichissement → Vérification) dans un périmètre
   autopilot:
     enabled: ${KYNTUS_AUTOPILOT_ENABLED:true}
-    start-period: ${KYNTUS_AUTOPILOT_START_PERIOD:2024_M01}      # 1ère période de la boucle (jusqu'au mois courant)
-    current-refresh-minutes: ${KYNTUS_AUTOPILOT_REFRESH_MIN:60}  # mois courant ré-inséré en tête de file
-    pass-gap-minutes: ${KYNTUS_AUTOPILOT_PASS_GAP_MIN:2}         # pause entre deux passes complètes
-    phantom-retry-hours: 6                                       # remet les EPS "{}" au Healer
+    scope-mode: ${KYNTUS_SCOPE_MODE:CURRENT_YEAR}          # CURRENT_YEAR | LAST_12 | CUSTOM (modifiable depuis l'UI)
+    scope-start: ${KYNTUS_SCOPE_START:2026_M01}            # utilisé si CUSTOM
+    refresh-current-minutes: ${KYNTUS_REFRESH_CURRENT_MIN:60}   # mois courant : re-collecte complète
+    refresh-previous-hours: ${KYNTUS_REFRESH_PREVIOUS_H:6}      # mois précédent
+    refresh-closed-hours: ${KYNTUS_REFRESH_CLOSED_H:168}        # mois clos (0 = jamais, seulement vérifiés)
+    verify-hours: ${KYNTUS_VERIFY_H:6}                          # vérification légère (1 appel Bytel / période)
     healer-mode: RADAR
-    extra-periods: ${KYNTUS_AUTOPILOT_EXTRA_PERIODS:}            # ex: 2023_M12
     tick-ms: 30000
     initial-delay-ms: 30000
 
@@ -62,3 +63,4 @@ kyntus:
   healer:
     chunk-size: 200
     batch-size: 10
+    max-attempts: ${KYNTUS_HEALER_MAX_ATTEMPTS:5}   # essais (espacés 30m → 48h) avant de classer un EPS "sans détail définitif"

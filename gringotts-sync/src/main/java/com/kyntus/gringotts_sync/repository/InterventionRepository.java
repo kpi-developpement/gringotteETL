@@ -95,12 +95,46 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
     @Query(value = "SELECT COUNT(*) FROM interventions WHERE detail_intervention = '{}'", nativeQuery = true)
     long countPhantoms();
 
-    /** [periode, total, distinct, sans_details, fantomes] */
+    // ---------- File du Healer (périmètre = périodes >= :scope, '' = tout) ----------
+
+    /** EPS jamais enrichis, mois récents d'abord. */
+    @Query(value = "SELECT * FROM interventions WHERE (detail_intervention IS NULL OR detail_intervention = '' OR detail_intervention = '[]') AND (:scope = '' OR periode IS NULL OR periode >= :scope) " +
+            "ORDER BY periode DESC NULLS LAST, id DESC LIMIT :limit", nativeQuery = true)
+    List<Intervention> findFreshDesc(@Param("scope") String scope, @Param("limit") int limit);
+
+    /** EPS jamais enrichis, mois anciens d'abord. */
+    @Query(value = "SELECT * FROM interventions WHERE (detail_intervention IS NULL OR detail_intervention = '' OR detail_intervention = '[]') AND (:scope = '' OR periode IS NULL OR periode >= :scope) " +
+            "ORDER BY periode ASC NULLS LAST, id ASC LIMIT :limit", nativeQuery = true)
+    List<Intervention> findFreshAsc(@Param("scope") String scope, @Param("limit") int limit);
+
+    /** Fantômes dont le ré-essai programmé est arrivé. */
+    @Query(value = "SELECT * FROM interventions WHERE detail_intervention = '{}' AND COALESCE(heal_attempts, 0) < :max " +
+            "AND (heal_next_at IS NULL OR heal_next_at <= now()) AND (:scope = '' OR periode IS NULL OR periode >= :scope) " +
+            "ORDER BY periode DESC NULLS LAST, id DESC LIMIT :limit", nativeQuery = true)
+    List<Intervention> findRetryDue(@Param("scope") String scope, @Param("max") int max, @Param("limit") int limit);
+
+    /** [jamais_tentés, retry_dus, en_backoff, définitifs] dans le périmètre. */
+    @Query(value = "SELECT " +
+            "COUNT(*) FILTER (WHERE (detail_intervention IS NULL OR detail_intervention = '' OR detail_intervention = '[]')), " +
+            "COUNT(*) FILTER (WHERE detail_intervention = '{}' AND COALESCE(heal_attempts, 0) < :max AND (heal_next_at IS NULL OR heal_next_at <= now())), " +
+            "COUNT(*) FILTER (WHERE detail_intervention = '{}' AND COALESCE(heal_attempts, 0) < :max AND heal_next_at > now()), " +
+            "COUNT(*) FILTER (WHERE detail_intervention = '{}' AND COALESCE(heal_attempts, 0) >= :max) " +
+            "FROM interventions WHERE ((detail_intervention IS NULL OR detail_intervention = '' OR detail_intervention = '[]') OR detail_intervention = '{}') AND (:scope = '' OR periode IS NULL OR periode >= :scope)", nativeQuery = true)
+    List<Object[]> healQueueBreakdown(@Param("scope") String scope, @Param("max") int max);
+
+    /** [periode, lignes, distincts, jamais_enrichis, fantomes_en_cours, fantomes_definitifs] */
     @Query(value = "SELECT periode, COUNT(*), COUNT(DISTINCT id_intervention), " +
-            "SUM(CASE WHEN detail_intervention IS NULL OR detail_intervention = '' OR detail_intervention = '[]' THEN 1 ELSE 0 END), " +
-            "SUM(CASE WHEN detail_intervention = '{}' THEN 1 ELSE 0 END) " +
+            "COUNT(*) FILTER (WHERE (detail_intervention IS NULL OR detail_intervention = '' OR detail_intervention = '[]')), " +
+            "COUNT(*) FILTER (WHERE detail_intervention = '{}' AND COALESCE(heal_attempts, 0) < :max), " +
+            "COUNT(*) FILTER (WHERE detail_intervention = '{}' AND COALESCE(heal_attempts, 0) >= :max) " +
             "FROM interventions GROUP BY periode", nativeQuery = true)
-    List<Object[]> periodAggregates();
+    List<Object[]> periodAggregates(@Param("max") int max);
+
+    /** EPS de la période que Bytel n'a pas renvoyés depuis :since (disparus / déplacés). */
+    @Query(value = "SELECT COUNT(*) FROM interventions WHERE periode = :periode AND (last_seen_at IS NULL OR last_seen_at < :since)", nativeQuery = true)
+    long countOrphans(@Param("periode") String periode, @Param("since") java.time.LocalDateTime since);
+
+    List<Intervention> findByIdIntervention(String idIntervention);
 
     @Query(value = "SELECT COUNT(DISTINCT id_intervention) FROM interventions WHERE periode = :periode", nativeQuery = true)
     long countDistinctByPeriode(@Param("periode") String periode);
@@ -110,7 +144,7 @@ public interface InterventionRepository extends JpaRepository<Intervention, Long
 
     @Modifying
     @Transactional
-    @Query(value = "UPDATE interventions SET detail_intervention = NULL WHERE detail_intervention = '{}'", nativeQuery = true)
+    @Query(value = "UPDATE interventions SET heal_attempts = 0, heal_next_at = NULL WHERE detail_intervention = '{}'", nativeQuery = true)
     int resetFailedHeals();
 
     @Modifying

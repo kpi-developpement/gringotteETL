@@ -13,12 +13,20 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.SqlParameterValue;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
@@ -35,7 +43,7 @@ public class SyncOrchestrator {
 
     /** Résultat d'un scan complet d'une période. */
     public record PeriodResult(String period, int inserted, int updated, int remoteTotal,
-                               long localDistinct, long durationMs, boolean empty) {}
+                               long localDistinct, long durationMs, boolean empty, int changed, long orphans) {}
 
     private final PhpApiClient phpApiClient;
     private final InterventionRepository interventionRepository;
@@ -51,6 +59,15 @@ public class SyncOrchestrator {
 
     @Value("${kyntus.healer.batch-size:10}")
     private int healerBatchSize;
+
+    /** Après N essais sans détail, l'EPS est classé "définitif" et sort de la file. */
+    @Value("${kyntus.healer.max-attempts:5}")
+    private int healerMaxAttempts;
+
+    /** Périmètre : périodes >= scopeStart (ex "2026_M01"). "" = tout. Poussé par l'AutoPilot. */
+    private volatile String scopeStart = "";
+
+    private volatile NamedParameterJdbcTemplate named;
 
     private volatile boolean isRunning = false;
     private volatile boolean isHealing = false;
@@ -77,7 +94,9 @@ public class SyncOrchestrator {
     // Compteurs de la période en cours
     private volatile int periodInserted = 0;
     private volatile int periodUpdated = 0;
+    private volatile int periodChanged = 0;
     private volatile long periodStartedAt = 0;
+    private volatile String scanStartMarkedFor = null;
 
     private volatile Consumer<PeriodResult> periodListener = r -> {};
 
@@ -96,6 +115,7 @@ public class SyncOrchestrator {
     private final AtomicLong hFailed = new AtomicLong();
     private final AtomicLong hFailedBatches = new AtomicLong();
     private final AtomicLong hRecovered = new AtomicLong();
+    private final AtomicLong hDefinitive = new AtomicLong();
     private final ConcurrentLinkedDeque<long[]> healWindow = new ConcurrentLinkedDeque<>(); // [ts, count]
     private final List<Map<String, Object>> recentLots = new CopyOnWriteArrayList<>();
     private volatile long lastHealSuccessAt = 0;
@@ -121,6 +141,18 @@ public class SyncOrchestrator {
     public int getPeriodInserted() { return periodInserted; }
     public int getPeriodUpdated() { return periodUpdated; }
     public long getPeriodStartedAt() { return periodStartedAt; }
+    public int getPeriodChanged() { return periodChanged; }
+    public int getHealerMaxAttempts() { return healerMaxAttempts; }
+    public String getScopeStart() { return scopeStart; }
+    public void setScopeStart(String scope) {
+        String v = scope == null ? "" : scope;
+        if (!v.equals(this.scopeStart)) { this.scopeStart = v; queueCachedAt = 0; }
+    }
+
+    private NamedParameterJdbcTemplate named() {
+        if (named == null) named = new NamedParameterJdbcTemplate(jdbcTemplate);
+        return named;
+    }
 
     public void setPeriodListener(Consumer<PeriodResult> listener) { this.periodListener = listener; }
 
@@ -191,17 +223,142 @@ public class SyncOrchestrator {
     }
 
     /** Insère une période en tête de file (ex: mois courant à rafraîchir pendant une passe). */
-    public synchronized boolean injectPriority(String period) {
+    public synchronized boolean injectPriority(String period, boolean forceFullRescan) {
         if (!isRunning || period.equals(currentPeriod) || periodQueue.contains(period)) return false;
         int off = getSavedState("offset_" + period), tot = getSavedState("total_" + period);
-        if (tot > 0 && off >= tot) saveState("offset_" + period, 0);
+        if (forceFullRescan || (tot > 0 && off >= tot)) saveState("offset_" + period, 0);
         periodQueue.offerFirst(period);
-        event(AUTOPILOT, INFO, period, "Rafraîchissement prioritaire de " + period + " inséré en tête de file.");
+        event(AUTOPILOT, INFO, period, (forceFullRescan ? "Collecte complète" : "Rafraîchissement")
+                + " de " + period + " inséré en tête de file.");
         return true;
     }
 
     public long countLocalDistinct(String period) {
         return interventionRepository.countDistinctByPeriode(period);
+    }
+
+    /** Sonde légère (limit=1) : total réel Bytel d'une période. -1 si injoignable. */
+    public int probeRemoteTotal(String period) {
+        if (!throttle.acquire(() -> true)) return -1;
+        long t0 = System.currentTimeMillis();
+        try {
+            ImportResponse resp = phpApiClient.triggerImport(0, 1, period);
+            throttle.onSuccess(System.currentTimeMillis() - t0);
+            if (resp != null && resp.isOk()) {
+                int t = Math.max(0, resp.getTotalApi());
+                if (t > 0) saveState("total_" + period, t);
+                return t;
+            }
+            return -1;
+        } catch (RestClientResponseException e) {
+            handleHttpError(e);
+            return -1;
+        } catch (ResourceAccessException e) {
+            handleTimeout();
+            return -1;
+        } catch (Exception e) {
+            throttle.onError();
+            return -1;
+        }
+    }
+
+    /** EPS de la période non renvoyés par Bytel depuis sinceMillis. */
+    public long countOrphans(String period, long sinceMillis) {
+        return interventionRepository.countOrphans(period,
+                LocalDateTime.ofInstant(Instant.ofEpochMilli(sinceMillis), ZoneId.systemDefault()));
+    }
+
+    private String detailStatus(Intervention r) {
+        String d = r.getDetailIntervention();
+        if (d == null || d.isBlank() || "[]".equals(d)) return "NON_ENRICHI";
+        if ("{}".equals(d)) {
+            int a = r.getHealAttempts() == null ? 0 : r.getHealAttempts();
+            return a >= healerMaxAttempts ? "DEFINITIF" : "EN_REESSAI";
+        }
+        return "OK";
+    }
+
+    /** Inspecteur d'un EPS : état en base + (option) vérification en direct chez Bytel, avec réparation auto. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> inspectEps(String idIntervention, boolean live) {
+        String id = idIntervention.trim();
+        List<Intervention> rows = interventionRepository.findByIdIntervention(id);
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("id_intervention", id);
+        res.put("found", !rows.isEmpty());
+        res.put("duplicates", Math.max(0, rows.size() - 1));
+
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (Intervention r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", r.getId());
+            m.put("periode", r.getPeriode());
+            m.put("in_scope", scopeStart.isEmpty() || r.getPeriode() == null || r.getPeriode().compareTo(scopeStart) >= 0);
+            m.put("etat", r.getEtat());
+            m.put("type", r.getTypeIntervention());
+            m.put("mainteneur", r.getMainteneur());
+            m.put("source", r.getSourceIngestion());
+            m.put("date_modification_etat", r.getDateModificationEtat() == null ? null : r.getDateModificationEtat().toString());
+            m.put("last_seen_at", r.getLastSeenAt() == null ? null : r.getLastSeenAt().toString());
+            m.put("detail_status", detailStatus(r));
+            m.put("detail_size", r.getDetailIntervention() == null ? 0 : r.getDetailIntervention().length());
+            m.put("heal_attempts", r.getHealAttempts() == null ? 0 : r.getHealAttempts());
+            m.put("heal_next_at", r.getHealNextAt() == null ? null : r.getHealNextAt().toString());
+            list.add(m);
+        }
+        res.put("rows", list);
+
+        if (live) {
+            Map<String, Object> lv = new LinkedHashMap<>();
+            if (!throttle.acquire(() -> true)) {
+                lv.put("reachable", false);
+                lv.put("error", "Bytel en pause de protection");
+            } else {
+                long t0 = System.currentTimeMillis();
+                try {
+                    Map<String, Object> resp = phpApiClient.healData(List.of(id));
+                    throttle.onSuccess(System.currentTimeMillis() - t0);
+                    boolean ok = resp != null && Boolean.TRUE.equals(resp.get("ok"));
+                    Object d = ok && resp.get("data") instanceof Map<?, ?> dm ? ((Map<String, Object>) dm).get(id) : null;
+                    boolean has = hasDetail(d);
+                    lv.put("reachable", ok);
+                    lv.put("has_detail", has);
+                    lv.put("latency_ms", System.currentTimeMillis() - t0);
+                    if (has) {
+                        String detail = d instanceof String str ? str : objectMapper.writeValueAsString(d);
+                        lv.put("preview", detail.length() > 400 ? detail.substring(0, 400) + "…" : detail);
+                        List<Object[]> fix = rows.stream().filter(r -> !"OK".equals(detailStatus(r)))
+                                .map(r -> new Object[]{detail, r.getId()}).toList();
+                        if (!fix.isEmpty()) {
+                            jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = ?, heal_next_at = NULL WHERE id = ?", fix);
+                            lv.put("repaired", fix.size());
+                            event(HEALER, SUCCESS, rows.get(0).getPeriode(), "EPS " + id + " réparé par vérification manuelle (détail récupéré en direct).");
+                        }
+                    }
+                } catch (RestClientResponseException e) {
+                    handleHttpError(e);
+                    lv.put("reachable", false);
+                    lv.put("error", "HTTP " + e.getStatusCode().value());
+                } catch (ResourceAccessException e) {
+                    handleTimeout();
+                    lv.put("reachable", false);
+                    lv.put("error", "Timeout Bytel");
+                } catch (Exception e) {
+                    throttle.onError();
+                    lv.put("reachable", false);
+                    lv.put("error", e.getMessage());
+                }
+            }
+            res.put("live", lv);
+        }
+
+        String verdict;
+        if (rows.isEmpty()) verdict = "ABSENT_BASE";
+        else if (rows.size() > 1) verdict = "DOUBLON";
+        else if ("OK".equals(detailStatus(rows.get(0))) || (res.get("live") instanceof Map<?, ?> l && l.get("repaired") != null)) verdict = "OK";
+        else verdict = detailStatus(rows.get(0));
+        res.put("verdict", verdict);
+        return res;
     }
 
     public int getSavedOffset(String period) { return getSavedState("offset_" + period); }
@@ -384,7 +541,8 @@ public class SyncOrchestrator {
 
     public int retryFailedHeals() {
         int count = interventionRepository.resetFailedHeals();
-        event(HEALER, INFO, null, count + " EPS fantômes remis en file d'attente.");
+        queueCachedAt = 0;
+        event(HEALER, INFO, null, count + " EPS fantômes : compteur d'essais remis à zéro (ré-essai immédiat, étalé par lots).");
         return count;
     }
 
@@ -393,22 +551,28 @@ public class SyncOrchestrator {
     private void resetPeriodCounters() {
         periodInserted = 0;
         periodUpdated = 0;
+        periodChanged = 0;
+        scanStartMarkedFor = null;
         periodStartedAt = System.currentTimeMillis();
     }
 
     private void finishPeriod(String period, int remoteTotal, boolean empty) {
         long local = countLocalDistinct(period);
         long duration = System.currentTimeMillis() - periodStartedAt;
-        PeriodResult res = new PeriodResult(period, periodInserted, periodUpdated, remoteTotal, local, duration, empty);
+        long scanStart = getStateLong("ap_scanstart_" + period);
+        long orphans = scanStart > 0 ? countOrphans(period, scanStart) : -1;
+        PeriodResult res = new PeriodResult(period, periodInserted, periodUpdated, remoteTotal, local, duration, empty, periodChanged, orphans);
 
         if (empty) {
             event(TM, WARN, period, "Bytel ne retourne aucun EPS pour " + period + ".");
         } else {
-            event(TM, SUCCESS, period, String.format("Scan %s terminé en %s : %d nouveaux, %d mis à jour. Base: %d / Bytel: %d EPS",
-                    period, formatDuration(duration), periodInserted, periodUpdated, local, remoteTotal));
+            event(TM, SUCCESS, period, String.format(
+                    "Collecte %s terminée en %s : %d nouveaux, %d réellement modifiés (%d relus). Base: %d / Bytel: %d EPS%s",
+                    period, formatDuration(duration), periodInserted, periodChanged, periodUpdated, local, remoteTotal,
+                    orphans > 0 ? " · " + orphans + " EPS plus renvoyés par Bytel" : ""));
             if (remoteTotal > 0 && local < remoteTotal) {
                 event(TM, WARN, period, (remoteTotal - local) + " EPS manquants sur " + period
-                        + " (" + local + "/" + remoteTotal + ") — repris à la prochaine passe.");
+                        + " (" + local + "/" + remoteTotal + ") — la vérification va relancer une collecte.");
             }
         }
         try { periodListener.accept(res); } catch (Exception e) { log.warn("Listener période: {}", e.getMessage()); }
@@ -423,6 +587,12 @@ public class SyncOrchestrator {
                 int localOffset = getSavedState("offset_" + activePeriod);
                 int localTotalApi = getSavedState("total_" + activePeriod);
                 boolean periodEmpty = false;
+
+                // Début d'une collecte complète : on note l'heure (sert au contrôle des EPS orphelins).
+                if (localOffset == 0 && !activePeriod.equals(scanStartMarkedFor)) {
+                    saveStateStr("ap_scanstart_" + activePeriod, Long.toString(System.currentTimeMillis()));
+                    scanStartMarkedFor = activePeriod;
+                }
 
                 if (localTotalApi > 0 && localOffset >= localTotalApi) {
                     finishPeriod(activePeriod, localTotalApi, false);
@@ -487,6 +657,7 @@ public class SyncOrchestrator {
                                 int[] counts = upsertBatch(incomingData, activePeriod);
                                 periodInserted += counts[0];
                                 periodUpdated += counts[1];
+                                periodChanged += counts[2];
                             }
 
                             int newTotal = importResp.getTotalApi();
@@ -558,7 +729,7 @@ public class SyncOrchestrator {
                 sleep(5000);
             }
         }
-        timeMachineStatus = isRunning ? "Passe terminée" : "Arrêté";
+        timeMachineStatus = isRunning ? "File terminée" : "Arrêté";
         isRunning = false;
         log.info("Thread Time Machine arrêté.");
     }
@@ -578,14 +749,21 @@ public class SyncOrchestrator {
         return true;
     }
 
-    /** Upsert d'un lot. Retourne {insérés, mis à jour}. */
+    /**
+     * Upsert d'un lot + contrôle. Retourne {insérés, relus, réellement modifiés}.
+     * Après écriture, on vérifie que CHAQUE EPS reçu est bien en base (sinon la page est rejouée)
+     * et on marque last_seen_at (sert à détecter les EPS que Bytel ne renvoie plus).
+     */
     private int[] upsertBatch(List<Intervention> incomingData, String activePeriod) {
-        int[] counts = new int[2];
+        int[] counts = new int[3];
+        LocalDateTime seenAt = LocalDateTime.now();
+        List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention)
+                .filter(id -> id != null && !id.isEmpty()).distinct().toList();
+
         transactionTemplate.executeWithoutResult(status -> {
-            List<String> incomingEpsIds = incomingData.stream().map(Intervention::getIdIntervention)
-                    .filter(id -> id != null && !id.isEmpty()).toList();
             Map<String, Intervention> existingMap = interventionRepository.findByIdInterventionIn(incomingEpsIds).stream()
                     .collect(Collectors.toMap(Intervention::getIdIntervention, i -> i, (i1, i2) -> i1));
+            List<Intervention> toSave = new ArrayList<>();
 
             for (Intervention incoming : incomingData) {
                 if (incoming.getIdIntervention() == null || incoming.getIdIntervention().isEmpty()) continue;
@@ -597,24 +775,73 @@ public class SyncOrchestrator {
                     existing.setId(null);
                     existing.setSourceIngestion("TIME_MACHINE");
                     existing.setPeriode(realPeriod);
+                    existing.setLastSeenAt(seenAt);
                     existingMap.put(existing.getIdIntervention(), existing);
+                    toSave.add(existing);
                     counts[0]++;
                 } else {
-                    existing.setEtat(incoming.getEtat());
-                    existing.setDateModificationEtat(incoming.getDateModificationEtat());
-                    existing.setTypeIntervention(incoming.getTypeIntervention());
-                    existing.setMainteneur(incoming.getMainteneur());
-                    existing.setPayloadRecu(incoming.getPayloadRecu());
-                    existing.setPeriode(realPeriod);
+                    boolean changed = !Objects.equals(existing.getEtat(), incoming.getEtat())
+                            || !Objects.equals(existing.getDateModificationEtat(), incoming.getDateModificationEtat())
+                            || !Objects.equals(existing.getTypeIntervention(), incoming.getTypeIntervention())
+                            || !Objects.equals(existing.getMainteneur(), incoming.getMainteneur())
+                            || !Objects.equals(existing.getPeriode(), realPeriod);
+                    boolean payloadChanged = !Objects.equals(existing.getPayloadRecu(), incoming.getPayloadRecu());
+                    if (changed || payloadChanged) {
+                        existing.setEtat(incoming.getEtat());
+                        existing.setDateModificationEtat(incoming.getDateModificationEtat());
+                        existing.setTypeIntervention(incoming.getTypeIntervention());
+                        existing.setMainteneur(incoming.getMainteneur());
+                        existing.setPayloadRecu(incoming.getPayloadRecu());
+                        existing.setPeriode(realPeriod);
+                        toSave.add(existing);
+                    }
+                    if (changed) counts[2]++;
                     counts[1]++;
                 }
             }
-            interventionRepository.saveAll(existingMap.values());
+            if (!toSave.isEmpty()) interventionRepository.saveAll(toSave);
         });
+
+        if (!incomingEpsIds.isEmpty()) {
+            MapSqlParameterSource ps = new MapSqlParameterSource()
+                    .addValue("ts", Timestamp.valueOf(seenAt))
+                    .addValue("ids", incomingEpsIds);
+            named().update("UPDATE interventions SET last_seen_at = :ts WHERE id_intervention IN (:ids)", ps);
+            Integer present = named().queryForObject(
+                    "SELECT COUNT(DISTINCT id_intervention) FROM interventions WHERE id_intervention IN (:ids)", ps, Integer.class);
+            if (present == null || present < incomingEpsIds.size()) {
+                throw new IllegalStateException("Contrôle page : " + (incomingEpsIds.size() - (present == null ? 0 : present))
+                        + " EPS reçus introuvables en base après écriture — page rejouée");
+            }
+        }
         return counts;
     }
 
     // ------------------------------------------------------------ Healer
+
+    /** Espacement des ré-essais d'un EPS sans détail (minutes) : 30 min, 2 h, 8 h, 24 h, 48 h… */
+    private static final long[] HEAL_BACKOFF_MIN = {30, 120, 480, 1440, 2880, 5760};
+
+    private volatile Map<String, Object> queueCache = Map.of();
+    private volatile long queueCachedAt = 0;
+
+    private static long num(Object o) { return o == null ? 0L : ((Number) o).longValue(); }
+
+    /** File du Healer dans le périmètre (cache 10 s). */
+    public Map<String, Object> healQueue() {
+        if (System.currentTimeMillis() - queueCachedAt > 10_000) {
+            List<Object[]> r = interventionRepository.healQueueBreakdown(scopeStart, healerMaxAttempts);
+            Object[] row = r.isEmpty() ? new Object[4] : r.get(0);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("fresh", num(row[0]));
+            m.put("retry_due", num(row[1]));
+            m.put("backoff", num(row[2]));
+            m.put("definitive", num(row[3]));
+            queueCache = m;
+            queueCachedAt = System.currentTimeMillis();
+        }
+        return queueCache;
+    }
 
     private <T> List<List<T>> partition(List<T> list, int size) {
         List<List<T>> partitions = new ArrayList<>();
@@ -626,45 +853,57 @@ public class SyncOrchestrator {
 
     private void backgroundHealerLoop() {
         healerStatus = "En veille";
-        boolean announcedUpToDate = false;
+        boolean announcedIdle = false;
 
         while (isHealing) {
             try {
-                long missingCount = interventionRepository.countInterventionsWithMissingDetails();
-                if (missingCount == 0) {
+                String scope = scopeStart;
+                List<Intervention> chunk = new ArrayList<>("TIME_MACHINE".equals(healerMode)
+                        ? interventionRepository.findFreshAsc(scope, healerChunkSize)
+                        : interventionRepository.findFreshDesc(scope, healerChunkSize));
+                int freshCount = chunk.size();
+                if (chunk.size() < healerChunkSize) {
+                    chunk.addAll(interventionRepository.findRetryDue(scope, healerMaxAttempts, healerChunkSize - chunk.size()));
+                }
+
+                queueCachedAt = 0;
+                Map<String, Object> q = healQueue();
+                long pending = num(q.get("fresh")) + num(q.get("retry_due"));
+
+                if (chunk.isEmpty()) {
                     healTotal = 0;
                     healCurrent = 0;
-                    healerStatus = "Base 100% à jour";
-                    if (!announcedUpToDate) {
-                        event(HEALER, SUCCESS, null, "File vide : tous les EPS ont leurs détails.");
-                        announcedUpToDate = true;
+                    long backoff = num(q.get("backoff"));
+                    healerStatus = backoff > 0
+                            ? "À jour — " + backoff + " EPS attendent un ré-essai programmé"
+                            : "Périmètre 100% traité";
+                    if (!announcedIdle) {
+                        event(HEALER, SUCCESS, null, backoff > 0
+                                ? "File vide. " + backoff + " EPS sans détail seront ré-essayés plus tard (espacement), "
+                                  + q.get("definitive") + " classés définitifs."
+                                : "Tous les EPS du périmètre ont été traités (" + q.get("definitive") + " définitifs sans détail).");
+                        announcedIdle = true;
                     }
-                    sleep(10000);
+                    sleep(20000);
                     continue;
                 }
-                announcedUpToDate = false;
+                announcedIdle = false;
 
-                healTotal = (int) missingCount;
+                healTotal = (int) pending;
                 healCurrent = 0;
-
-                List<Intervention> chunk = "TIME_MACHINE".equals(healerMode)
-                        ? interventionRepository.findMissingDetailsAsc(healerChunkSize)
-                        : interventionRepository.findMissingDetailsDesc(healerChunkSize);
-
-                if (chunk.isEmpty()) { sleep(5000); continue; }
-
-                healerStatus = "Récupération détails (" + chunk.size() + " EPS) | " + throttle.describe();
+                healerStatus = "Enrichissement : " + freshCount + " nouveaux + " + (chunk.size() - freshCount)
+                        + " ré-essais | " + throttle.describe();
                 long t0 = System.currentTimeMillis();
 
                 List<Future<int[]>> futures = new ArrayList<>();
                 for (List<Intervention> batch : partition(chunk, Math.max(1, healerBatchSize))) {
                     futures.add(healerThreadPool.submit(() -> healBatch(batch)));
                 }
-                int ok = 0, notFound = 0, failed = 0;
+                int ok = 0, notFound = 0, failed = 0, definitive = 0, recovered = 0;
                 for (Future<int[]> f : futures) {
                     try {
                         int[] r = f.get();
-                        ok += r[0]; notFound += r[1]; failed += r[2];
+                        ok += r[0]; notFound += r[1]; failed += r[2]; definitive += r[3]; recovered += r[4];
                     } catch (ExecutionException ee) {
                         log.error("Erreur batch Healer", ee.getCause());
                         lastHealError = String.valueOf(ee.getCause().getMessage());
@@ -676,13 +915,16 @@ public class SyncOrchestrator {
                 healCurrent += done;
                 totalHealerProcessed += done;
                 if (done > 0) healWindow.add(new long[]{System.currentTimeMillis(), ok});
-                recordLot(chunk.size(), ok, notFound, failed, dur, missingCount);
+                recordLot(chunk.size(), ok, notFound, failed, dur, pending);
 
                 healerStatus = "Lot " + done + "/" + chunk.size() + " traité | " + throttle.describe();
                 if (done > 0) {
                     event(HEALER, failed > 0 ? WARN : SUCCESS, null, String.format(
-                            "Lot de %d EPS en %s : %d enrichis, %d sans détail chez Bytel, %d échecs réseau. Reste %d.",
-                            done, formatDuration(dur), ok, notFound, failed, Math.max(0, missingCount - done)));
+                            "Lot de %d EPS (%d nouveaux, %d ré-essais) en %s : %d enrichis%s, %d sans détail → ré-essai programmé, %d échecs réseau%s. File : %d.",
+                            done, freshCount, chunk.size() - freshCount, formatDuration(dur), ok,
+                            recovered > 0 ? " (dont " + recovered + " au 2e essai)" : "",
+                            notFound, failed, definitive > 0 ? ", " + definitive + " classés définitifs" : "",
+                            Math.max(0, pending - done)));
                 }
 
             } catch (Exception e) {
@@ -710,15 +952,19 @@ public class SyncOrchestrator {
         while (recentLots.size() > 40) recentLots.remove(recentLots.size() - 1);
     }
 
-    /** Soigne un petit lot d'EPS. Retourne {enrichis, absents chez Bytel, échecs}. */
+    /**
+     * Soigne un petit lot d'EPS. Retourne {enrichis, sans détail, échecs réseau, définitifs, sauvés au 2e essai}.
+     * Un EPS sans détail n'est PAS remis en file tout de suite : il reçoit un ré-essai programmé (backoff),
+     * et après {@code healerMaxAttempts} essais il est classé définitif -> le Healer termine toujours.
+     */
     @SuppressWarnings("unchecked")
     private int[] healBatch(List<Intervention> batch) {
-        if (!isHealing) return new int[3];
+        if (!isHealing) return new int[5];
         List<String> idsToHeal = batch.stream().map(Intervention::getIdIntervention).toList();
         Map<String, Object> healedData = null;
 
         for (int attempt = 1; attempt <= 3 && isHealing; attempt++) {
-            if (!throttle.acquire(() -> isHealing)) return new int[3];
+            if (!throttle.acquire(() -> isHealing)) return new int[5];
             long t0 = System.currentTimeMillis();
             try {
                 Map<String, Object> response = phpApiClient.healData(idsToHeal);
@@ -741,9 +987,10 @@ public class SyncOrchestrator {
             }
         }
 
-        if (healedData == null && !isHealing) return new int[3]; // arrêt : on ne marque rien en fantôme
+        if (healedData == null && !isHealing) return new int[5]; // arrêt : on ne touche à rien
 
-        // 2e chance : sous charge, le proxy PHP peut répondre ok=true en omettant des IDs.
+        // 2e chance immédiate pour les IDs omis par le proxy.
+        int recovered = 0;
         if (healedData != null && isHealing) {
             final Map<String, Object> first = healedData;
             List<String> missing = idsToHeal.stream().filter(id -> !hasDetail(first.get(id))).toList();
@@ -753,14 +1000,12 @@ public class SyncOrchestrator {
                     Map<String, Object> retry = phpApiClient.healData(missing);
                     throttle.onSuccess(System.currentTimeMillis() - t0);
                     if (retry != null && Boolean.TRUE.equals(retry.get("ok")) && retry.get("data") instanceof Map<?, ?> rd) {
-                        int rec = 0;
                         Map<String, Object> merged = new HashMap<>(first);
                         for (String id : missing) {
                             Object d = rd.get(id);
-                            if (hasDetail(d)) { merged.put(id, d); rec++; }
+                            if (hasDetail(d)) { merged.put(id, d); recovered++; }
                         }
                         healedData = merged;
-                        if (rec > 0) hRecovered.addAndGet(rec);
                     }
                 } catch (RestClientResponseException e) {
                     handleHttpError(e);
@@ -772,34 +1017,47 @@ public class SyncOrchestrator {
             }
         }
 
-        int ok = 0, notFound = 0, failed = 0;
-        List<Object[]> updates = new ArrayList<>(batch.size());
+        int ok = 0, notFound = 0, failed = 0, definitive = 0;
+        LocalDateTime now = LocalDateTime.now();
+        List<Object[]> okUpdates = new ArrayList<>();
+        List<Object[]> koUpdates = new ArrayList<>();
         for (Intervention inv : batch) {
-            String detail = "{}";
-            if (healedData == null) {
-                failed++;
-            } else {
-                Object detailObj = healedData.get(inv.getIdIntervention());
-                if (!hasDetail(detailObj)) {
-                    notFound++;
-                } else if (detailObj instanceof String str) {
-                    detail = str;
-                    ok++;
-                } else {
-                    try { detail = objectMapper.writeValueAsString(detailObj); ok++; }
-                    catch (Exception ex) { notFound++; }
-                }
+            Object d = healedData == null ? null : healedData.get(inv.getIdIntervention());
+            String detail = null;
+            if (hasDetail(d)) {
+                try { detail = d instanceof String str ? str : objectMapper.writeValueAsString(d); }
+                catch (Exception ignored) { detail = null; }
             }
-            updates.add(new Object[]{detail, inv.getId()});
+            if (detail != null) {
+                ok++;
+                okUpdates.add(new Object[]{detail, inv.getId()});
+            } else {
+                if (healedData == null) failed++; else notFound++;
+                int attempts = (inv.getHealAttempts() == null ? 0 : inv.getHealAttempts()) + 1;
+                Timestamp next = null;
+                if (attempts >= healerMaxAttempts) definitive++;
+                else next = Timestamp.valueOf(now.plusMinutes(HEAL_BACKOFF_MIN[Math.min(attempts - 1, HEAL_BACKOFF_MIN.length - 1)]));
+                koUpdates.add(new Object[]{attempts, new SqlParameterValue(Types.TIMESTAMP, next), inv.getId()});
+            }
         }
-        jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = ? WHERE id = ?", updates);
+        if (!okUpdates.isEmpty()) {
+            jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = ?, heal_next_at = NULL WHERE id = ?", okUpdates);
+        }
+        if (!koUpdates.isEmpty()) {
+            jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = '{}', heal_attempts = ?, heal_next_at = ? WHERE id = ?", koUpdates);
+        }
+
+        // Beaucoup d'IDs omis alors que Bytel répond : symptôme de surcharge -> on ralentit un peu.
+        if (healedData != null && notFound * 2 > batch.size()) throttle.onSoftPressure();
 
         hEnriched.addAndGet(ok);
         hNotFound.addAndGet(notFound);
         hFailed.addAndGet(failed);
+        hRecovered.addAndGet(recovered);
+        hDefinitive.addAndGet(definitive);
         if (failed > 0) hFailedBatches.incrementAndGet();
         if (ok > 0) lastHealSuccessAt = System.currentTimeMillis();
-        return new int[]{ok, notFound, failed};
+        return new int[]{ok, notFound, failed, definitive, recovered};
     }
 
     private static boolean hasDetail(Object d) {
@@ -815,18 +1073,26 @@ public class SyncOrchestrator {
         long now = System.currentTimeMillis();
         while (!healWindow.isEmpty() && now - healWindow.peekFirst()[0] > 10 * 60_000) healWindow.pollFirst();
         long last5 = healWindow.stream().filter(w -> now - w[0] <= 5 * 60_000).mapToLong(w -> w[1]).sum();
+        Map<String, Object> q = healQueue();
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("running", isHealing);
         m.put("mode", healerMode);
         m.put("status", healerStatus);
-        m.put("queue", interventionRepository.countInterventionsWithMissingDetails());
-        m.put("phantoms", interventionRepository.countPhantoms());
+        m.put("scope_start", scopeStart);
+        m.put("max_attempts", healerMaxAttempts);
+        m.put("queue", num(q.get("fresh")) + num(q.get("retry_due")));
+        m.put("fresh", num(q.get("fresh")));
+        m.put("retry_due", num(q.get("retry_due")));
+        m.put("backoff", num(q.get("backoff")));
+        m.put("definitive", num(q.get("definitive")));
+        m.put("phantoms", num(q.get("retry_due")) + num(q.get("backoff")) + num(q.get("definitive")));
         m.put("enriched", hEnriched.get());
         m.put("not_found", hNotFound.get());
         m.put("failed", hFailed.get());
         m.put("failed_batches", hFailedBatches.get());
         m.put("recovered", hRecovered.get());
+        m.put("definitive_session", hDefinitive.get());
         m.put("rate_per_min", Math.round(last5 / 5.0));
         m.put("last_success_ago_s", lastHealSuccessAt == 0 ? -1 : (now - lastHealSuccessAt) / 1000);
         m.put("last_error", lastHealError);
@@ -857,6 +1123,19 @@ public class SyncOrchestrator {
         state.setStateKey(key);
         state.setStateValue(value);
         syncStateRepository.save(state);
+    }
+
+    private void saveStateStr(String key, String value) {
+        SyncState state = syncStateRepository.findById(key).orElse(new SyncState());
+        state.setStateKey(key);
+        state.setStateValueStr(value);
+        syncStateRepository.save(state);
+    }
+
+    private long getStateLong(String key) {
+        String v = syncStateRepository.findById(key).map(SyncState::getStateValueStr).orElse(null);
+        if (v == null || v.isEmpty()) return 0L;
+        try { return Long.parseLong(v); } catch (NumberFormatException e) { return 0L; }
     }
 
     private int getSavedState(String key) {

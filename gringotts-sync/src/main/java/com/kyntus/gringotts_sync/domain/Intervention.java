@@ -5,10 +5,12 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.DynamicUpdate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
+@DynamicUpdate // UPDATE uniquement des colonnes modifiées : la Time Machine n'écrase plus les détails écrits par le Healer
 @Table(name = "interventions")
 @Getter
 @Setter
@@ -78,6 +80,21 @@ public class Intervention {
     @JsonProperty("periode")
     @Column(name = "periode")
     private String periode;
+
+    /** Dernière fois que Bytel a renvoyé cet EPS dans un scan (contrôle "orphelins"). */
+    @JsonProperty(value = "last_seen_at", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "last_seen_at")
+    private LocalDateTime lastSeenAt;
+
+    /** Nombre d'essais du Healer sans obtenir de détail. */
+    @JsonProperty(value = "heal_attempts", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "heal_attempts")
+    private Integer healAttempts;
+
+    /** Prochain essai programmé du Healer (null = pas de ré-essai prévu). */
+    @JsonProperty(value = "heal_next_at", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "heal_next_at")
+    private LocalDateTime healNextAt;
 
     // WRITE_ONLY : lu depuis le payload PHP, jamais renvoyé à l'UI (collection LAZY hors session = erreur 500).
     @JsonProperty(value = "actions_log", access = JsonProperty.Access.WRITE_ONLY)

@@ -55,13 +55,15 @@ function Row({ y, yi, curY, curM, byPeriod, selected, onSelect }: {
         if (!r || future) {
           return <div key={p} className={cx(s.cell, s.cellFuture)} style={{ animationDelay: `${(yi * 12 + i) * 18}ms` }}><span className={s.cellLabel}>{String(i + 1).padStart(2, '0')}</span></div>;
         }
-        const cls = r.state === 'ACTIVE' ? s.cellActive
+        const cls = !r.in_scope ? s.cellFuture
+          : r.state === 'ACTIVE' ? s.cellActive
           : r.state === 'QUEUED' ? s.cellQueued
           : r.gap > 0 ? s.cellGap
           : r.state === 'DONE' ? s.cellDone : s.cellPending;
         const cov = coverage(r);
         const tip = [
-          `${p} — ${STATE_LABEL[r.state]}`,
+          `${p} — ${!r.in_scope ? 'Hors périmètre' : r.overall === 'COMPLETE' ? 'Complet ✓' : STATE_LABEL[r.state]}`,
+          r.in_scope ? `Collecte: ${r.collect?.status} · Enrichissement: ${r.enrich?.status} (${r.enrich?.pct}%) · Vérification: ${r.verify?.status}` : '',
           `Base: ${r.local_distinct.toLocaleString('fr-FR')} EPS / Bytel: ${r.remote_total ? r.remote_total.toLocaleString('fr-FR') : '?'}`,
           r.gap > 0 ? `⚠ ${r.gap.toLocaleString('fr-FR')} EPS manquants` : '',
           `Sans détails: ${r.missing_details.toLocaleString('fr-FR')} · Fantômes: ${r.phantoms.toLocaleString('fr-FR')}`,

@@ -25,10 +25,22 @@ export interface SyncStats {
   event_counts_24h?: Record<string, number>;
 }
 
+export type ScopeMode = 'CURRENT_YEAR' | 'LAST_12' | 'CUSTOM';
+
 export interface AutoPilotInfo {
   enabled: boolean;
   status: string;
   last_tick: string;
+  scope_mode: ScopeMode;
+  scope_label: string;
+  scope_start: string;
+  scope_periods: string[];
+  periods_total: number;
+  periods_complete: number;
+  completeness: number;
+  phase_counts: { collect: number; enrich: number; verify: number; complete: number };
+  next_current_refresh_min: number;
+  refresh: { current_min: number; previous_h: number; closed_h: number; verify_h: number };
   pass: number;
   pass_started: string | null;
   pass_done: number;
@@ -47,8 +59,18 @@ export interface SyncEvent {
   message: string;
 }
 
+export type CollectStatus = 'ACTIVE' | 'QUEUED' | 'TODO' | 'PARTIAL' | 'GAP' | 'EMPTY' | 'DONE';
+export type EnrichStatus = 'WAIT' | 'DONE' | 'RETRY' | 'ACTIVE' | 'TODO';
+export type VerifyStatus = 'WAIT' | 'TODO' | 'DONE' | 'GAP' | 'GAP_PERSISTENT';
+export type Overall = 'COMPLETE' | 'IN_PROGRESS' | 'ANOMALY' | 'EMPTY' | 'OUT_OF_SCOPE';
+
 export interface PeriodRow {
   period: string;
+  in_scope: boolean;
+  overall: Overall;
+  collect: { status: CollectStatus; offset: number; remote_total: number; progress: number; scans: number; last_scan: string | null; next_refresh_min: number | null };
+  enrich: { status: EnrichStatus; fresh: number; retry: number; definitive: number; with_detail: number; pct: number };
+  verify: { status: VerifyStatus; at: string | null; remote: number | null; local: number | null; orphans: number | null };
   state: 'ACTIVE' | 'QUEUED' | 'DONE' | 'PENDING';
   local_rows: number;
   local_distinct: number;
@@ -62,7 +84,7 @@ export interface PeriodRow {
   scans: number;
   pass_done: number;
   last_scan: string | null;
-  last_result: { inserted: number; updated: number; local: number; remote: number; duration: string; empty: boolean } | null;
+  last_result: { inserted: number; updated: number; local: number; remote: number; duration: string; empty: boolean; changed: number | null; orphans: number | null } | null;
 }
 
 export interface HealerLot {
@@ -74,6 +96,12 @@ export interface HealerInfo {
   mode: string;
   status: string;
   queue: number;
+  fresh: number;
+  retry_due: number;
+  backoff: number;
+  definitive: number;
+  max_attempts: number;
+  scope_start: string;
   phantoms: number;
   enriched: number;
   not_found: number;
@@ -107,6 +135,38 @@ export const eventsExportUrl = (f: EventFilters = {}) => {
   const params = new URLSearchParams();
   Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== '' && v !== 'ALL') params.append(k, String(v)); });
   return `${API_URL}/events/export?${params.toString()}`;
+};
+
+const postJson = async (path: string, body: unknown) => {
+  try {
+    const res = await fetch(`${API_URL}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return await res.json();
+  } catch { return { error: 'Erreur de connexion' }; }
+};
+
+export const setScope = (mode: ScopeMode, start?: string) => postJson('/scope', { mode, start });
+export const verifyPeriod = (period: string) => postJson('/verify-period', { period });
+export const recollectPeriod = (period: string) => postJson('/recollect-period', { period });
+
+export interface EpsCheck {
+  id_intervention: string;
+  found: boolean;
+  duplicates: number;
+  verdict: 'OK' | 'ABSENT_BASE' | 'DOUBLON' | 'NON_ENRICHI' | 'EN_REESSAI' | 'DEFINITIF';
+  rows: {
+    id: number; periode: string | null; in_scope: boolean; etat: string | null; type: string | null; mainteneur: string | null;
+    source: string | null; date_modification_etat: string | null; last_seen_at: string | null;
+    detail_status: string; detail_size: number; heal_attempts: number; heal_next_at: string | null;
+  }[];
+  live?: { reachable: boolean; has_detail?: boolean; latency_ms?: number; preview?: string; repaired?: number; error?: string };
+}
+
+export const checkEps = async (id: string, live: boolean): Promise<EpsCheck | null> => {
+  try {
+    const res = await fetch(`${API_URL}/check/${encodeURIComponent(id.trim())}?live=${live}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
 };
 
 export const fetchPeriods = async (): Promise<PeriodRow[]> => {

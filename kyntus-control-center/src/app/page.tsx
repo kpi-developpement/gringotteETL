@@ -8,6 +8,7 @@ import EventsTable from '../components/cc/EventsTable';
 import Maintenance from '../components/cc/Maintenance';
 import Pipeline from '../components/cc/Pipeline';
 import { PeriodMatrix } from '../components/cc/Periods';
+import { PhaseSummary, ScopeCard } from '../components/cc/Phases';
 import { useLive, useToast } from '../components/cc/hooks';
 import { Card, CardHead, cx, fmtDur, Kpi, Ring, StatusDot, Toast } from '../components/cc/widgets';
 import { IBolt, IClock, IDb, IGrid, IRadar, IRobot, IShield } from '../components/cc/icons';
@@ -20,9 +21,10 @@ export default function MissionControl() {
 
   const ap = stats?.autopilot;
   const isRunning = !!stats?.is_running;
-  const passPct = ap && ap.pass_total > 0 ? Math.round((ap.pass_done / ap.pass_total) * 100) : 0;
-  const totalGap = periods.reduce((a, r) => a + (r.gap || 0), 0);
-  const gapPeriods = periods.filter(r => r.gap > 0).length;
+  const passPct = ap?.completeness ?? 0;
+  const scoped = periods.filter(r => r.in_scope);
+  const totalGap = scoped.reduce((a, r) => a + (r.gap || 0), 0);
+  const gapPeriods = scoped.filter(r => r.gap > 0).length;
   const alerts24 = (stats?.event_counts_24h?.WARN || 0) + (stats?.event_counts_24h?.ERROR || 0);
   const periodNames = periods.map(p => p.period);
 
@@ -49,9 +51,9 @@ export default function MissionControl() {
             <div className={cx(s.orbit, s.orbit3)}><span className={cx(s.satellite, !ap?.enabled && s.satOff)} style={{ ['--sat' as string]: 'var(--violet)' }} /></div>
             <div className={s.coreRing}><Ring value={passPct} /></div>
             <div className={s.coreInner}>
-              <div className={s.coreLabel}>PASSE</div>
-              <div className={s.coreValue}>#{ap?.pass ?? '–'}</div>
-              <div className={s.coreHint}>{ap ? `${ap.pass_done} / ${ap.pass_total} périodes · ${passPct}%` : '…'}</div>
+              <div className={s.coreLabel}>COMPLÉTUDE</div>
+              <div className={s.coreValue}>{passPct}%</div>
+              <div className={s.coreHint}>{ap ? `${ap.periods_complete} / ${ap.periods_total} périodes complètes` : '…'}</div>
             </div>
           </div>
           <div className={s.coreLegend}>
@@ -60,7 +62,7 @@ export default function MissionControl() {
             <span className={s.legendItem}><span className={s.legendSwatch} style={{ background: 'var(--violet)' }} />AutoPilot</span>
           </div>
           <div className={s.progressMeta} style={{ marginTop: 14 }}>
-            <span>Début passe : {ap?.pass_started || '—'}</span>
+            <span>{ap?.scope_label || '—'} · {ap?.scope_start || ''}</span>
             <span>Tick : {ap?.last_tick || '—'}</span>
           </div>
         </Card>
@@ -68,13 +70,15 @@ export default function MissionControl() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className={s.kpiGrid}>
             <Kpi label="Base locale" value={stats?.total_interventions_local || 0} icon={<IDb />} accent="cyan" sub="interventions stockées" delay={0} />
-            <Kpi label="Périodes à jour" value={ap?.pass_done || 0} suffix={`/ ${ap?.pass_total || 0}`} icon={<IGrid />} accent="violet" sub={`Passe #${ap?.pass ?? '–'} en cours`} delay={60} />
+            <Kpi label="Périodes complètes" value={ap?.periods_complete || 0} suffix={`/ ${ap?.periods_total || 0}`} icon={<IGrid />} accent="violet" sub={`3 phases vertes · ${ap?.scope_label || ''}`} delay={60} />
             <Kpi label="EPS manquants" value={totalGap} icon={<IRadar />} accent={totalGap > 0 ? 'amber' : 'emerald'}
               sub={gapPeriods > 0 ? `${gapPeriods} période(s) · constat après scan complet` : 'Aucun trou détecté'} delay={120} />
             <Kpi label="Healer" value={healer?.rate_per_min || 0} suffix="/min" icon={<IShield />} accent="emerald"
               sub={healer ? `${healer.enriched.toLocaleString('fr-FR')} enrichis · ${(healer.recovered || 0).toLocaleString('fr-FR')} sauvés au 2e essai` : '…'} delay={180} />
             <Kpi label="File Healer" value={healer?.queue || 0} icon={<IShield />} accent="cyan"
-              sub={healer && healer.rate_per_min > 0 && healer.queue > 0 ? `vidée dans ~${fmtDur(Math.round((healer.queue / healer.rate_per_min) * 60))}` : 'EPS sans détails'} delay={240} />
+              sub={healer && healer.rate_per_min > 0 && healer.queue > 0
+                ? `vidée dans ~${fmtDur(Math.round((healer.queue / healer.rate_per_min) * 60))}`
+                : `${(healer?.backoff || 0).toLocaleString('fr-FR')} en ré-essai programmé · ${(healer?.definitive || 0).toLocaleString('fr-FR')} définitifs`} delay={240} />
             <Kpi label="Alertes 24h" value={alerts24} icon={<IBolt />} accent={alerts24 > 0 ? 'rose' : 'emerald'}
               sub={`${stats?.event_counts_24h?.ERROR || 0} erreurs · ${stats?.event_counts_24h?.WARN || 0} alertes`} delay={300} />
           </div>
@@ -90,6 +94,11 @@ export default function MissionControl() {
           </Card>
         </div>
       </div>
+
+      {/* ================= PHASES ================= */}
+      <div className={s.sectionTitle}>Phases · Collecte → Enrichissement → Vérification</div>
+      <PhaseSummary ap={ap} />
+      <ScopeCard ap={ap} notify={show} refresh={refreshAll} />
 
       {/* ================= FLUX ================= */}
       <div className={s.sectionTitle}>Flux en direct</div>

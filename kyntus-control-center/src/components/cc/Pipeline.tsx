@@ -40,7 +40,8 @@ function Node({ icon, label, value, sub, color, live, err }: {
   );
 }
 
-export default function Pipeline({ stats, healer, periods }: { stats: SyncStats | null; healer: HealerInfo | null; periods: PeriodRow[] }) {
+export default function Pipeline({ stats, healer, periods: allPeriods }: { stats: SyncStats | null; healer: HealerInfo | null; periods: PeriodRow[] }) {
+  const periods = allPeriods.filter(p => p.in_scope !== false);
   const paused = !!stats?.autopilot?.bytel_paused;
   const tmOn = !!stats?.is_running;
   const healOn = !!healer?.running;
@@ -72,13 +73,13 @@ export default function Pipeline({ stats, healer, periods }: { stats: SyncStats 
           sub={tmOn ? <>+{(stats?.period_inserted || 0).toLocaleString('fr-FR')} nouveaux · ↻{(stats?.period_updated || 0).toLocaleString('fr-FR')}</> : 'En attente de la prochaine passe'} />
         <Node icon={<IDb />} label="Base locale" color="#a855f7" live={tmOn || healOn}
           value={<Num value={stats?.total_interventions_local || 0} />}
-          sub={`${periods.length} périodes · passe #${stats?.autopilot?.pass ?? '–'}`} />
+          sub={`${periods.length} périodes dans le périmètre · ${stats?.autopilot?.completeness ?? 0}% complètes`} />
         <Node icon={<IShield />} label="Healer" color="#10b981" live={healOn && (healer?.queue || 0) > 0}
           value={<><Num value={rate} /><span style={{ fontSize: '.75rem', color: '#66708a' }}>/min</span></>}
           sub={healOn ? `${(healer?.queue || 0).toLocaleString('fr-FR')} en file · ${(healer?.recovered || 0).toLocaleString('fr-FR')} récupérés au 2e essai` : 'Arrêté'} />
         <Node icon={<ISpark />} label="Enrichis" color="#f59e0b" live={rate > 0}
           value={<><Num value={enrichedPct} />%</>}
-          sub={`${enriched.toLocaleString('fr-FR')} EPS avec détails · ${phantoms.toLocaleString('fr-FR')} fantômes`} />
+          sub={`${enriched.toLocaleString('fr-FR')} EPS avec détails · ${(healer?.backoff || 0).toLocaleString('fr-FR')} en ré-essai · ${(healer?.definitive || 0).toLocaleString('fr-FR')} définitifs`} />
 
         <Link i={0} state={tmLink} color="#3b82f6" label={paused ? 'PAUSE' : tmOn ? '250 EPS / page' : 'idle'} />
         <Link i={1} state={paused ? 'idle' : tmOn ? 'live' : 'idle'} color="#22d3ee" speed={1.4}

@@ -3,10 +3,7 @@ package com.kyntus.gringotts_sync.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
-
-import java.net.http.HttpClient;
-import java.time.Duration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestClient;
 
@@ -22,14 +19,13 @@ public class AppConfig {
 
     @Bean
     public RestClient restClient() {
-        // HttpClient JDK : pool de connexions keep-alive réutilisées (plus de handshake TLS à chaque appel).
-        HttpClient httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(15))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(Duration.ofMinutes(3)); // 3 minutes d'attente max
+        // HttpURLConnection : keep-alive natif (connexions réutilisées) et compatible partout.
+        // (Le HttpClient JDK plante sur certains postes Windows : "Unable to establish loopback connection".)
+        System.setProperty("http.keepAlive", "true");
+        System.setProperty("http.maxConnections", "10");
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(15_000);
+        factory.setReadTimeout(180_000); // 3 minutes d'attente max
 
         return RestClient.builder()
                 .requestFactory(factory)

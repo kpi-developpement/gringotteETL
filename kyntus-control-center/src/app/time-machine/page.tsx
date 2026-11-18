@@ -7,7 +7,8 @@ import Shell from '../../components/cc/Shell';
 import EventsTable from '../../components/cc/EventsTable';
 import Pipeline from '../../components/cc/Pipeline';
 import { HealerPanel, TimeMachinePanel, useTmThroughput } from '../../components/cc/Engines';
-import { PeriodMatrix, PeriodsTable } from '../../components/cc/Periods';
+import { PeriodMatrix } from '../../components/cc/Periods';
+import { EpsInspector, PhaseBoard, ScopeCard } from '../../components/cc/Phases';
 import { useLive, useToast } from '../../components/cc/hooks';
 import { Card, CardHead, cx, Num, Progress, Segmented, Sparkline, Toast } from '../../components/cc/widgets';
 import { IBolt, IClose, IDb, IGrid, IPlay, IPlus, IStop } from '../../components/cc/icons';
@@ -201,9 +202,15 @@ export default function EnginesPage() {
       </div>
 
       <Card accent="cyan">
-        <CardHead icon={<IDb />} title="État détaillé par période" sub="Base locale vs Bytel · « manquants » calculé uniquement après un scan complet" />
-        <PeriodsTable rows={periods} selected={selected} onSelect={p => setSelected(p === selected ? '' : p)} />
+        <CardHead icon={<IDb />} title="Phases par période"
+          sub="① Collecte (chaque page contrôlée en base) → ② Enrichissement (ré-essais espacés, puis définitif) → ③ Vérification (total Bytel vs base + orphelins)" />
+        <PhaseBoard rows={periods} selected={selected} onSelect={p => setSelected(p === selected ? '' : p)} notify={show} refresh={refreshAll} />
       </Card>
+
+      <div className={s.split}>
+        <EpsInspector notify={show} />
+        <ScopeCard ap={ap} notify={show} refresh={refreshAll} />
+      </div>
 
       <Toast msg={toast} />
     </Shell>

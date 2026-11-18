@@ -117,6 +117,16 @@ public class BytelThrottle {
         releaseLocked();
     }
 
+    /**
+     * Pression "douce" : Bytel répond vite mais en omettant beaucoup d'IDs (symptôme de surcharge).
+     * On ralentit un peu, sans disjoncteur ni libération de slot.
+     */
+    public synchronized void onSoftPressure() {
+        consecutiveFastSuccesses = 0;
+        delayMs = Math.min(maxDelayMs, (long) (delayMs * 1.25) + 100);
+        if (inFlightLimit > 1) inFlightLimit--;
+    }
+
     /** 403 / Akamai : tout le monde s'arrête. */
     public synchronized void onBlocked() {
         consecutiveFastSuccesses = 0;

@@ -99,10 +99,12 @@ export function HealerPanel({ healer, mode, setMode, onStart, onStop }: {
   if (!healer) health = { cls: s.calloutWarn, text: 'Connexion au Healer…' };
   else if (!healer.running) health = { cls: s.calloutErr, text: 'Healer arrêté. L’AutoPilot le relance automatiquement s’il est activé.' };
   else if (healer.bytel_paused) health = { cls: s.calloutWarn, text: `Bytel en pause de protection — le Healer attend (${healer.throttle}).` };
-  else if (healer.queue === 0) health = { cls: s.calloutOk, text: 'Tous les EPS ont leurs détails. Le Healer surveille les nouveaux arrivants.' };
+  else if (healer.queue === 0) health = { cls: s.calloutOk, text: healer.backoff > 0
+    ? `File vide ✓ — ${healer.backoff.toLocaleString('fr-FR')} EPS sans détail attendent un ré-essai programmé (30 min → 48 h, ${healer.max_attempts} essais max), ${healer.definitive.toLocaleString('fr-FR')} classés définitifs.`
+    : `Tout le périmètre est traité ✓ (${healer.definitive.toLocaleString('fr-FR')} EPS définitivement sans détail).` };
   else if (healer.last_success_ago_s > 300 || (healer.last_success_ago_s < 0 && healer.uptime_s > 300)) health = { cls: s.calloutErr, text: `Aucun EPS enrichi depuis ${fmtDur(healer.last_success_ago_s < 0 ? healer.uptime_s : healer.last_success_ago_s)}. Dernière erreur : ${healer.last_error || 'aucune'}.` };
   else if (healer.failed > 0 && healer.failed / Math.max(1, totalSeen) > 0.2) health = { cls: s.calloutWarn, text: `Taux d’échec réseau élevé (${Math.round((healer.failed / totalSeen) * 100)}%). Les échecs deviennent fantômes et sont réessayés toutes les 6h.` };
-  else if (nfPct > 50) health = { cls: s.calloutWarn, text: `${nfPct}% des EPS n’ont pas de détail chez Bytel, même après un 2e essai. Ils sont marqués fantômes et réessayés toutes les 6h (souvent des EPS trop récents côté Bytel).` };
+  else if (nfPct > 50) health = { cls: s.calloutWarn, text: `${nfPct}% des EPS reviennent sans détail (souvent Bytel surchargé). Pas de panique : chacun a son propre ré-essai programmé (30 min, 2 h, 8 h, 24 h…) et le Healer ralentit automatiquement.` };
   else health = { cls: s.calloutOk, text: `En bonne santé : dernier succès il y a ${fmtDur(healer.last_success_ago_s)}, ~${healer.rate_per_min}/min, ${okPct}% enrichis.` };
 
   return (
@@ -138,10 +140,10 @@ export function HealerPanel({ healer, mode, setMode, onStart, onStop }: {
         <div className={s.tiles} style={{ margin: 0 }}>
           <div className={s.tile}><div className={s.tileLabel}>Enrichis</div><div className={s.tileValue} style={{ color: '#6ee7b7' }}><Num value={healer?.enriched || 0} /></div></div>
           <div className={s.tile}><div className={s.tileLabel}>Sauvés au 2e essai</div><div className={s.tileValue} style={{ color: '#5eead4' }}><Num value={healer?.recovered || 0} /></div></div>
-          <div className={s.tile}><div className={s.tileLabel}>Sans détail Bytel</div><div className={s.tileValue} style={{ color: '#fcd34d' }}><Num value={healer?.not_found || 0} /></div></div>
-          <div className={s.tile}><div className={s.tileLabel}>Échecs réseau</div><div className={s.tileValue} style={{ color: '#fda4af' }}><Num value={healer?.failed || 0} /></div></div>
-          <div className={s.tile}><div className={s.tileLabel}>En file</div><div className={s.tileValue}><Num value={healer?.queue || 0} /></div></div>
-          <div className={s.tile}><div className={s.tileLabel}>Dernier succès</div><div className={s.tileValue}>{healer && healer.last_success_ago_s >= 0 ? fmtDur(healer.last_success_ago_s) : '—'}</div></div>
+          <div className={s.tile}><div className={s.tileLabel}>Nouveaux à enrichir</div><div className={s.tileValue} style={{ color: '#67e8f9' }}><Num value={healer?.fresh || 0} /></div></div>
+          <div className={s.tile}><div className={s.tileLabel}>Ré-essais dus</div><div className={s.tileValue} style={{ color: '#fcd34d' }}><Num value={healer?.retry_due || 0} /></div></div>
+          <div className={s.tile} title="Ré-essai programmé plus tard (30 min → 48 h)"><div className={s.tileLabel}>Ré-essai programmé</div><div className={s.tileValue} style={{ color: '#c4b5fd' }}><Num value={healer?.backoff || 0} /></div></div>
+          <div className={s.tile} title={`Aucun détail après ${healer?.max_attempts ?? 5} essais`}><div className={s.tileLabel}>Définitifs</div><div className={s.tileValue} style={{ color: '#fda4af' }}><Num value={healer?.definitive || 0} /></div></div>
         </div>
       </div>
 

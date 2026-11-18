@@ -62,7 +62,7 @@ export default function Shell({ children, stats, healer }: { children: ReactNode
 
           <div className={s.pills}>
             <span className={s.pill} title={ap?.status}>
-              <StatusDot state={ap?.enabled ? 'live' : 'off'} />Auto {ap?.enabled ? `#${ap.pass}` : 'OFF'}
+              <StatusDot state={ap?.enabled ? 'live' : 'off'} />Auto {ap?.enabled ? `${ap.completeness ?? 0}%` : 'OFF'}
             </span>
             <span className={s.pill} title={stats?.time_machine_status}>
               <StatusDot state={tmState} />TM {stats?.is_running ? stats?.current_period : 'idle'}
