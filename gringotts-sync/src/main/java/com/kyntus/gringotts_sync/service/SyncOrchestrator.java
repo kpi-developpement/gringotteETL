@@ -1044,7 +1044,10 @@ public class SyncOrchestrator {
                 emptyBatchStreak.set(0);
             } else {
                 int streak = emptyBatchStreak.incrementAndGet();
-                if (streak >= 2 && streak <= 20) {
+                // Vraie saturation seulement si PLUS AUCUN détail n'arrive depuis 45 s. Si d'autres lots réussissent,
+                // ce sont ces EPS précis qui n'ont pas de détail chez Bytel (ex. EPS-M…, anciens IDs) : traitement normal.
+                boolean bytelSilent = System.currentTimeMillis() - lastHealSuccessAt > 45_000;
+                if (streak >= 2 && streak <= 20 && bytelSilent) {
                     throttle.onBanWarning(streak);
                     Timestamp later = Timestamp.valueOf(LocalDateTime.now().plusMinutes(10));
                     List<Object[]> park = batch.stream().map(inv -> new Object[]{new SqlParameterValue(Types.TIMESTAMP, later), inv.getId()}).toList();
@@ -1088,7 +1091,11 @@ public class SyncOrchestrator {
         }
 
         // Beaucoup d'IDs omis alors que Bytel répond : symptôme de surcharge -> on ralentit un peu.
-        if (healedData != null && notFound * 2 > batch.size()) throttle.onSoftPressure();
+        if (ok > 0) lastHealSuccessAt = System.currentTimeMillis();
+        // Ralentir seulement si Bytel n'arrive plus à donner de détails du tout (pas pour des EPS sans détail isolés).
+        if (healedData != null && notFound * 2 > batch.size() && System.currentTimeMillis() - lastHealSuccessAt > 45_000) {
+            throttle.onSoftPressure();
+        }
 
         hEnriched.addAndGet(ok);
         hNotFound.addAndGet(notFound);

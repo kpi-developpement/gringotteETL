@@ -95,7 +95,7 @@ public class BytelThrottle {
             inFlightLimit = Math.max(1, inFlightLimit - 1);
         } else {
             consecutiveFastSuccesses++;
-            delayMs = Math.max(minDelayMs, delayMs - 20); // ré-accélération lente
+            delayMs = Math.max(minDelayMs, (long) (delayMs * 0.9)); // -10% par succès : 15 s -> 0,55 s en ~30 requêtes
             if (consecutiveFastSuccesses >= 40 && inFlightLimit < maxInFlight) {
                 inFlightLimit++;
                 consecutiveFastSuccesses = 0;
