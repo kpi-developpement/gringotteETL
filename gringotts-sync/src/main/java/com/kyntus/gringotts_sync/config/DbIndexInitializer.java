@@ -37,6 +37,16 @@ public class DbIndexInitializer implements ApplicationRunner {
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_retry ON interventions (periode, heal_next_at) WHERE detail_intervention = '{}'",
             // Contrôle des orphelins (EPS plus renvoyés par Bytel)
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_period_seen ON interventions (periode, last_seen_at)",
+            // Explorateur : filtres
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_period_cat ON interventions (periode, categorie)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_cat_type ON interventions (categorie, type_presta)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_date_interv ON interventions (date_intervention)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_soustraitant ON interventions (sous_traitant)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_departement ON interventions (departement)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_fyt ON interventions (fyt)",
+            // Rattrapage de l'extraction
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_interv_to_extract ON interventions (id) WHERE extract_v IS NULL " +
+                    "AND detail_intervention IS NOT NULL AND detail_intervention NOT IN ('', '[]', '{}')",
             // Journal : filtres par source / période
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_source ON sync_events (source, id)",
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_events_period ON sync_events (period, id)",

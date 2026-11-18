@@ -5,6 +5,7 @@ import s from '../../components/cc/cc.module.css';
 import fx from '../../components/cc/fx.module.css';
 import Shell from '../../components/cc/Shell';
 import EventsTable from '../../components/cc/EventsTable';
+import LiveConsole from '../../components/cc/LiveConsole';
 import Pipeline from '../../components/cc/Pipeline';
 import { HealerPanel, TimeMachinePanel, useTmThroughput } from '../../components/cc/Engines';
 import { PeriodMatrix } from '../../components/cc/Periods';
@@ -65,6 +66,8 @@ export default function EnginesPage() {
           { value: 'split', label: <>◫ Séparé</> },
         ]} />
       </div>
+
+      <LiveConsole key={`console-${mode}`} mode={mode} height={mode === 'split' ? 380 : 340} />
 
       <div key={mode} className={fx.fadeSwap} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {mode === 'merged' ? (

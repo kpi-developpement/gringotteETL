@@ -232,6 +232,7 @@ public class AutoPilotService {
         for (Object[] row : aggregates(max)) if (row[0] != null) agg.put((String) row[0], row);
 
         List<String> scope = scopePeriods();
+        long median = medianClosedTotal(scope, current);
         LinkedHashSet<String> periods = new LinkedHashSet<>(scope);
         agg.keySet().stream().filter(p -> parsePeriod(p).isPresent()).forEach(periods::add);
 
@@ -302,6 +303,12 @@ public class AutoPilotService {
             verify.put("remote", vres == null ? null : Long.parseLong(vres[1]));
             verify.put("local", vres == null ? null : Long.parseLong(vres[2]));
             verify.put("orphans", vres == null ? null : Long.parseLong(vres[3]));
+            // Contrôle de volume : un mois clos très en dessous de la médiane = probable trou CÔTÉ BYTEL.
+            boolean closed = !p.equals(current);
+            double ratio = median > 0 && total > 0 ? (double) total / median : 1.0;
+            verify.put("volume_ratio", Math.round(ratio * 100));
+            verify.put("volume_median", median);
+            verify.put("volume_low", inScope && closed && median > 0 && total > 0 && ratio < 0.6);
 
             String overall;
             if (!inScope) overall = "OUT_OF_SCOPE";
@@ -476,6 +483,12 @@ public class AutoPilotService {
             orchestrator.event(AUTOPILOT, SUCCESS, p, p + " vérifiée ✓ base " + local + " / Bytel " + remote + " EPS"
                     + (orphans > 0 ? " · " + orphans + " EPS en base que Bytel ne renvoie plus (déplacés/supprimés)" : ""));
         }
+        String current = periodOf(YearMonth.now());
+        long median = medianClosedTotal(scopePeriods(), current);
+        if (!p.equals(current) && median > 0 && remote > 0 && remote < median * 0.6) {
+            orchestrator.event(AUTOPILOT, WARN, p, p + " : volume anormalement bas CHEZ BYTEL (" + remote + " EPS vs médiane " + median
+                    + " des autres mois). Notre base contient tout ce que Bytel expose — à signaler côté Bytel.");
+        }
         saveStr("ap_vres_" + p, st + ";" + remote + ";" + local + ";" + orphans + ";" + now);
         saveLong("ap_verify_" + p, now);
     }
@@ -491,6 +504,19 @@ public class AutoPilotService {
     }
 
     // ================================================================ Helpers
+
+    /** Médiane des totaux Bytel des mois clos du périmètre (référence pour détecter un volume anormal). */
+    private long medianClosedTotal(List<String> scope, String current) {
+        List<Integer> totals = new ArrayList<>();
+        for (String p : scope) {
+            if (p.equals(current)) continue;
+            int t = orchestrator.getSavedTotal(p);
+            if (t > 0) totals.add(t);
+        }
+        if (totals.size() < 3) return 0;
+        Collections.sort(totals);
+        return totals.get(totals.size() / 2);
+    }
 
     private long refreshInterval(String p, String current) {
         if (p.equals(current)) return refreshCurrentMs;

@@ -96,6 +96,56 @@ public class Intervention {
     @Column(name = "heal_next_at")
     private LocalDateTime healNextAt;
 
+
+    // ---------- Champs extraits du détail Bytel (colonnes indexées pour les filtres) ----------
+    /** RACC / SAV / RZO / AUTRE (extrait du détail) */
+    @JsonProperty(value = "categorie", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "categorie", length = 16)
+    private String categorie;
+
+    /** typeIntervention de la qualification (PLP, NOK, SAV_STD…) */
+    @JsonProperty(value = "type_presta", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "type_presta", length = 40)
+    private String typePresta;
+
+    @JsonProperty(value = "type_raccordement", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "type_raccordement", length = 40)
+    private String typeRaccordement;
+
+    /** VALIDEE, EN_ATTENTE_VALIDATION_PARTENAIRE… */
+    @JsonProperty(value = "etat_qualif", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "etat_qualif", length = 60)
+    private String etatQualif;
+
+    @JsonProperty(value = "code_cloture", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "code_cloture", length = 40)
+    private String codeCloture;
+
+    @JsonProperty(value = "sous_traitant", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "sous_traitant", length = 120)
+    private String sousTraitant;
+
+    @JsonProperty(value = "departement", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "departement", length = 8)
+    private String departement;
+
+    @JsonProperty(value = "oi", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "oi", length = 16)
+    private String oi;
+
+    @JsonProperty(value = "fyt", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "fyt", length = 40)
+    private String fyt;
+
+    @JsonProperty(value = "date_intervention", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "date_intervention")
+    private LocalDateTime dateIntervention;
+
+    /** Version d'extraction (null = pas encore extrait). */
+    @JsonProperty(value = "extract_v", access = JsonProperty.Access.READ_ONLY)
+    @Column(name = "extract_v")
+    private Integer extractV;
+
     // WRITE_ONLY : lu depuis le payload PHP, jamais renvoyé à l'UI (collection LAZY hors session = erreur 500).
     @JsonProperty(value = "actions_log", access = JsonProperty.Access.WRITE_ONLY)
     @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)

@@ -70,7 +70,7 @@ export interface PeriodRow {
   overall: Overall;
   collect: { status: CollectStatus; offset: number; remote_total: number; progress: number; scans: number; last_scan: string | null; next_refresh_min: number | null };
   enrich: { status: EnrichStatus; fresh: number; retry: number; definitive: number; with_detail: number; pct: number };
-  verify: { status: VerifyStatus; at: string | null; remote: number | null; local: number | null; orphans: number | null };
+  verify: { status: VerifyStatus; at: string | null; remote: number | null; local: number | null; orphans: number | null; volume_low?: boolean; volume_ratio?: number; volume_median?: number };
   state: 'ACTIVE' | 'QUEUED' | 'DONE' | 'PENDING';
   local_rows: number;
   local_distinct: number;
@@ -413,3 +413,70 @@ export const exportInterventionsExcel = async (source: string, period: string, t
     alert('Erreur lors du téléchargement du fichier Excel.');
   }
 };
+// ============================================================ Console live
+export interface ActivityLine { seq: number; at: string; engine: 'TM' | 'HEALER' | 'AUTO' | 'BYTEL' | 'SYS' | string; level: 'INFO' | 'OK' | 'WARN' | 'ERROR' | string; msg: string }
+
+export const fetchActivity = async (after: number, engine?: string, limit = 400): Promise<{ last_seq: number; lines: ActivityLine[] } | null> => {
+  try {
+    const p = new URLSearchParams({ after: String(after), limit: String(limit) });
+    if (engine) p.set('engine', engine);
+    const res = await fetch(`${API_URL}/activity?${p.toString()}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+};
+
+// ============================================================ Explorateur
+export type ExplorerDim = 'periode' | 'categorie' | 'type' | 'etat' | 'cloture' | 'sous_traitant' | 'departement' | 'oi' | 'raccordement';
+export interface ExplorerFilters {
+  dims: Partial<Record<ExplorerDim, string[]>>;
+  detail?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+}
+export interface ExplorerRow {
+  id: number; id_intervention: string; fyt: string | null; periode: string | null; categorie: string | null;
+  type_presta: string | null; type_raccordement: string | null; etat_qualif: string | null; code_cloture: string | null;
+  sous_traitant: string | null; departement: string | null; oi: string | null; date_intervention: string | null;
+  source_ingestion: string | null; heal_attempts: number | null; heal_next_at: string | null; last_seen_at: string | null;
+  detail_size: number; detail_status: 'OK' | 'NON_ENRICHI' | 'EN_REESSAI' | 'DEFINITIF';
+}
+export type Facets = Record<ExplorerDim | 'detail', { v: string | null; n: number }[]>;
+
+const explorerParams = (f: ExplorerFilters, extra: Record<string, string | number> = {}) => {
+  const p = new URLSearchParams();
+  Object.entries(f.dims).forEach(([k, v]) => { if (v && v.length) p.set(k, v.join(',')); });
+  if (f.detail) p.set('detail', f.detail);
+  if (f.q) p.set('q', f.q);
+  if (f.from) p.set('from', f.from);
+  if (f.to) p.set('to', f.to);
+  Object.entries(extra).forEach(([k, v]) => p.set(k, String(v)));
+  return p.toString();
+};
+
+export const fetchExplorer = async (f: ExplorerFilters, page: number, size: number, sort: string): Promise<{ rows: ExplorerRow[]; total: number } | null> => {
+  try {
+    const res = await fetch(`${API_URL}/explorer?${explorerParams(f, { page, size, sort })}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+};
+
+export const fetchFacets = async (f: ExplorerFilters): Promise<Facets | null> => {
+  try {
+    const res = await fetch(`${API_URL}/explorer/facets?${explorerParams(f)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+};
+
+export const fetchExplorerItem = async (id: number): Promise<Record<string, unknown> | null> => {
+  try {
+    const res = await fetch(`${API_URL}/explorer/item/${id}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+};
+
+export const explorerExportUrl = (f: ExplorerFilters) => `${API_URL}/explorer/export?${explorerParams(f)}`;

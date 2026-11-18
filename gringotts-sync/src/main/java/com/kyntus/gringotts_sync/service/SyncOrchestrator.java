@@ -52,6 +52,7 @@ public class SyncOrchestrator {
     private final JdbcTemplate jdbcTemplate;
     private final BytelThrottle throttle;
     private final EventLogService events;
+    private final ActivityFeed feed;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${kyntus.healer.chunk-size:200}")
@@ -184,6 +185,9 @@ public class SyncOrchestrator {
         if (WARN.equals(level) || ERROR.equals(level)) log.warn("[{}] {}", source, message);
         else log.info("[{}] {}", source, message);
         events.log(source, level, period, message);
+        feed.log(switch (source) { case TM -> "TM"; case HEALER -> "HEALER"; case BYTEL -> "BYTEL"; case AUTOPILOT -> "AUTO"; default -> "SYS"; },
+                switch (level) { case SUCCESS -> "OK"; case WARN -> "WARN"; case ERROR -> "ERROR"; default -> "INFO"; },
+                (period != null ? "[" + period + "] " : "") + message);
     }
 
     // ------------------------------------------------------------ Contrôle / AutoPilot
@@ -327,10 +331,11 @@ public class SyncOrchestrator {
                     if (has) {
                         String detail = d instanceof String str ? str : objectMapper.writeValueAsString(d);
                         lv.put("preview", detail.length() > 400 ? detail.substring(0, 400) + "…" : detail);
-                        List<Object[]> fix = rows.stream().filter(r -> !"OK".equals(detailStatus(r)))
-                                .map(r -> new Object[]{detail, r.getId()}).toList();
+                        DetailFields df = DetailFields.parse(objectMapper, detail);
+                        List<Object[]> fix = rows.stream().filter(r -> !"OK".equals(detailStatus(r)) || r.getExtractV() == null)
+                                .map(r -> df.params(detail, r.getId())).toList();
                         if (!fix.isEmpty()) {
-                            jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = ?, heal_next_at = NULL WHERE id = ?", fix);
+                            jdbcTemplate.batchUpdate(DetailFields.UPDATE_SQL, fix);
                             lv.put("repaired", fix.size());
                             event(HEALER, SUCCESS, rows.get(0).getPeriode(), "EPS " + id + " réparé par vérification manuelle (détail récupéré en direct).");
                         }
@@ -658,6 +663,9 @@ public class SyncOrchestrator {
                                 periodInserted += counts[0];
                                 periodUpdated += counts[1];
                                 periodChanged += counts[2];
+                                feed.log("TM", "OK", String.format("[%s] page %d→%d · %d EPS reçus · %s%d nouveaux · %d modifiés · contrôle base ✓ · %d ms",
+                                        activePeriod, localOffset, newOffset, incomingData.size(), counts[0] > 0 ? "+" : "", counts[0], counts[2],
+                                        System.currentTimeMillis() - t0));
                             }
 
                             int newTotal = importResp.getTotalApi();
@@ -692,7 +700,9 @@ public class SyncOrchestrator {
                             event(TM, ERROR, activePeriod, "Bloqué par le pare-feu Bouygues (Akamai). Pause globale.");
                             timeMachineStatus = "Banni - " + throttle.describe();
                         } else if (code == 429 || code >= 500 || body.contains("Timeout")) {
-                            event(TM, WARN, activePeriod, "Serveur Bouygues surchargé (HTTP " + code + "), ralentissement auto. Offset " + localOffset);
+                            feed.log("TM", "ERROR", "[" + activePeriod + "] HTTP " + code + " à l'offset " + localOffset + " (essai " + attempt + "/3) · "
+                                    + abbreviate(body) + " · " + throttle.describe());
+                            if (attempt == 1) event(TM, WARN, activePeriod, "Serveur Bouygues surchargé (HTTP " + code + "), ralentissement auto. Offset " + localOffset);
                             timeMachineStatus = "Surcharge - " + throttle.describe();
                         } else {
                             event(TM, ERROR, activePeriod, "Erreur HTTP " + code);
@@ -700,11 +710,13 @@ public class SyncOrchestrator {
                             sleep(10000);
                         }
                     } catch (ResourceAccessException e) {
+                        feed.log("TM", "ERROR", "[" + activePeriod + "] Timeout/IO à l'offset " + localOffset + " (essai " + attempt + "/3) · " + abbreviate(e.getMessage()));
                         event(TM, WARN, activePeriod, "Timeout Bytel à l'offset " + localOffset + ", ralentissement auto.");
                         timeMachineStatus = "Timeout - " + throttle.describe();
                     } catch (Exception e) {
                         log.error("Erreur inattendue", e);
                         timeMachineStatus = "Glitch Bouygues - Retry";
+                        feed.log("TM", "ERROR", "[" + activePeriod + "] offset " + localOffset + " (essai " + attempt + "/3) · " + abbreviate(e.getMessage()));
                         event(TM, WARN, activePeriod, e.getMessage());
                         sleep(2000);
                     }
@@ -978,16 +990,21 @@ public class SyncOrchestrator {
             } catch (RestClientResponseException e) {
                 handleHttpError(e);
                 lastHealError = "HTTP " + e.getStatusCode().value();
+                feed.log("HEALER", "ERROR", "Lot " + idsToHeal.get(0) + "… (" + idsToHeal.size() + " EPS) · HTTP " + e.getStatusCode().value()
+                        + " (essai " + attempt + "/3) · " + abbreviate(e.getResponseBodyAsString()));
             } catch (ResourceAccessException e) {
                 handleTimeout();
                 lastHealError = "Timeout Bytel";
+                feed.log("HEALER", "ERROR", "Lot " + idsToHeal.get(0) + "… · Timeout/IO (essai " + attempt + "/3) · " + abbreviate(e.getMessage()));
             } catch (Exception e) {
                 throttle.onError();
                 lastHealError = e.getMessage();
+                feed.log("HEALER", "ERROR", "Lot " + idsToHeal.get(0) + "… · " + abbreviate(e.getMessage()));
             }
         }
 
-        if (healedData == null && !isHealing) return new int[5]; // arrêt : on ne touche à rien
+        if (healedData == null && !isHealing) return new int[5];
+        long tBatch = System.currentTimeMillis(); // arrêt : on ne touche à rien
 
         // 2e chance immédiate pour les IDs omis par le proxy.
         int recovered = 0;
@@ -1030,7 +1047,7 @@ public class SyncOrchestrator {
             }
             if (detail != null) {
                 ok++;
-                okUpdates.add(new Object[]{detail, inv.getId()});
+                okUpdates.add(DetailFields.parse(objectMapper, detail).params(detail, inv.getId()));
             } else {
                 if (healedData == null) failed++; else notFound++;
                 int attempts = (inv.getHealAttempts() == null ? 0 : inv.getHealAttempts()) + 1;
@@ -1041,7 +1058,7 @@ public class SyncOrchestrator {
             }
         }
         if (!okUpdates.isEmpty()) {
-            jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = ?, heal_next_at = NULL WHERE id = ?", okUpdates);
+            jdbcTemplate.batchUpdate(DetailFields.UPDATE_SQL, okUpdates);
         }
         if (!koUpdates.isEmpty()) {
             jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = '{}', heal_attempts = ?, heal_next_at = ? WHERE id = ?", koUpdates);
@@ -1057,7 +1074,20 @@ public class SyncOrchestrator {
         hDefinitive.addAndGet(definitive);
         if (failed > 0) hFailedBatches.incrementAndGet();
         if (ok > 0) lastHealSuccessAt = System.currentTimeMillis();
+        feed.log("HEALER", failed > 0 ? "ERROR" : notFound > 0 ? "WARN" : "OK", String.format(
+                "%d EPS (%s…) · %d détails ✓%s%s%s%s",
+                batch.size(), idsToHeal.get(0), ok,
+                recovered > 0 ? " (dont " + recovered + " au 2e essai)" : "",
+                notFound > 0 ? " · " + notFound + " sans détail → ré-essai programmé" : "",
+                failed > 0 ? " · " + failed + " échecs réseau" : "",
+                definitive > 0 ? " · " + definitive + " définitifs" : ""));
         return new int[]{ok, notFound, failed, definitive, recovered};
+    }
+
+    private static String abbreviate(String s) {
+        if (s == null) return "";
+        String t = s.replaceAll("\\s+", " ").trim();
+        return t.length() > 160 ? t.substring(0, 160) + "…" : t;
     }
 
     private static boolean hasDetail(Object d) {

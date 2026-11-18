@@ -13,6 +13,10 @@ spring:
       idle-timeout: 300000
       max-lifetime: 1200000
       keepalive-time: 60000
+  task:
+    scheduling:
+      pool:
+        size: 4   # AutoPilot, rattrapage d'extraction et purge du journal en parallèle
   jpa:
     open-in-view: false
     hibernate:

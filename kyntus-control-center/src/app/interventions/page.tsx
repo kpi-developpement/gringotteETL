@@ -1,393 +1,407 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import s from '../../components/cc/cc.module.css';
+import fx from '../../components/cc/fx.module.css';
+import ex from '../../components/cc/explorer.module.css';
+import Shell from '../../components/cc/Shell';
+import { useLive, useToast } from '../../components/cc/hooks';
+import { Card, cx, Num, Toast } from '../../components/cc/widgets';
+import { IChevron, IClose, ISearch, IRadar } from '../../components/cc/icons';
+import { copyText } from '../../components/cc/clipboard';
 import {
-  fetchInterventions,
-  cleanDuplicates,
-  trimDatabase,
-  exportInterventionsExcel,
-  PageResponse
+  checkEps, explorerExportUrl, ExplorerDim, ExplorerFilters, ExplorerRow, Facets, fetchExplorer, fetchExplorerItem, fetchFacets,
 } from '../../services/api';
-import styles from './page.module.css';
 
-/* ========================================================================== */
-/* PURE VECTOR SVG ICONS (ZERO EMOJI SYSTEM)                                  */
-/* ========================================================================== */
-const IconLayers = () => <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
-const IconArrowLeft = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>;
-const IconTrashClean = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
-const IconDownload = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
-const IconScissors = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>;
-const IconFilter = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
-const IconCode = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
-const IconClose = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
-const IconPlus = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+const CAT_COLOR: Record<string, string> = { RACC: '#22d3ee', SAV: '#a855f7', RZO: '#f59e0b', AUTRE: '#94a3b8' };
+const CAT_LABEL: Record<string, string> = { RACC: 'Raccordement', SAV: 'SAV', RZO: 'Réseau', AUTRE: 'Autre' };
+const DETAIL_LABEL: Record<string, [string, string]> = {
+  OK: [s.bSuccess, 'Enrichi'], NON_ENRICHI: [s.bInfo, 'À enrichir'], EN_REESSAI: [s.bWarn, 'Ré-essai'], DEFINITIF: [s.bError, 'Sans détail'],
+};
 
-export default function InterventionsPage() {
-  const [data, setData] = useState<PageResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
+const FACET_GROUPS: { key: ExplorerDim | 'detail'; title: string; search?: boolean; open?: boolean }[] = [
+  { key: 'periode', title: 'Période', open: true },
+  { key: 'categorie', title: 'Catégorie', open: true },
+  { key: 'type', title: 'Type de presta', open: true },
+  { key: 'etat', title: 'État qualification' },
+  { key: 'detail', title: 'Statut du détail' },
+  { key: 'cloture', title: 'Code clôture', search: true },
+  { key: 'sous_traitant', title: 'Sous-traitant', search: true },
+  { key: 'departement', title: 'Département', search: true },
+  { key: 'oi', title: 'OI', search: true },
+  { key: 'raccordement', title: 'Type raccordement' },
+];
 
-  const [search, setSearch] = useState('');
-  const [sourceFilter, setSourceFilter] = useState('ALL');
-  const [period, setPeriod] = useState('');
+const EMPTY: ExplorerFilters = { dims: {} };
 
-  const [selectedDetails, setSelectedDetails] = useState<string | null>(null);
-  const [trimCount, setTrimCount] = useState<string>('711003');
-
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [exportSource, setExportSource] = useState('ALL');
-  const [exportType, setExportType] = useState('ALL');
-
-  const [exportPeriods, setExportPeriods] = useState<string[]>([]);
-  const [exportPeriodInput, setExportPeriodInput] = useState('2026_M01');
-
-  const [isExporting, setIsExporting] = useState(false);
-
-  const availableYears = ['2026', '2025', '2024'];
-  const availableMonths = ['M01', 'M02', 'M03', 'M04', 'M05', 'M06', 'M07', 'M08', 'M09', 'M10', 'M11', 'M12'];
-
-  const loadData = async () => {
-    setLoading(true);
-    const result = await fetchInterventions(search, sourceFilter, period, page);
-    setData(result);
-    setLoading(false);
+/** Lecture / écriture des filtres dans l'URL (lien partageable). */
+function readUrl(): { f: ExplorerFilters; page: number; sort: string } {
+  if (typeof window === 'undefined') return { f: EMPTY, page: 0, sort: 'date_desc' };
+  const p = new URLSearchParams(window.location.search);
+  const dims: ExplorerFilters['dims'] = {};
+  FACET_GROUPS.forEach(g => { if (g.key !== 'detail' && p.get(g.key)) dims[g.key as ExplorerDim] = p.get(g.key)!.split(','); });
+  return {
+    f: { dims, detail: p.get('detail') || undefined, q: p.get('q') || undefined, from: p.get('from') || undefined, to: p.get('to') || undefined },
+    page: +(p.get('page') || 0), sort: p.get('sort') || 'date_desc',
   };
+}
+
+export default function ExplorerPage() {
+  const { stats, healer } = useLive();
+  const { toast, show } = useToast();
+  const [filters, setFilters] = useState<ExplorerFilters>(EMPTY);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(50);
+  const [sort, setSort] = useState('date_desc');
+  const [search, setSearch] = useState('');
+  const [rows, setRows] = useState<ExplorerRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [facets, setFacets] = useState<Facets | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [ready, setReady] = useState(false);
+  const reqId = useRef(0);
+
+  // Init depuis l'URL
+  useEffect(() => {
+    const u = readUrl();
+    setFilters(u.f); setPage(u.page); setSort(u.sort); setSearch(u.f.q || '');
+    setReady(true);
+  }, []);
+
+  // Recherche texte (debounce)
+  useEffect(() => {
+    if (!ready) return;
+    const t = setTimeout(() => {
+      setFilters(f => (f.q || undefined) === (search || undefined) ? f : { ...f, q: search || undefined });
+      setPage(p => (filters.q || '') === search ? p : 0);
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, ready]);
+
+  const load = useCallback(async () => {
+    const my = ++reqId.current;
+    setLoading(true);
+    const [r, fc] = await Promise.all([fetchExplorer(filters, page, size, sort), fetchFacets(filters)]);
+    if (my !== reqId.current) return; // réponse périmée : un filtre plus récent a été appliqué
+    setLoading(false);
+    if (r) { setRows(r.rows); setTotal(r.total); }
+    if (fc) setFacets(fc);
+  }, [filters, page, size, sort]);
 
   useEffect(() => {
-    loadData();
-  }, [page]);
+    if (!ready) return;
+    load();
+    const p = new URLSearchParams();
+    Object.entries(filters.dims).forEach(([k, v]) => { if (v?.length) p.set(k, v.join(',')); });
+    ['detail', 'q', 'from', 'to'].forEach(k => { const v = filters[k as keyof ExplorerFilters] as string | undefined; if (v) p.set(k, v); });
+    if (page) p.set('page', String(page));
+    if (sort !== 'date_desc') p.set('sort', sort);
+    window.history.replaceState(null, '', `${window.location.pathname}${p.toString() ? '?' + p : ''}`);
+  }, [filters, page, sort, size, load, ready]);
 
-  const handleApplyFilters = (e: React.FormEvent) => {
-    e.preventDefault();
+  const toggle = (key: ExplorerDim | 'detail', value: string) => {
     setPage(0);
-    loadData();
+    setFilters(f => {
+      if (key === 'detail') return { ...f, detail: f.detail === value ? undefined : value };
+      const cur = f.dims[key] || [];
+      const next = cur.includes(value) ? cur.filter(v => v !== value) : [...cur, value];
+      return { ...f, dims: { ...f.dims, [key]: next } };
+    });
   };
-
-  const handleCleanDuplicates = async () => {
-    if (confirm("Voulez-vous vraiment scanner et supprimer tous les doublons exacts ?")) {
-      const msg = await cleanDuplicates();
-      alert(msg);
-      loadData();
-    }
-  };
-
-  const handleTrimDatabase = async () => {
-    const count = parseInt(trimCount);
-    if (!isNaN(count) && count > 0) {
-      if (confirm(`ATTENTION : Vous allez supprimer TOUTES les interventions après la ${count}ème. Continuer ?`)) {
-        const msg = await trimDatabase(count);
-        alert(msg);
-        loadData();
+  const clearKey = (key: string) => {
+    setPage(0);
+    setFilters(f => {
+      if (key === 'detail' || key === 'q' || key === 'from' || key === 'to') {
+        if (key === 'q') setSearch('');
+        return { ...f, [key]: undefined };
       }
-    }
+      const d = { ...f.dims }; delete d[key as ExplorerDim]; return { ...f, dims: d };
+    });
   };
+  const reset = () => { setFilters(EMPTY); setSearch(''); setPage(0); };
 
-  const addExportPeriod = () => {
-    if (!exportPeriods.includes(exportPeriodInput)) {
-      setExportPeriods([...exportPeriods, exportPeriodInput]);
-    }
-  };
+  const catFacet = facets?.categorie || [];
+  const catTotal = catFacet.reduce((a, c) => a + c.n, 0) || 1;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const activeCount = Object.values(filters.dims).reduce((a, v) => a + (v?.length || 0), 0) + (filters.detail ? 1 : 0) + (filters.q ? 1 : 0) + (filters.from || filters.to ? 1 : 0);
 
-  const handleExport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsExporting(true);
-    const joinedPeriods = exportPeriods.join(',');
-    await exportInterventionsExcel(exportSource, joinedPeriods, exportType);
-    setIsExporting(false);
-    setIsExportModalOpen(false);
-  };
-
-  const openDetails = (jsonString: string) => {
-    try {
-      const parsed = JSON.parse(jsonString);
-      setSelectedDetails(JSON.stringify(parsed, null, 2));
-    } catch (e) {
-      setSelectedDetails(jsonString || "Aucun détail disponible.");
-    }
-  };
-
-  const extractInfo = (jsonString: string, key: string) => {
-    try {
-      const parsed = JSON.parse(jsonString);
-      return parsed[key] || '-';
-    } catch (e) { return '-'; }
+  const exportXlsx = () => {
+    if (total > 200000) return show('Trop de lignes (> 200 000) : affinez les filtres.');
+    const a = document.createElement('a');
+    a.href = explorerExportUrl(filters);
+    a.download = '';
+    document.body.appendChild(a); a.click(); a.remove();
+    show(`Export Excel de ${total.toLocaleString('fr-FR')} EPS lancé…`);
   };
 
   return (
-    <div className={styles.pageWrapper}>
-      <div className={styles.container}>
-        <div className={styles.header}>
-          <div className={styles.titleGroup}>
-            <div className={styles.titleIcon}>
-              <IconLayers />
+    <Shell stats={stats} healer={healer}>
+      {/* ================= HERO ================= */}
+      <Card accent="violet" glow>
+        <div className={ex.hero}>
+          <div className={ex.total}>
+            <span className={ex.totalLabel}>EPS correspondants</span>
+            <span className={ex.totalValue}><Num value={total} /></span>
+            <span className={ex.totalSub}>{activeCount ? `${activeCount} filtre(s) actif(s)` : 'Aucun filtre — toute la base'}{loading ? ' · chargement…' : ''}</span>
+          </div>
+          <div className={ex.catBar}>
+            {['RACC', 'SAV', 'RZO'].map(c => {
+              const n = catFacet.find(x => x.v === c)?.n || 0;
+              const on = (filters.dims.categorie || []).includes(c);
+              return (
+                <button key={c} className={cx(ex.cat, on && ex.catOn)} style={{ ['--c' as string]: CAT_COLOR[c] }} onClick={() => toggle('categorie', c)}>
+                  <span>{c}</span>
+                  <b><Num value={n} /></b>
+                  <small style={{ fontSize: '.66rem', color: '#a5b0c8' }}>{CAT_LABEL[c]} · {Math.round((n / catTotal) * 100)}%</small>
+                  <i style={{ width: `${(n / catTotal) * 100}%` }} />
+                </button>
+              );
+            })}
+          </div>
+          <div className={s.row} style={{ flexDirection: 'column', alignItems: 'stretch', minWidth: 260 }}>
+            <div style={{ position: 'relative', display: 'flex' }}>
+              <span style={{ position: 'absolute', left: 11, top: 10, color: 'var(--txt-3)' }}><ISearch /></span>
+              <input className={cx(s.input, s.grow)} style={{ paddingLeft: 32 }} placeholder="Rechercher un EPS ou un FYT…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <h1 className={styles.title}>EXPLORATEUR DE DONNÉES EPS</h1>
-          </div>
-          <Link href="/" className={styles.backBtn}>
-            <IconArrowLeft />
-            <span>Retour au Dashboard</span>
-          </Link>
-        </div>
-
-        <div className={styles.toolsPanel}>
-          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-            <button onClick={handleCleanDuplicates} className={styles.cleanBtn}>
-              <IconTrashClean />
-              <span>Nettoyer les doublons</span>
-            </button>
-            <button onClick={() => setIsExportModalOpen(true)} className={styles.exportBtn}>
-              <IconDownload />
-              <span>Exporter (Excel)</span>
-            </button>
-          </div>
-
-          <div className={styles.trimBox}>
-            <span style={{ fontSize: '0.84rem', fontWeight: 800, color: '#94a3b8' }}>
-              Garder uniquement les premiers :
-            </span>
-            <input
-              type="number"
-              value={trimCount}
-              onChange={(e) => setTrimCount(e.target.value)}
-              className={styles.trimInput}
-            />
-            <button onClick={handleTrimDatabase} className={styles.trimBtn}>
-              <IconScissors />
-              <span>Couper la base</span>
-            </button>
+            <div className={s.row}>
+              <button className={cx(s.btn, s.btnSolid, s.accEmerald, s.grow)} onClick={exportXlsx} disabled={!total}>⬇ Excel ({total.toLocaleString('fr-FR')})</button>
+              <button className={s.btn} onClick={reset} disabled={!activeCount}>Réinitialiser</button>
+            </div>
           </div>
         </div>
+      </Card>
 
-        <form onSubmit={handleApplyFilters} className={styles.filtersWrapper}>
-          <div className={styles.filterGroup}>
-            <label>Recherche EPS</label>
-            <input
-              type="text"
-              placeholder="Ex: INC-12345..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className={styles.searchInput}
-            />
-          </div>
-
-          <div className={styles.filterGroup}>
-            <label>Source d&apos;Ingestion</label>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className={styles.selectInput}
-            >
-              <option value="ALL">Toutes les sources</option>
-              <option value="RADAR">RADAR (Flux Continu)</option>
-              <option value="TIME_MACHINE">TIME MACHINE (Historique)</option>
-              <option value="INCONNUE">INCONNUE (Anciennes données)</option>
-            </select>
-          </div>
-
-          <div className={styles.filterGroup}>
-            <label>Période (Mois/Année)</label>
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className={styles.selectInput}
-            >
-              <option value="">Toutes les périodes</option>
-              {availableYears.map(year => (
-                <optgroup key={year} label={`Année ${year}`}>
-                  {availableMonths.map(month => (
-                    <option key={`${year}_${month}`} value={`${year}_${month}`}>
-                      {year} — {month}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-
-          <button type="submit" className={styles.btnFilter}>
-            <IconFilter />
-            <span>Filtrer</span>
-          </button>
-        </form>
-
-        <div className={styles.tableContainer}>
-          {loading ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: '#38bdf8', fontWeight: 900, fontSize: '1.1rem', letterSpacing: '2px' }}>
-              SCAN QUANTIQUE EN COURS...
+      <div className={ex.layout}>
+        {/* ================= FILTRES ================= */}
+        <aside className={ex.side}>
+          <div className={ex.facet}>
+            <div className={ex.facetTitle} style={{ marginBottom: 8 }}>Date d’intervention</div>
+            <div className={s.row} style={{ flexWrap: 'nowrap' }}>
+              <input type="date" className={s.input} style={{ flex: 1, minWidth: 0, colorScheme: 'dark' }} value={filters.from || ''} onChange={e => { setPage(0); setFilters(f => ({ ...f, from: e.target.value || undefined })); }} />
+              <input type="date" className={s.input} style={{ flex: 1, minWidth: 0, colorScheme: 'dark' }} value={filters.to || ''} onChange={e => { setPage(0); setFilters(f => ({ ...f, to: e.target.value || undefined })); }} />
             </div>
-          ) : !data || data.content.length === 0 ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: '#64748b', fontWeight: 800 }}>
-              Aucune intervention trouvée pour ces critères.
+          </div>
+          {FACET_GROUPS.map(g => (
+            <FacetGroup key={g.key} title={g.title} search={g.search} defaultOpen={g.open}
+              values={facets?.[g.key] || []}
+              selected={g.key === 'detail' ? (filters.detail ? [filters.detail] : []) : (filters.dims[g.key as ExplorerDim] || [])}
+              labelOf={v => g.key === 'detail' ? (DETAIL_LABEL[v]?.[1] || v) : g.key === 'categorie' ? `${v} · ${CAT_LABEL[v] || ''}` : v}
+              onToggle={v => toggle(g.key, v)} />
+          ))}
+        </aside>
+
+        {/* ================= RÉSULTATS ================= */}
+        <Card accent="cyan" style={{ padding: 18 }}>
+          <div className={s.row} style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+            <div className={ex.activeBar}>
+              {Object.entries(filters.dims).flatMap(([k, vs]) => (vs || []).map(v => (
+                <span key={k + v} className={ex.activeChip}><b>{FACET_GROUPS.find(g => g.key === k)?.title}</b> {v === '∅' ? '(vide)' : v}
+                  <button onClick={() => toggle(k as ExplorerDim, v)}>×</button></span>
+              )))}
+              {filters.detail && <span className={ex.activeChip}><b>Détail</b> {DETAIL_LABEL[filters.detail]?.[1]}<button onClick={() => clearKey('detail')}>×</button></span>}
+              {filters.q && <span className={ex.activeChip}><b>Recherche</b> {filters.q}<button onClick={() => clearKey('q')}>×</button></span>}
+              {(filters.from || filters.to) && <span className={ex.activeChip}><b>Date</b> {filters.from || '…'} → {filters.to || '…'}<button onClick={() => { clearKey('from'); clearKey('to'); }}>×</button></span>}
+              {!activeCount && <span style={{ fontSize: '.76rem', color: 'var(--txt-3)' }}>Cliquez dans les filtres à gauche ou sur RACC / SAV / RZO.</span>}
             </div>
-          ) : (
-            <>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>ID Local</th>
-                    <th>ID EPS</th>
-                    <th>État</th>
-                    <th>Type</th>
-                    <th>Prestation</th>
-                    <th>Date Modif</th>
-                    <th>Source</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.content.map((inv) => (
-                    <tr key={inv.id} className={styles.tableRow}>
-                      <td style={{ color: '#64748b', fontWeight: 800, fontFamily: 'monospace' }}>#{inv.id}</td>
-                      <td style={{ fontWeight: 900, color: '#f8fafc', fontFamily: 'monospace' }}>{inv.id_intervention}</td>
-                      <td><span className={`${styles.badge} ${styles.badgeState}`}>{inv.etat}</span></td>
-                      <td>{inv.type_intervention || '-'}</td>
-                      <td>{extractInfo(inv.detail_intervention, 'typePrestation')}</td>
-                      <td style={{ color: '#94a3b8' }}>{inv.date_modification_etat}</td>
-                      <td>
-                        {inv.source_ingestion ? (
-                          <span className={`${styles.sourceBadge} ${inv.source_ingestion === 'RADAR' ? styles.sourceRadar : styles.sourceTimeMachine}`}>
-                            {inv.source_ingestion.replace('_', ' ')}
-                          </span>
-                        ) : (
-                          <span className={`${styles.sourceBadge} ${styles.sourceUnknown}`}>INCONNUE</span>
-                        )}
-                      </td>
-                      <td>
-                        <button onClick={() => openDetails(inv.detail_intervention)} className={styles.detailsBtn}>
-                          <IconCode />
-                          <span>Inspecter JSON</span>
-                        </button>
-                      </td>
+            <div className={s.row}>
+              <select className={s.select} value={sort} onChange={e => { setSort(e.target.value); setPage(0); }}>
+                <option value="date_desc">Date ↓ (récentes)</option>
+                <option value="date_asc">Date ↑ (anciennes)</option>
+                <option value="id_desc">Dernières importées</option>
+              </select>
+              <select className={s.select} value={size} onChange={e => { setSize(+e.target.value); setPage(0); }}>
+                {[25, 50, 100, 200].map(n => <option key={n} value={n}>{n} / page</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className={s.tableWrap} style={{ maxHeight: 'calc(100vh - 330px)', minHeight: 420 }}>
+            <table className={s.table}>
+              <thead>
+                <tr>
+                  <th>Date interv.</th><th>EPS</th><th>Période</th><th>Catégorie</th><th>Type</th><th>État</th><th>Clôture</th><th>Sous-traitant</th><th>Dép.</th><th>Détail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const [dcls, dlabel] = DETAIL_LABEL[r.detail_status] || DETAIL_LABEL.OK;
+                  return (
+                    <tr key={r.id} className={cx(ex.row, openId === r.id && ex.rowSel)} style={{ animationDelay: `${Math.min(i, 30) * 12}ms` }} onClick={() => setOpenId(r.id)}>
+                      <td className={s.mono}>{r.date_intervention ? String(r.date_intervention).slice(0, 10) : '—'}</td>
+                      <td><div className={ex.epsId}>{r.id_intervention}</div><div className={ex.fyt}>{r.fyt || ''}</div></td>
+                      <td className={s.mono}>{r.periode || '—'}</td>
+                      <td>{r.categorie ? <span className={ex.catBadge} style={{ ['--c' as string]: CAT_COLOR[r.categorie] || '#94a3b8' }}>{r.categorie}</span> : <span style={{ color: 'var(--txt-3)' }}>—</span>}</td>
+                      <td className={s.mono}>{r.type_presta || '—'}</td>
+                      <td style={{ fontSize: '.7rem' }}>{r.etat_qualif ? r.etat_qualif.replaceAll('_', ' ').toLowerCase() : '—'}</td>
+                      <td className={s.mono}>{r.code_cloture || '—'}</td>
+                      <td style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sous_traitant || '—'}</td>
+                      <td className={s.mono}>{r.departement || '—'}</td>
+                      <td><span className={cx(s.badge, dcls)}>{dlabel}</span></td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  );
+                })}
+              </tbody>
+            </table>
+            {rows.length === 0 && <div className={s.empty}>{loading ? 'Chargement…' : 'Aucun EPS pour ces filtres.'}</div>}
+          </div>
 
-              <div className={styles.pagination}>
-                <button disabled={data.number === 0} onClick={() => setPage(p => p - 1)} className={styles.pageBtn}>
-                  Précédent
-                </button>
-                <span>
-                  Page {data.number + 1} sur {data.totalPages}{' '}
-                  <span style={{ color: '#38bdf8' }}>({data.totalElements} résultats)</span>
-                </span>
-                <button disabled={data.number >= data.totalPages - 1} onClick={() => setPage(p => p + 1)} className={styles.pageBtn}>
-                  Suivant
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* MODAL EXPORT AVEC MULTI-SELECT */}
-        {isExportModalOpen && (
-          <div className={styles.modalOverlay} onClick={() => !isExporting && setIsExportModalOpen(false)}>
-            <div className={styles.modalExportContent} onClick={e => e.stopPropagation()}>
-              <div className={styles.modalHeader}>
-                <h2>
-                  <IconDownload />
-                  <span>Générer un Export Excel</span>
-                </h2>
-                <button onClick={() => !isExporting && setIsExportModalOpen(false)} className={styles.closeBtn}>
-                  <IconClose />
-                </button>
-              </div>
-              <form onSubmit={handleExport} className={styles.exportForm}>
-
-                <div className={styles.filterGroup}>
-                  <label>Type d&apos;Intervention</label>
-                  <select value={exportType} onChange={(e) => setExportType(e.target.value)} className={styles.selectInput}>
-                    <option value="ALL">Tous les types (Global)</option>
-                    <option value="RACC">RACC (Raccordement)</option>
-                    <option value="SAV">SAV (Service Après Vente)</option>
-                    <option value="RZO">RZO (Audits / Réseau)</option>
-                  </select>
-                </div>
-
-                <div className={styles.filterGroup}>
-                  <label>Source d&apos;Ingestion</label>
-                  <select value={exportSource} onChange={(e) => setExportSource(e.target.value)} className={styles.selectInput}>
-                    <option value="ALL">Toutes les sources</option>
-                    <option value="RADAR">RADAR (Flux Continu)</option>
-                    <option value="TIME_MACHINE">TIME MACHINE (Historique)</option>
-                    <option value="INCONNUE">INCONNUE (Anciennes données)</option>
-                  </select>
-                </div>
-
-                <div className={styles.filterGroup}>
-                  <label>Périodes à exporter</label>
-                  <div className={styles.tmSelector}>
-                    <select
-                      value={exportPeriodInput}
-                      onChange={(e) => setExportPeriodInput(e.target.value)}
-                      className={styles.tmSelect}
-                    >
-                      {availableYears.map(year => (
-                        <optgroup key={year} label={`Année ${year}`}>
-                          {availableMonths.map(month => (
-                            <option key={`${year}_${month}`} value={`${year}_${month}`}>
-                              {year} — {month}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <button type="button" className={styles.btnSecondary} onClick={addExportPeriod}>
-                      <IconPlus />
-                      <span>Ajouter</span>
-                    </button>
-                  </div>
-
-                  <div className={styles.tmList}>
-                    {exportPeriods.length === 0 && (
-                      <span style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 'auto', fontWeight: 700 }}>
-                        TOUTES LES PÉRIODES (BASE GLOBALE)
-                      </span>
-                    )}
-                    {exportPeriods.map(p => (
-                      <div key={p} className={styles.tmTag}>
-                        <span>{p.replace('_', '-')}</span>
-                        <button type="button" onClick={() => setExportPeriods(exportPeriods.filter(item => item !== p))}>
-                          <IconClose />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className={styles.modalActions}>
-                  <button type="button" className={styles.btnCancel} onClick={() => setIsExportModalOpen(false)} disabled={isExporting}>
-                    Annuler
-                  </button>
-                  <button type="submit" className={styles.exportBtn} disabled={isExporting}>
-                    <IconDownload />
-                    <span>{isExporting ? 'Génération en cours...' : 'Télécharger le fichier'}</span>
-                  </button>
-                </div>
-              </form>
+          <div className={ex.pager}>
+            <span style={{ fontSize: '.74rem', color: 'var(--txt-3)' }}>
+              {total ? `${(page * size + 1).toLocaleString('fr-FR')}–${Math.min(total, (page + 1) * size).toLocaleString('fr-FR')} sur ${total.toLocaleString('fr-FR')}` : '0 résultat'}
+            </span>
+            <div className={ex.pageBtns}>
+              <button className={s.btn} disabled={page === 0} onClick={() => setPage(0)}>«</button>
+              <button className={s.btn} disabled={page === 0} onClick={() => setPage(p => p - 1)}>‹ Préc.</button>
+              <span className={s.mono} style={{ fontSize: '.78rem', padding: '0 8px' }}>{page + 1} / {pages.toLocaleString('fr-FR')}</span>
+              <button className={s.btn} disabled={page + 1 >= pages} onClick={() => setPage(p => p + 1)}>Suiv. ›</button>
+              <button className={s.btn} disabled={page + 1 >= pages} onClick={() => setPage(pages - 1)}>»</button>
             </div>
           </div>
-        )}
-
-        {selectedDetails && (
-          <div className={styles.modalOverlay} onClick={() => setSelectedDetails(null)}>
-            <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
-              <div className={styles.modalHeader}>
-                <h2>
-                  <IconCode />
-                  <span>CONSOLE PAYLOAD JSON</span>
-                </h2>
-                <button onClick={() => setSelectedDetails(null)} className={styles.closeBtn}>
-                  <IconClose />
-                </button>
-              </div>
-              <pre className={styles.jsonView}>{selectedDetails}</pre>
-            </div>
-          </div>
-        )}
+        </Card>
       </div>
+
+      {openId !== null && <Drawer id={openId} onClose={() => setOpenId(null)} notify={show} />}
+      <Toast msg={toast} />
+    </Shell>
+  );
+}
+
+function FacetGroup({ title, values, selected, onToggle, labelOf, search, defaultOpen }: {
+  title: string; values: { v: string | null; n: number }[]; selected: string[]; onToggle: (v: string) => void;
+  labelOf: (v: string) => string; search?: boolean; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen || selected.length > 0);
+  const [q, setQ] = useState('');
+  const [all, setAll] = useState(false);
+  const max = Math.max(1, ...values.map(v => v.n));
+  const list = values
+    .map(v => ({ key: v.v ?? '∅', label: v.v === null ? '(vide)' : labelOf(v.v), n: v.n }))
+    .filter(v => !q || v.label.toLowerCase().includes(q.toLowerCase()));
+  const shown = all ? list : list.slice(0, 8);
+  // une valeur sélectionnée qui n'a plus de résultat reste affichée pour pouvoir la décocher
+  selected.filter(sv => !list.some(l => l.key === sv)).forEach(sv => shown.unshift({ key: sv, label: sv === '∅' ? '(vide)' : labelOf(sv), n: 0 }));
+
+  return (
+    <div className={ex.facet}>
+      <div className={ex.facetHead} onClick={() => setOpen(!open)}>
+        <span className={ex.facetTitle}>{title}{selected.length > 0 && <span className={ex.facetCount}>{selected.length}</span>}</span>
+        <span className={fx.stepSub} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .25s', display: 'flex' }}><IChevron /></span>
+      </div>
+      {open && (
+        <div className={ex.facetBody}>
+          {search && values.length > 8 && <input className={cx(s.input, ex.facetSearch)} placeholder="Filtrer…" value={q} onChange={e => setQ(e.target.value)} />}
+          {shown.map(v => {
+            const on = selected.includes(v.key);
+            return (
+              <button key={v.key} className={cx(ex.opt, on && ex.optOn)} onClick={() => onToggle(v.key)} title={v.label}>
+                <span className={ex.optBar} style={{ width: `${(v.n / max) * 100}%` }} />
+                <span className={ex.optBox}>{on ? '✓' : ''}</span>
+                <span className={ex.optLabel}>{v.label}</span>
+                <span className={ex.optN}>{v.n.toLocaleString('fr-FR')}</span>
+              </button>
+            );
+          })}
+          {values.length === 0 && <span style={{ fontSize: '.72rem', color: 'var(--txt-3)', padding: 6 }}>Aucune valeur</span>}
+          {list.length > 8 && <button className={ex.more} onClick={() => setAll(!all)}>{all ? 'Voir moins' : `Voir les ${list.length} valeurs`}</button>}
+        </div>
+      )}
     </div>
+  );
+}
+
+interface Qualif { _type?: string; date?: string; typeIntervention?: string; etat?: string; coutIntervention?: number; typeRaccordement?: string }
+
+function Drawer({ id, onClose, notify }: { id: number; onClose: () => void; notify: (m: string) => void }) {
+  const [item, setItem] = useState<Record<string, unknown> | null>(null);
+  const [live, setLive] = useState<string | null>(null);
+
+  useEffect(() => { setItem(null); setLive(null); fetchExplorerItem(id).then(setItem); }, [id]);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [onClose]);
+
+  const detail = useMemo(() => {
+    const raw = item?.detail_json as string | undefined;
+    if (!raw) return null;
+    try { return JSON.parse(raw) as Record<string, unknown>; } catch { return null; }
+  }, [item]);
+  const pretty = useMemo(() => detail ? JSON.stringify(detail, null, 2) : (item?.detail_json as string) || '', [detail, item]);
+  const quals = ((detail?.qualificationInterventions as Qualif[]) || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const cat = item?.categorie as string | undefined;
+
+  const runLive = async () => {
+    setLive('Vérification chez Bytel…');
+    const r = await checkEps(String(item?.id_intervention), true);
+    if (!r?.live) return setLive('Inspecteur injoignable.');
+    setLive(!r.live.reachable ? `Bytel injoignable (${r.live.error})`
+      : r.live.has_detail ? `✓ Bytel a bien le détail (${r.live.latency_ms} ms)${r.live.repaired ? ' — base réparée' : ''}` : '✗ Bytel ne renvoie aucun détail pour cet EPS');
+    if (r.live.repaired) fetchExplorerItem(id).then(setItem);
+  };
+
+  const kv: [string, unknown][] = item ? [
+    ['Période', item.periode], ['Date intervention', item.date_intervention ? String(item.date_intervention).slice(0, 16).replace('T', ' ') : null],
+    ['Type de presta', item.type_presta], ['Type raccordement', item.type_raccordement],
+    ['État qualification', item.etat_qualif], ['Code clôture', item.code_cloture],
+    ['Sous-traitant', item.sous_traitant], ['Département', item.departement],
+    ['OI', item.oi], ['FYT', item.fyt],
+    ['Vu chez Bytel', item.last_seen_at ? String(item.last_seen_at).slice(0, 16).replace('T', ' ') : null], ['Essais Healer', item.heal_attempts ?? 0],
+  ] : [];
+
+  return createPortal(
+    <>
+      <div className={ex.drawerBack} onClick={onClose} />
+      <aside className={ex.drawer}>
+        {!item ? <div className={s.empty}>Chargement…</div> : (
+          <>
+            <div className={ex.drawerHead}>
+              <div>
+                <div className={ex.drawerId}>{String(item.id_intervention)}</div>
+                <div className={s.row} style={{ marginTop: 8 }}>
+                  {cat && <span className={ex.catBadge} style={{ ['--c' as string]: CAT_COLOR[cat] || '#94a3b8' }}>{cat} · {CAT_LABEL[cat]}</span>}
+                  <span className={cx(s.badge, s.bSys)}>ligne #{String(item.id)}</span>
+                  <span className={cx(s.badge, s.bSys)}>{String(item.source_ingestion || '—')}</span>
+                </div>
+              </div>
+              <button className={s.btn} onClick={onClose}><IClose /></button>
+            </div>
+
+            <div className={ex.kv}>
+              {kv.map(([k, v]) => <div key={k}><span>{k}</span><b title={String(v ?? '')}>{v === null || v === undefined || v === '' ? '—' : String(v)}</b></div>)}
+            </div>
+
+            <div className={s.row} style={{ marginBottom: 18 }}>
+              <button className={cx(s.btn, s.btnSolid, s.accCyan)} onClick={runLive}><IRadar /> Vérifier chez Bytel</button>
+              <button className={s.btn} onClick={async () => { if (await copyText(pretty)) notify('Détail JSON copié.'); }}>Copier le JSON</button>
+              {live && <span style={{ fontSize: '.76rem', color: live.startsWith('✓') ? '#6ee7b7' : live.startsWith('✗') ? '#fda4af' : 'var(--txt-2)' }}>{live}</span>}
+            </div>
+
+            {quals.length > 0 && <>
+              <div className={ex.sectionLabel}>Historique des qualifications</div>
+              <div className={ex.timeline}>
+                {quals.map((q, i) => {
+                  const c = q._type === 'QualificationSAV' ? CAT_COLOR.SAV : q._type === 'QualificationReseau' ? CAT_COLOR.RZO : CAT_COLOR.RACC;
+                  return (
+                    <div key={i} className={ex.tlItem} style={{ ['--c' as string]: c }}>
+                      <span className={ex.tlDot} />
+                      <div className={ex.tlTitle}>{q.typeIntervention || q._type} · {q.etat?.replaceAll('_', ' ').toLowerCase()}</div>
+                      <div className={ex.tlSub}>{String(q.date || '').slice(0, 16).replace('T', ' ')}{q.coutIntervention !== undefined ? ` · coût ${q.coutIntervention} €` : ''}{q.typeRaccordement ? ` · ${q.typeRaccordement}` : ''}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>}
+
+            <div className={ex.sectionLabel}>Détail Bytel brut</div>
+            {pretty ? <pre className={ex.json}>{pretty}</pre> : <div className={s.empty}>Pas encore de détail (dans la file du Healer).</div>}
+          </>
+        )}
+      </aside>
+    </>,
+    document.querySelector('[data-cc-root]') || document.body
   );
 }

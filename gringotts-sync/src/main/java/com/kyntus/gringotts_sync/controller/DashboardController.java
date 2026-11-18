@@ -5,7 +5,10 @@ import com.kyntus.gringotts_sync.domain.SyncState;
 import com.kyntus.gringotts_sync.repository.InterventionRepository;
 import com.kyntus.gringotts_sync.repository.SyncStateRepository;
 import com.kyntus.gringotts_sync.domain.SyncEvent;
+import com.kyntus.gringotts_sync.service.ActivityFeed;
 import com.kyntus.gringotts_sync.service.AutoPilotService;
+import com.kyntus.gringotts_sync.service.DetailBackfillService;
+import com.kyntus.gringotts_sync.service.ExplorerService;
 import com.kyntus.gringotts_sync.service.EventLogService;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
 import com.kyntus.gringotts_sync.service.ExportExcelService;
@@ -33,6 +36,9 @@ public class DashboardController {
     private final ExportExcelService exportExcelService;
     private final AutoPilotService autoPilotService;
     private final EventLogService eventLogService;
+    private final ActivityFeed activityFeed;
+    private final ExplorerService explorerService;
+    private final DetailBackfillService detailBackfillService;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
@@ -67,6 +73,8 @@ public class DashboardController {
         stats.put("period_updated", syncOrchestrator.getPeriodUpdated());
         stats.put("period_changed", syncOrchestrator.getPeriodChanged());
         stats.put("event_counts_24h", eventLogService.countsLast24h());
+        stats.put("extract_remaining", detailBackfillService.getRemaining());
+        stats.put("auto_moved_periods", detailBackfillService.getMovedTotal());
 
         return ResponseEntity.ok(stats);
     }
@@ -188,6 +196,51 @@ public class DashboardController {
     @GetMapping("/healer")
     public ResponseEntity<Map<String, Object>> getHealer() {
         return ResponseEntity.ok(syncOrchestrator.healerInsights());
+    }
+
+    // ---------------------------------------------------------------- Console live
+    @GetMapping("/activity")
+    public ResponseEntity<Map<String, Object>> activity(@RequestParam(defaultValue = "0") long after,
+                                                        @RequestParam(required = false) String engine,
+                                                        @RequestParam(defaultValue = "400") int limit) {
+        return ResponseEntity.ok(activityFeed.since(after, Math.max(1, Math.min(limit, 2000)), engine));
+    }
+
+    // ---------------------------------------------------------------- Explorateur
+    @GetMapping("/explorer")
+    public ResponseEntity<Map<String, Object>> explorer(@RequestParam Map<String, String> params) {
+        ExplorerService.Filters f = ExplorerService.parse(params);
+        int page = parseInt(params.get("page"), 0), size = parseInt(params.get("size"), 50);
+        return ResponseEntity.ok(explorerService.search(f, params.get("sort"), page, size));
+    }
+
+    @GetMapping("/explorer/facets")
+    public ResponseEntity<Map<String, Object>> explorerFacets(@RequestParam Map<String, String> params) {
+        return ResponseEntity.ok(explorerService.facets(ExplorerService.parse(params)));
+    }
+
+    @GetMapping("/explorer/item/{id}")
+    public ResponseEntity<Map<String, Object>> explorerItem(@PathVariable long id) {
+        return ResponseEntity.ok(explorerService.detail(id));
+    }
+
+    @GetMapping("/explorer/export")
+    public ResponseEntity<byte[]> explorerExport(@RequestParam Map<String, String> params) {
+        ExplorerService.Filters f = ExplorerService.parse(params);
+        List<Long> ids = explorerService.ids(f, 200_000);
+        if (ids.isEmpty()) return ResponseEntity.noContent().build();
+        List<String> cats = f.dims().getOrDefault("categorie", List.of());
+        String type = cats.size() == 1 && List.of("RACC", "SAV", "RZO").contains(cats.get(0)) ? cats.get(0) : "ALL";
+        byte[] data = exportExcelService.generateExcelForIds(ids, type);
+        String name = "Export_Gringotts_" + type + "_" + ids.size() + "_EPS.xlsx";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + name + "\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
+    }
+
+    private static int parseInt(String s, int def) {
+        try { return s == null ? def : Integer.parseInt(s); } catch (NumberFormatException e) { return def; }
     }
 
     @PostMapping("/scope")

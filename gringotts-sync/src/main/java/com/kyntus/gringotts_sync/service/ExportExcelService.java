@@ -101,7 +101,12 @@ public class ExportExcelService {
 
         log.info("🔍 Recherche des IDs correspondants...");
         List<Long> interventionIds = interventionRepository.findIdsForExport(cleanSource, hasPeriods, dbPeriods, cleanType);
+        return generateExcelForIds(interventionIds, cleanType);
+    }
 
+    /** Export Excel d'une liste d'IDs (utilisé par l'explorateur filtré). type = RACC | SAV | RZO | ALL. */
+    public byte[] generateExcelForIds(List<Long> interventionIds, String type) {
+        String cleanType = (type == null || type.isBlank()) ? "ALL" : type;
         if (interventionIds.isEmpty()) {
             throw new RuntimeException("Aucune donnée trouvée pour ces filtres.");
         }

@@ -117,7 +117,14 @@ export function PhaseBoard({ rows, selected, onSelect, notify, refresh }: {
               <Step n={1} {...c} />
               <Step n={2} {...e} />
               <Step n={3} {...v} last />
-              <div><span className={cx(s.badge, ocls)}>{olabel}</span></div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                <span className={cx(s.badge, ocls)}>{olabel}</span>
+                {r.verify.volume_low && (
+                  <span className={cx(s.badge, s.bWarn)} title={`Bytel n'expose que ${fmt(r.collect.remote_total)} EPS pour ce mois, contre ~${fmt(r.verify.volume_median)} pour un mois habituel. Notre base contient tout ce que Bytel renvoie.`}>
+                    ⚠ Volume Bytel {r.verify.volume_ratio}%
+                  </span>
+                )}
+              </div>
               <div className={s.row} style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }} onClick={ev => ev.stopPropagation()}>
                 {r.in_scope && <>
                   <button className={s.btn} style={{ padding: '6px 10px' }} disabled={busy !== null} title="1 appel léger à Bytel : total vs base"

@@ -358,6 +358,28 @@ tr:hover .rowCopy { opacity: 1; }
   white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto;
 }
 
+/* ---------- Console live ---------- */
+.tLine { animation: tIn .35s ease both; padding: 0 4px; border-radius: 4px; }
+.tLineErr { background: rgba(244, 63, 94, .1); box-shadow: inset 2px 0 0 #f43f5e; }
+.tLineWarn { background: rgba(245, 158, 11, .06); }
+@keyframes tIn { from { opacity: 0; transform: translateX(-6px); } }
+.newLines {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  border: 1px solid rgba(34, 211, 238, .5); background: rgba(4, 6, 14, .92); color: #67e8f9;
+  padding: 6px 14px; border-radius: 999px; font-size: .72rem; font-weight: 800; cursor: pointer;
+  box-shadow: 0 8px 24px -8px #22d3ee; animation: fadeSwap .3s ease both;
+}
+.consoleStats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+@media (max-width: 900px) { .consoleStats { grid-template-columns: repeat(2, 1fr); } }
+.consoleStats > div {
+  padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, .12);
+  background: rgba(255, 255, 255, .02); display: flex; flex-direction: column; gap: 2px;
+}
+.consoleStats span { font-size: .6rem; letter-spacing: .14em; text-transform: uppercase; color: #66708a; font-weight: 900; }
+.consoleStats b { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.2rem; color: #fff; }
+.statErr { border-color: rgba(244, 63, 94, .45) !important; background: rgba(244, 63, 94, .08) !important; }
+.statErr b { color: #fda4af !important; }
+
 /* ---------- Copy modal (fallback presse-papier) ---------- */
 .modalBack {
   position: fixed; inset: 0; z-index: 200;
