@@ -37,9 +37,9 @@ public class BytelThrottle {
     private volatile String pauseReason = "";
 
     public BytelThrottle(
-            @Value("${kyntus.throttle.min-delay-ms:250}") long minDelayMs,
+            @Value("${kyntus.throttle.min-delay-ms:550}") long minDelayMs,
             @Value("${kyntus.throttle.max-delay-ms:15000}") long maxDelayMs,
-            @Value("${kyntus.throttle.max-in-flight:4}") int maxInFlight,
+            @Value("${kyntus.throttle.max-in-flight:2}") int maxInFlight,
             @Value("${kyntus.throttle.slow-response-ms:25000}") long slowResponseMs,
             @Value("${kyntus.throttle.block-pause-ms:900000}") long blockPauseMs,
             @Value("${kyntus.throttle.breaker-pause-ms:120000}") long breakerPauseMs,
@@ -95,8 +95,8 @@ public class BytelThrottle {
             inFlightLimit = Math.max(1, inFlightLimit - 1);
         } else {
             consecutiveFastSuccesses++;
-            delayMs = Math.max(minDelayMs, delayMs - 50);
-            if (consecutiveFastSuccesses >= 10 && inFlightLimit < maxInFlight) {
+            delayMs = Math.max(minDelayMs, delayMs - 20); // ré-accélération lente
+            if (consecutiveFastSuccesses >= 40 && inFlightLimit < maxInFlight) {
                 inFlightLimit++;
                 consecutiveFastSuccesses = 0;
             }
@@ -115,6 +115,17 @@ public class BytelThrottle {
             consecutiveErrors = 0;
         }
         releaseLocked();
+    }
+
+    /**
+     * Pré-alerte de ban (lots 100% vides en série) : frein fort (délai x2, 1 requête à la fois) et,
+     * si ça continue, courte pause globale — sans libérer de slot (l'appelant n'en tient plus).
+     */
+    public synchronized void onBanWarning(int streak) {
+        consecutiveFastSuccesses = 0;
+        delayMs = Math.min(maxDelayMs, Math.max(delayMs * 2, 2000));
+        inFlightLimit = 1;
+        if (streak >= 4) pause(60_000, "Bytel renvoie des lots vides en série (" + streak + ") : pré-alerte de ban Akamai");
     }
 
     /**

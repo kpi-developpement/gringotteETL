@@ -117,6 +117,7 @@ public class SyncOrchestrator {
     private final AtomicLong hFailedBatches = new AtomicLong();
     private final AtomicLong hRecovered = new AtomicLong();
     private final AtomicLong hDefinitive = new AtomicLong();
+    private final java.util.concurrent.atomic.AtomicInteger emptyBatchStreak = new java.util.concurrent.atomic.AtomicInteger();
     private final ConcurrentLinkedDeque<long[]> healWindow = new ConcurrentLinkedDeque<>(); // [ts, count]
     private final List<Map<String, Object>> recentLots = new CopyOnWriteArrayList<>();
     private volatile long lastHealSuccessAt = 0;
@@ -1030,6 +1031,28 @@ public class SyncOrchestrator {
                     handleTimeout();
                 } catch (Exception e) {
                     throttle.onError();
+                }
+            }
+        }
+
+        // Signal d'alerte avant ban Akamai : Bytel répond "ok" mais renvoie un lot 100% vide, plusieurs fois de suite.
+        // -> on freine fort tout de suite, et ces EPS sont reprogrammés dans 10 min SANS consommer d'essai.
+        if (healedData != null && batch.size() >= 3) {
+            final Map<String, Object> hd = healedData;
+            boolean allEmpty = idsToHeal.stream().noneMatch(id -> hasDetail(hd.get(id)));
+            if (!allEmpty) {
+                emptyBatchStreak.set(0);
+            } else {
+                int streak = emptyBatchStreak.incrementAndGet();
+                if (streak >= 2 && streak <= 20) {
+                    throttle.onBanWarning(streak);
+                    Timestamp later = Timestamp.valueOf(LocalDateTime.now().plusMinutes(10));
+                    List<Object[]> park = batch.stream().map(inv -> new Object[]{new SqlParameterValue(Types.TIMESTAMP, later), inv.getId()}).toList();
+                    jdbcTemplate.batchUpdate("UPDATE interventions SET detail_intervention = '{}', heal_attempts = COALESCE(heal_attempts, 0), heal_next_at = ? WHERE id = ?", park);
+                    feed.log("HEALER", "WARN", batch.size() + " EPS (" + idsToHeal.get(0) + "…) · lot 100% vide (" + streak
+                            + "e d'affilée) → Bytel sature : on ralentit, ré-essai dans 10 min sans compter d'essai · " + throttle.describe());
+                    hFailed.addAndGet(batch.size());
+                    return new int[]{0, 0, batch.size(), 0, recovered};
                 }
             }
         }

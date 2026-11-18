@@ -56,9 +56,9 @@ kyntus:
 
   # 🛡️ Protection serveur Bytel (adaptatif, partagé Time Machine + Healer)
   throttle:
-    min-delay-ms: ${KYNTUS_THROTTLE_MIN_DELAY_MS:250}   # vitesse max : 1 requête / 250ms
+    min-delay-ms: ${KYNTUS_THROTTLE_MIN_DELAY_MS:550}   # vitesse max : ~2 requêtes / s (au-delà Akamai bannit)
     max-delay-ms: 15000
-    max-in-flight: ${KYNTUS_THROTTLE_MAX_IN_FLIGHT:4}    # requêtes simultanées max vers Bytel
+    max-in-flight: ${KYNTUS_THROTTLE_MAX_IN_FLIGHT:2}    # requêtes simultanées max vers Bytel
     slow-response-ms: 25000                              # réponse plus lente => on freine
     block-pause-ms: 900000                               # 403 Akamai => pause 15 min
     breaker-pause-ms: 120000                             # N erreurs d'affilée => pause 2 min
