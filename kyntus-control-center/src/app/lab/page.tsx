@@ -37,6 +37,25 @@ export default function ApiLabPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [activeTest, setActiveTest] = useState<number | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const host = typeof window !== 'undefined' ? window.location.hostname : '10.10.10.25';
+  const partnerJsonUrl = `http://${host}:8117/api/dashboard/attente-validation`;
+  const partnerExcelUrl = `http://${host}:8117/api/dashboard/attente-validation/export`;
+
+  const testPartnerApi = async () => {
+    setLoading(true);
+    setActiveTest(99);
+    setResult(null);
+    try {
+      const res = await fetch(`${partnerJsonUrl}?size=20&page=0`);
+      const data = await res.json();
+      setResult({ http_code: res.status, url_testee: `${partnerJsonUrl}?size=20&page=0`, response: data });
+    } catch (err: unknown) {
+      setResult({ error: err instanceof Error ? err.message : 'Erreur réseau' });
+    }
+    setLoading(false);
+  };
 
   const testEndpoint = async (type: number) => {
     setLoading(true);
@@ -65,6 +84,46 @@ export default function ApiLabPage() {
           {loading ? 'Sonde en vol…' : result ? `HTTP ${String(result.http_code || 'ERR')}` : 'Prêt'}
         </span>
       </div>
+
+      <Card accent="amber" glow={activeTest === 99}>
+        <CardHead
+          icon={<IBolt />}
+          title="API Externe · En attente de validation partenaire"
+          sub="Flux JSON & Export Excel dédiés (Installation, Déplacement, Total, C01..C11, KX, photos, État, Commentaire)"
+          right={
+            <div className={s.row}>
+              <button
+                className={cx(s.btn, copiedUrl && fx.copied)}
+                onClick={() => {
+                  navigator.clipboard?.writeText(partnerJsonUrl);
+                  setCopiedUrl(true);
+                  setTimeout(() => setCopiedUrl(false), 1800);
+                }}
+              >
+                {copiedUrl ? 'Lien copié ✓' : 'Copier URL JSON'}
+              </button>
+              <a href={partnerExcelUrl} className={cx(s.btn, s.accEmerald)} download>
+                ⬇ Excel (.xlsx)
+              </a>
+              <button onClick={testPartnerApi} disabled={loading} className={cx(s.btn, s.btnSolid, s.accAmber)}>
+                <IPlay />
+                <span>{loading && activeTest === 99 ? 'Chargement…' : 'Tester l’API (20 lignes)'}</span>
+              </button>
+            </div>
+          }
+        />
+        <div className={s.mono} style={{
+          padding: '10px 14px',
+          borderRadius: 10,
+          background: 'rgba(2, 4, 10, 0.75)',
+          border: '1px solid var(--line-2)',
+          color: 'var(--amber)',
+          fontSize: '0.78rem',
+          userSelect: 'all',
+        }}>
+          GET {partnerJsonUrl}
+        </div>
+      </Card>
 
       <div className={s.kpiGrid}>
         {PROTOCOLS.map(p => (

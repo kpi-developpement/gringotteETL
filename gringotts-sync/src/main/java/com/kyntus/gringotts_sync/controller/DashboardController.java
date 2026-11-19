@@ -10,6 +10,7 @@ import com.kyntus.gringotts_sync.service.AutoPilotService;
 import com.kyntus.gringotts_sync.service.DetailBackfillService;
 import com.kyntus.gringotts_sync.service.ExplorerService;
 import com.kyntus.gringotts_sync.service.EventLogService;
+import com.kyntus.gringotts_sync.service.PartenaireApiService;
 import com.kyntus.gringotts_sync.service.SyncOrchestrator;
 import com.kyntus.gringotts_sync.service.ExportExcelService;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class DashboardController {
     private final ActivityFeed activityFeed;
     private final ExplorerService explorerService;
     private final DetailBackfillService detailBackfillService;
+    private final PartenaireApiService partenaireApiService;
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
@@ -354,6 +356,32 @@ public class DashboardController {
     public ResponseEntity<Map<String, Object>> retryFailedHeals() {
         int count = syncOrchestrator.retryFailedHeals();
         return ResponseEntity.ok(Map.of("ok", true, "message", count + " EPS Fantômes remis en file d'attente pour le Healer."));
+    }
+
+    // ---------------------------------------------------------------- API Externe : En attente de validation partenaire
+    @GetMapping("/attente-validation")
+    public ResponseEntity<Map<String, Object>> attenteValidation(
+            @RequestParam(required = false) String periode,
+            @RequestParam(required = false) String categorie,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(defaultValue = "false") boolean allVersions) {
+        return ResponseEntity.ok(partenaireApiService.fetchAttenteValidation(periode, categorie, q, page, size, allVersions));
+    }
+
+    @GetMapping("/attente-validation/export")
+    public ResponseEntity<byte[]> attenteValidationExport(
+            @RequestParam(required = false) String periode,
+            @RequestParam(required = false) String categorie,
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "false") boolean allVersions) {
+        byte[] data = partenaireApiService.exportExcel(periode, categorie, q, allVersions);
+        String name = "Attente_Validation_Partenaire" + (periode == null || periode.isBlank() ? "" : "_" + periode) + ".xlsx";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + name + "\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(data);
     }
 
     // 🚀 L'FIX HNA: Zidna String period f request body bash Java ydirha 3la l'mois li 3zelti nti b dbt
