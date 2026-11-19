@@ -88,8 +88,8 @@ export default function ApiLabPage() {
       <Card accent="amber" glow={activeTest === 99}>
         <CardHead
           icon={<IBolt />}
-          title="API Externe · En attente de validation partenaire"
-          sub="Flux JSON & Export Excel dédiés (Installation, Déplacement, Total, C01..C11, KX, photos, État, Commentaire)"
+          title="API Externe · SAV en État Final : En attente de validation partenaire"
+          sub="Uniquement les EPS SAV dont la dernière version (par date) est en état final EN_ATTENTE_VALIDATION_PARTENAIRE"
           right={
             <div className={s.row}>
               <button
